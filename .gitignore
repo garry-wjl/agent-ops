@@ -1,0 +1,28 @@
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.iml
+
+# Nested build / deps (also covered by subproject ignores)
+**/target/
+**/node_modules/
+**/.pnpm-store/
+**/dist/
+**/dist-ssr/
+**/coverage/
+**/.vite/
+**/.turbo/
+**/.cache/
+
+# Logs / env
+*.log
+logs/
+.env
+.env.*
+!.env.example
+
+# Local agent / editor noise
+.cursor/
+*.swp
+*~

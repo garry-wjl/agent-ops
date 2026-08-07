@@ -1,0 +1,66 @@
+{
+  "name": "rd-agent-fe",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Agent Sphere 管理后台前端 — 调试台 / Agent / Skill / 评测 (Vite + Pro Components + Ant Design X)",
+  "scripts": {
+    "dev": "vite --mode develop",
+    "dev:test": "vite --mode test",
+    "dev:stag": "vite --mode stag",
+    "dev:prod": "vite --mode prod",
+    "build": "tsc -b --noEmit && vite build --mode prod",
+    "build:dev": "tsc -b --noEmit && vite build --mode develop",
+    "build:test": "tsc -b --noEmit && vite build --mode test",
+    "build:stag": "tsc -b --noEmit && vite build --mode stag",
+    "build:prod": "tsc -b --noEmit && vite build --mode prod",
+    "preview": "vite preview",
+    "typecheck": "tsc -b --noEmit",
+    "format": "prettier --cache --write .",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^6.2.3",
+    "@ant-design/pro-components": "3.1.12-0",
+    "@ant-design/x": "^2.7.0",
+    "@ant-design/x-markdown": "^2.7.0",
+    "@monaco-editor/react": "^4.6.0",
+    "@tanstack/react-query": "^5.83.0",
+    "antd": "^6.4.0",
+    "axios": "^1.7.7",
+    "dayjs": "^1.11.13",
+    "echarts": "^5.5.1",
+    "echarts-for-react": "^3.0.2",
+    "md-editor-rt": "^6.5.1",
+    "monaco-editor": "^0.52.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "react-intl": "^10.1.6",
+    "react-router-dom": "^6.27.0",
+    "react-syntax-highlighter": "^15.6.1",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-s3": "^3.1105.0",
+    "@types/node": "^25.6.2",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/react-syntax-highlighter": "^15.5.13",
+    "@vitejs/plugin-react": "^4.3.3",
+    "ali-oss": "^6.23.0",
+    "less": "^4.2.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10",
+    "vite-plugin-mock": "^3.0.2",
+    "vitest": "^2.1.4"
+  },
+  "engines": {
+    "node": ">=18.16"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

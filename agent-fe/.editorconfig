@@ -1,0 +1,27 @@
+# EditorConfig 配置文件
+# 用于统一不同编辑器和 IDE 的代码风格
+# 更多信息：https://EditorConfig.org
+
+# 根配置文件（停止向上查找）
+root = true
+
+# 所有文件的默认配置
+[*]
+# 缩进风格：空格
+indent_style = space
+# 缩进大小：2 个空格
+indent_size = 2
+# 行尾序列：LF（Unix 风格，\n）
+end_of_line = lf
+# 字符编码：UTF-8
+charset = utf-8
+# 删除行尾空白字符
+trim_trailing_whitespace = true
+# 文件末尾插入换行符
+insert_final_newline = true
+
+# Markdown 文件特殊配置
+[*.md]
+# Markdown 文件保留行尾空白（用于换行）
+trim_trailing_whitespace = false
+

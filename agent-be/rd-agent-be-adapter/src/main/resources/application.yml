@@ -1,0 +1,112 @@
+server:
+  # 默认 8081：本机 8080 被 nacos-standalone docker 容器占用
+  port: ${SERVER_PORT:8081}
+  # 优雅停机
+  shutdown: graceful
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
+spring:
+  application:
+    name: rd-agent-be
+  profiles:
+    # 默认走 dev profile;CI / prod 通过 SPRING_PROFILES_ACTIVE 或 -Dspring.profiles.active 覆盖
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  lifecycle:
+    timeout-per-shutdown-phase: 60s
+  datasource:
+    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/rd_agent?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:root}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  flyway:
+    # 启动时自动执行 db/migration/V*.sql 建表与种子数据。
+    # 脚本位置：rd-agent-be-infra/src/main/resources/db/migration（编译后进 classpath）。
+    enabled: ${FLYWAY_ENABLED:true}
+    locations: classpath:db/migration
+    # 现有库（dev/stag 已有表）无 flyway_schema_history 时，不重复跑已存在结构：
+    # 先对现有 schema 打 baseline 到 baseline-version，只执行 > 该版本的新增迁移。
+    # 全新空库（prod 首次上线）则不触发 baseline，V1 全量建表 + 灌权限种子，开箱即用。
+    # baseline-version 钉到当前仓库最大版本号 1：留高值（如历史 33）会导致后续 V2+ 被误判为
+    # "低于 baseline"而跳过，是真实隐患，故必须随仓库实际最大版本号同步。
+    baseline-on-migrate: true
+    baseline-version: ${FLYWAY_BASELINE_VERSION:1}
+    # 校验已执行脚本 checksum 防漂移：有人改了已应用脚本会启动失败，强制走"新增版本"而非"改老脚本"。
+    validate-on-migrate: true
+    # 生产安全：禁 flyway clean，避免误执行清库。
+    clean-disabled: true
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+app:
+  snowflake:
+    worker-id: ${SNOWFLAKE_WORKER_ID:1}
+  redis:
+    host: ${REDIS_HOST:127.0.0.1}
+    port: ${REDIS_PORT:6379}
+    # Redis 6+ ACL 账号；为空走默认账号（本地 / 自建 Redis 通常如此）
+    username: ${REDIS_USER:}
+    password: ${REDIS_PASSWORD:}
+    database: 0
+    ssl: ${REDIS_SSL:false}
+  llm:
+    base-url: ${LLM_BASE_URL:http://llm-proxy.garry.internal/v1}
+    api-key: ${LLM_API_KEY:}
+  auth:
+    platform-admins: garry.wang1,alice.zhang
+    # 鉴权总开关：本地 dev 可 true，注入由 X-User-Id header 走的兜底登录态；生产强制 false
+    disable-auth: ${AUTH_DISABLED:false}
+    jwt:
+      # HS256 密钥；生产用环境变量 / K8s Secret 覆盖
+      secret: ${JWT_SECRET:please-set-jwt-secret-at-least-32-bytes-in-prod}
+      expiration-hours: 24
+      cookie-name: session_token
+      # 跨站场景必须 true + SameSite=None；同站可降级为 Lax；本地 dev 可关 secure
+      cookie-secure: ${COOKIE_SECURE:true}
+      cookie-same-site: ${COOKIE_SAME_SITE:None}
+  # A2A 远端 AgentCard 拉取配置：直接复用 AgentScope starter 的
+  # `agentscope.a2a.nacos.discovery`（dev/test profile 在 application-{env}.yml 配齐
+  # `agentscope.a2a.nacos.{server-addr,namespace,access-key,secret-key}`），
+  # 配合 `agentscope.a2a.nacos.discovery.enabled=true` 即激活 NacosAgentCardFetcher
+  # 所需的 AiService。NacosAgentCardFetcher 通过 ObjectProvider<AiService> 取 starter
+  # 内部构造的 bean，避免重复装配。
+  # 本段仅保留注释说明；不再定义 app.a2a.nacos.*。
+
+# OpenSandbox 远程沙箱接入（会话级容器复用）
+sandbox:
+  # API Key 必须走 K8s Secret / 环境变量，禁止明文落 git
+  api-key: ${SANDBOX_API_KEY:4a56f29b-d33e-4eae-80d7-be6b36ce1f3f}
+  # 沙箱服务网关域名（不含协议）
+  domain: ${SANDBOX_DOMAIN:10.246.6.133:8090}
+  protocol: ${SANDBOX_PROTOCOL:http}
+  # 固定容器镜像，所有会话沙箱统一
+  image: ${SANDBOX_IMAGE:opensandbox/code-interpreter:v1.0.2}
+  # 容器存活 / Redis 映射 / 滑动续期窗口（分钟），默认 10
+  ttl-minutes: ${SANDBOX_TTL_MINUTES:10}
+  request-timeout-seconds: ${SANDBOX_REQUEST_TIMEOUT_SECONDS:30}
+
+# rd-agent Control Plane 自有配置
+# 历史:v2.x 曾接入 spring-ai-alibaba-starter-a2a-nacos 做 A2A AgentCard 同步,
+# 现已切到 AgentScope starter 的 agentscope.a2a.nacos.discovery;
+# a2a-sync 链路(A2aSyncProperties + A2aNacosSyncListener)整体下线。
+# 本段保留为空（YAML 顶层节点不可整段删除以维持历史可读性）。
+
+logging:
+  pattern:
+    console: '%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId}] %logger{36} - %msg%n'
+  level:
+    ink.garry.rd.agent.ws: INFO

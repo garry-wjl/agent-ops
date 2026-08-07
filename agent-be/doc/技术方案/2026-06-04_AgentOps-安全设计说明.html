@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>garry AgentOps — 安全设计说明</title>
+<style>
+  :root {
+    --brand: #1a73e8;
+    --brand-dark: #0b3d91;
+    --ink: #1f2329;
+    --ink-soft: #5b6168;
+    --line: #e4e7ed;
+    --bg-soft: #f6f8fa;
+    --ok: #18794e;
+    --ok-bg: #e6f4ea;
+    --plan: #b06a00;
+    --plan-bg: #fef3e2;
+    --danger: #c0392b;
+    --danger-bg: #fdecea;
+    --code-bg: #0f1419;
+    --code-ink: #d7dde3;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    color: var(--ink);
+    line-height: 1.7;
+    background: #fff;
+    font-size: 15px;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 28px 80px; }
+  header.hero {
+    background: linear-gradient(135deg, var(--brand-dark), var(--brand));
+    color: #fff;
+    padding: 54px 28px 40px;
+    margin-bottom: 8px;
+  }
+  header.hero .inner { max-width: 980px; margin: 0 auto; }
+  header.hero h1 { margin: 0 0 10px; font-size: 30px; letter-spacing: .5px; }
+  header.hero .sub { font-size: 15px; opacity: .92; }
+  header.hero .meta { margin-top: 18px; font-size: 13px; opacity: .8; display: flex; gap: 26px; flex-wrap: wrap; }
+  header.hero .meta b { font-weight: 600; }
+
+  h2 {
+    font-size: 22px; margin: 48px 0 14px; padding-bottom: 10px;
+    border-bottom: 2px solid var(--line); color: var(--brand-dark);
+  }
+  h2 .num { color: var(--brand); font-weight: 700; margin-right: 10px; }
+  h3 { font-size: 17px; margin: 30px 0 10px; color: var(--ink); }
+  h4 { font-size: 15px; margin: 20px 0 8px; color: var(--ink-soft); }
+  p { margin: 10px 0; }
+  ul, ol { margin: 10px 0; padding-left: 24px; }
+  li { margin: 5px 0; }
+  code:not(pre code) {
+    background: var(--bg-soft); border: 1px solid var(--line);
+    padding: 1px 6px; border-radius: 4px; font-size: 13px;
+    font-family: "SF Mono", "JetBrains Mono", Consolas, monospace; color: var(--brand-dark);
+  }
+  pre {
+    background: var(--code-bg); color: var(--code-ink);
+    padding: 16px 18px; border-radius: 8px; overflow-x: auto;
+    font-size: 12.5px; line-height: 1.6; margin: 14px 0;
+    font-family: "SF Mono", "JetBrains Mono", Consolas, monospace;
+  }
+  pre .c { color: #6b7785; }     /* comment */
+  pre .k { color: #ff9d6b; }     /* keyword */
+  pre .s { color: #9ad17f; }     /* string */
+  pre .a { color: #6cc0ff; }     /* annotation/type */
+
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13.5px; }
+  th, td { border: 1px solid var(--line); padding: 9px 12px; text-align: left; vertical-align: top; }
+  th { background: var(--bg-soft); font-weight: 600; color: var(--ink); }
+  tr:nth-child(even) td { background: #fbfcfd; }
+
+  .badge { display: inline-block; padding: 1px 9px; border-radius: 11px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .b-ok { background: var(--ok-bg); color: var(--ok); }
+  .b-plan { background: var(--plan-bg); color: var(--plan); }
+  .b-risk { background: var(--danger-bg); color: var(--danger); }
+
+  .card {
+    border: 1px solid var(--line); border-radius: 10px; padding: 4px 20px 16px;
+    margin: 18px 0; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.04);
+  }
+  .case {
+    border-left: 4px solid var(--brand); background: var(--bg-soft);
+    border-radius: 0 8px 8px 0; padding: 6px 20px 14px; margin: 18px 0;
+  }
+  .case .tag {
+    display: inline-block; background: var(--brand); color: #fff; font-size: 12px;
+    font-weight: 600; padding: 2px 10px; border-radius: 4px; margin: 12px 0 6px;
+  }
+  .note {
+    background: #fff8e6; border: 1px solid #f0dca0; border-radius: 8px;
+    padding: 12px 16px; margin: 16px 0; font-size: 13.5px;
+  }
+  .note b { color: var(--plan); }
+  .path { color: var(--ink-soft); font-size: 12.5px; font-family: "SF Mono", Consolas, monospace; word-break: break-all; }
+
+  .toc { background: var(--bg-soft); border: 1px solid var(--line); border-radius: 10px; padding: 18px 26px; margin: 28px 0; }
+  .toc h3 { margin: 0 0 10px; }
+  .toc ol { columns: 2; column-gap: 36px; margin: 0; }
+  .toc a { color: var(--brand-dark); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+
+  .layer-flow { font-family: "SF Mono", Consolas, monospace; font-size: 12.5px; background: var(--code-bg); color: var(--code-ink); padding: 18px; border-radius: 8px; line-height: 1.55; overflow-x: auto; white-space: pre; }
+  footer { margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--ink-soft); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="inner">
+    <h1>garry AgentOps · 安全设计说明</h1>
+    <div class="sub">接口安全与数据安全设计 — 基于 <code style="background:rgba(255,255,255,.15);color:#fff;border:none">rd-agent-be</code> 现有代码实现</div>
+    <div class="meta">
+      <span><b>文档版本</b>　v1.0</span>
+      <span><b>编写日期</b>　2026-06-04</span>
+      <span><b>适用系统</b>　rd-agent-be（Control Plane 后端）</span>
+      <span><b>密级</b>　内部</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="toc">
+    <h3>目录</h3>
+    <ol>
+      <li><a href="#s1">安全总体设计</a></li>
+      <li><a href="#s2">认证：GCAC SSO 登录</a></li>
+      <li><a href="#s3">会话：JWT + HttpOnly Cookie</a></li>
+      <li><a href="#s4">接口鉴权：过滤器链 + RBAC</a></li>
+      <li><a href="#s5">数据隔离：工作空间多租户</a></li>
+      <li><a href="#s6">输入校验与防注入</a></li>
+      <li><a href="#s7">敏感数据脱敏与凭据管理</a></li>
+      <li><a href="#s8">文件存储安全</a></li>
+      <li><a href="#s9">审计日志</a></li>
+      <li><a href="#s10">异常处理与信息收敛</a></li>
+      <li><a href="#s11">威胁模型与缓解</a></li>
+      <li><a href="#s12">已实现能力清单与演进规划</a></li>
+    </ol>
+  </div>
+
+  <!-- ============ 1 ============ -->
+  <h2 id="s1"><span class="num">01</span>安全总体设计</h2>
+
+  <p>garry AgentOps 后端 <code>rd-agent-be</code> 是 Agent Sphere 的 <b>Control Plane（控制面）</b>，承担会话层、调度层（权限/限流）与数据管理层三大职责。本服务自身不执行 Agent，所有 Agent 调用透传到 rd-points-sphere（Data Plane）。其安全设计遵循<b>纵深防御（Defense in Depth）</b>原则，在请求从浏览器进入、穿过六层架构、落到数据库与对象存储的全链路上分层设防。</p>
+
+  <h3>1.1 三个访问平面</h3>
+  <table>
+    <tr><th>平面</th><th>调用方向</th><th>认证机制</th><th>说明</th></tr>
+    <tr><td><b>Admin 平面</b></td><td>前端 rd-agent-fe → be</td><td>GCAC OAuth (SSO) → 本地 JWT → HttpOnly Cookie</td><td>用户人机交互主入口</td></tr>
+    <tr><td><b>Internal 平面</b></td><td>业务平台 platform → be 的 <code>/admin/api/v1/internal/*</code></td><td>共享密钥 <code>X-Service-Token</code> + 内网信任</td><td>拉取 active prompt 等服务间调用</td></tr>
+    <tr><td><b>Data Plane</b></td><td>be → rd-points-sphere</td><td>K8s NetworkPolicy 网络层管控（MVP 阶段无应用级鉴权）</td><td>透传 Agent 执行请求</td></tr>
+  </table>
+
+  <h3>1.2 安全分层模型</h3>
+  <p>一次受保护的业务请求会依次穿过以下安全关卡，任何一层不通过即在该层终止并返回标准错误码：</p>
+
+  <div class="layer-flow">┌──────────────────────────────────────────────────────────────┐
+│ 浏览器  ── HTTPS ──▶  Cookie: session_token (HttpOnly/Secure)  │
+└───────────────────────────────┬──────────────────────────────┘
+                                ▼
+┌──────────────────────────────────────────────────────────────┐
+│ ① CorsConfig            跨域白名单校验（显式 origin，禁用 *）   │
+│ ② JwtAuthenticationFilter  解析 JWT → RBAC 路径鉴权 → 注入身份 │
+│ ③ UserContextFilter     traceId 初始化 + Header 兜底身份注入    │
+│ ④ WorkspaceContextInterceptor  工作空间成员校验（403 拦截）     │
+└───────────────────────────────┬──────────────────────────────┘
+                                ▼
+┌──────────────────────────────────────────────────────────────┐
+│ ⑤ Controller  @Valid 入参校验 → BaseController 取 ThreadLocal  │
+│ ⑥ Application 跨空间归属二次校验 + 出参脱敏 + 审计字段写入       │
+│ ⑦ Infra/MyBatis-Plus  参数化查询（防注入）+ 逻辑删除 + 隔离过滤 │
+└───────────────────────────────┬──────────────────────────────┘
+                                ▼
+        MySQL (schema 物理隔离 rd_agent)  +  OSS (预签名 URL)</div>
+
+  <p>下文按"接口安全（第 2–6、10 节）"与"数据安全（第 7–9 节）"两条主线，逐个关卡说明设计与<b>具体代码 case</b>。</p>
+
+  <!-- ============ 2 ============ -->
+  <h2 id="s2"><span class="num">02</span>认证：GCAC SSO 登录 <span class="badge b-ok">已实现</span></h2>
+
+  <p>平台不自建账号体系，统一接入garry GCAC（<code>gcac.garrycorp.com</code>）SSO，采用标准 <b>OAuth2 Authorization Code Flow</b>。登录全程由三个端点构成，落在 adapter 层 <span class="path">AuthController.java</span>。</p>
+
+  <table>
+    <tr><th>端点</th><th>方法</th><th>职责</th></tr>
+    <tr><td><code>/api/login_gcac/redirect</code></td><td>GET</td><td>生成 state → 302 跳转 GCAC 授权页</td></tr>
+    <tr><td><code>/api/login_gcac/callback</code></td><td>GET</td><td>校验 state → code 换 token → token 换 profile → upsert 用户 → 签发本地 JWT</td></tr>
+    <tr><td><code>/api/login_gcac/logout</code></td><td>GET</td><td>清 Cookie → 302 跳转 GCAC 单点登出</td></tr>
+  </table>
+
+  <div class="case">
+    <span class="tag">CASE 2-1　OAuth State 防重放（CSRF 防护）</span>
+    <p>登录回调最常见的攻击是<b>重放 / CSRF</b>：攻击者诱导用户携带伪造的 <code>code</code> 完成回调。我们用一次性 <code>state</code> 令牌防御——授权阶段生成、回调阶段原子消费，无法二次使用。</p>
+    <p class="path">infra/auth/state/OAuthStateStore.java</p>
+<pre><span class="c">// 生成：24 字节 SecureRandom，Base64URL 编码，落 Redis，TTL 600s</span>
+<span class="k">public</span> String <span class="a">issue</span>(Duration ttl) {
+    <span class="k">byte</span>[] bytes = <span class="k">new</span> <span class="k">byte</span>[<span class="a">24</span>];
+    RNG.nextBytes(bytes);                       <span class="c">// SecureRandom，密码学安全随机</span>
+    String state = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    redisson.getBucket(<span class="s">"gcac:state:"</span> + state).set(<span class="s">"1"</span>, ttl);
+    <span class="k">return</span> state;
+}
+
+<span class="c">// 消费：原子删除，命中返回 true 并立即失效（一次性令牌）</span>
+<span class="k">public</span> <span class="k">boolean</span> <span class="a">consume</span>(String state) {
+    <span class="k">return</span> redisson.getBucket(<span class="s">"gcac:state:"</span> + state).delete();
+}</pre>
+    <p>回调入口先做 <code>consume(state)</code>，未命中（已用过 / 过期 / 伪造）直接拒绝，<b>从根上阻断重放</b>。明确否定了历史实现里"固定 state 字符串"的做法。</p>
+  </div>
+
+  <div class="case">
+    <span class="tag">CASE 2-2　client_secret 不出现在 URL</span>
+    <p>code 换 token 时使用 <b>form-body POST</b> 传递 <code>client_secret</code>（Hutool HttpRequest），而非拼到 query string，避免密钥落入网关访问日志、浏览器历史。<code>client_secret</code> 通过 K8s Secret 注入，配置项 <code>gcac.client-secret</code> 默认值为空，强制生产环境显式注入。</p>
+  </div>
+
+  <!-- ============ 3 ============ -->
+  <h2 id="s3"><span class="num">03</span>会话：JWT + HttpOnly Cookie <span class="badge b-ok">已实现</span></h2>
+
+  <p>登录成功后签发本地 JWT 作为会话凭证，写入 HttpOnly Cookie。算法 <b>HS256（HMAC-SHA256）</b>，密钥要求 ≥32 字节 UTF-8（与同 SSO 域 Java/Go 服务共享，便于跨语言互通）。Claims 仅含 <code>uuid / account / roles</code> 三个字段，默认 24 小时过期。</p>
+
+  <div class="case">
+    <span class="tag">CASE 3-1　Cookie 三重安全属性抵御 XSS / 嗅探 / CSRF</span>
+    <p class="path">adapter/auth/AuthController.java · infra/auth/token/JwtProperties.java</p>
+<pre>ResponseCookie.from(jwtProps.getCookieName(), jwt)   <span class="c">// session_token</span>
+    .httpOnly(<span class="k">true</span>)                 <span class="c">// ① JS 读不到 → 抵御 XSS 盗取会话</span>
+    .secure(jwtProps.isCookieSecure())   <span class="c">// ② 仅 HTTPS 传输 → 抵御明文嗅探</span>
+    .sameSite(jwtProps.getCookieSameSite())<span class="c">// ③ 跨站策略（跨域部署用 None）</span>
+    .path(<span class="s">"/"</span>).maxAge(expirationHours * <span class="a">3600</span>L).build();</pre>
+    <table>
+      <tr><th>属性</th><th>取值</th><th>防御目标</th></tr>
+      <tr><td><code>HttpOnly</code></td><td>true</td><td>XSS 脚本无法 <code>document.cookie</code> 窃取令牌</td></tr>
+      <tr><td><code>Secure</code></td><td>true（生产）</td><td>令牌只在 HTTPS 信道传输，防中间人嗅探</td></tr>
+      <tr><td><code>SameSite</code></td><td>None（跨域）/ Lax</td><td>配合 CORS 白名单，限制跨站自动携带</td></tr>
+    </table>
+    <div class="note"><b>密钥治理：</b><code>app.auth.jwt.secret</code> 通过 K8s Secret / Apollo 注入，默认占位值为 <code>please-set-jwt-secret-at-least-32-bytes-in-prod</code>，<b>禁止明文落 git</b>。密钥支持 Apollo 热更。</div>
+  </div>
+
+  <!-- ============ 4 ============ -->
+  <h2 id="s4"><span class="num">04</span>接口鉴权：过滤器链 + RBAC <span class="badge b-ok">已实现</span></h2>
+
+  <p>每个受保护请求在进入 Controller 前，必须通过 <span class="path">adapter/security/JwtAuthenticationFilter.java</span>（执行顺序 <code>HIGHEST_PRECEDENCE + 5</code>，最优先）。该过滤器是接口鉴权的<b>第一道闸门</b>。</p>
+
+  <div class="case">
+    <span class="tag">CASE 4-1　五步认证：401 与 403 精确区分</span>
+<pre><span class="k">protected void</span> <span class="a">doFilterInternal</span>(req, resp, chain) {
+    String path = req.getRequestURI();
+
+    <span class="c">// 1) 公开路径直通：登录、健康检查、错误页</span>
+    <span class="k">if</span> (routeRoleMapping.isPublic(path)) { chain.doFilter(req, resp); <span class="k">return</span>; }
+
+    <span class="c">// 2) 从 Cookie 提取 session_token；缺失 → 401</span>
+    String token = extractToken(req);
+    <span class="k">if</span> (token == <span class="k">null</span>) { writeError(resp, UNAUTHORIZED, <span class="s">"missing token"</span>); <span class="k">return</span>; }
+
+    <span class="c">// 3) 解析 JWT；失败 → 写审计 + 401</span>
+    UserClaims claims;
+    <span class="k">try</span> { claims = tokenIssuer.parse(token); }
+    <span class="k">catch</span> (BusinessException e) {
+        audit.recordAccessDenied(<span class="k">null</span>, path, <span class="s">"invalid_token"</span>);
+        writeError(resp, UNAUTHORIZED, <span class="s">"invalid token"</span>); <span class="k">return</span>;
+    }
+
+    <span class="c">// 4) RBAC：路径所需角色与用户角色取交集；不足 → 写审计 + 403</span>
+    <span class="k">if</span> (!routeRoleMapping.allow(path, claims.getRoles())) {
+        audit.recordAccessDenied(claims.getAccount(), path, <span class="s">"role_insufficient"</span>);
+        writeError(resp, FORBIDDEN, <span class="s">"insufficient permissions"</span>); <span class="k">return</span>;
+    }
+
+    <span class="c">// 5) 身份注入 ThreadLocal，请求结束 finally 清理</span>
+    UserContextHolder.set(UserContext.builder()
+        .userId(claims.getAccount()).roles(claims.getRoles()).build());
+    <span class="k">try</span> { chain.doFilter(req, resp); } <span class="k">finally</span> { UserContextHolder.clear(); }
+}</pre>
+    <ul>
+      <li><b>401 Unauthorized</b>：令牌缺失 / 非法 / 过期——身份不可信。</li>
+      <li><b>403 Forbidden</b>：身份可信但角色不足——权限不够。</li>
+      <li>两类拒绝都<b>落审计日志</b>（含 path、account、原因），可用于非法访问追踪与暴破检测。</li>
+    </ul>
+  </div>
+
+  <div class="case">
+    <span class="tag">CASE 4-2　路径-角色映射表 RouteRoleMapping</span>
+    <p class="path">adapter/security/RouteRoleMapping.java</p>
+    <p>采用 <b>Ant 风格路径匹配</b>的集中式映射，避免权限规则散落在各 Controller：</p>
+<pre><span class="c">// 公开路径：完全不走 JWT 校验</span>
+PUBLIC_PATHS = [ <span class="s">"/api/login_gcac/**"</span>, <span class="s">"/actuator/**"</span>,
+                <span class="s">"/error"</span>, <span class="s">"/favicon.ico"</span> ];
+
+<span class="c">// 角色映射：命中则要求角色交集；未登记路径 → 仅要求"已认证"</span>
+<span class="k">public boolean</span> <span class="a">allow</span>(String path, List&lt;String&gt; userRoles) {
+    <span class="k">for</span> (entry : mappings()) {
+        <span class="k">if</span> (MATCHER.match(entry.getKey(), path)) {
+            List&lt;String&gt; required = entry.getValue();
+            <span class="k">if</span> (required.isEmpty()) <span class="k">return true</span>;          <span class="c">// 任意已认证用户</span>
+            <span class="k">return</span> userRoles.stream().anyMatch(required::contains);
+        }
+    }
+    <span class="k">return true</span>;  <span class="c">// 未登记 → 默认仅需已认证（白名单显式收口）</span>
+}</pre>
+    <p>角色体系按 PRD 定义为 <code>admin / editor / viewer</code> 三档；AD 账号到角色的映射由 <code>app.auth.role-assignments</code> 配置驱动。</p>
+    <div class="note"><b>演进项：</b>SECURITY.md 规划的<b>方法级 <code>@RequirePermission(Role.EDITOR)</code> 注解 + AOP 拦截 + ArchUnit 强制</b>（写接口必须显式标注角色，否则编译期 fail）为下一步细化方向；当前以路径映射表统一收口，资源级权限（如"只能改自己创建的 Agent"）列入 v0.2。</div>
+  </div>
+
+  <div class="card">
+    <h4>兜底过滤器与上下文清理</h4>
+    <p><span class="path">UserContextFilter.java</span>（顺序 +10，跑在 JWT 之后）负责初始化 <code>X-Trace-Id</code> 链路 ID，并在 JWT 未注入身份时从 <code>X-User-Id</code> Header 兜底（服务间调用 / 本地 dev）。所有上下文（User / Workspace / Trace）均存于 <b>ThreadLocal</b>，在 <code>finally</code> 中强制 <code>clear()</code>，<b>防止线程池复用导致的身份串号泄漏</b>。</p>
+  </div>
+
+  <!-- ============ 5 ============ -->
+  <h2 id="s5"><span class="num">05</span>数据隔离：工作空间多租户 <span class="badge b-ok">已实现</span></h2>
+
+  <p>平台以<b>工作空间（Workspace）</b>为数据隔离边界：Agent、Skill 等资产都归属某个工作空间，用户只能访问自己是管理员或成员的空间。隔离通过"<b>拦截器准入 + 应用层归属校验 + 数据库列过滤</b>"三层联合实现，单层失效仍有后续兜底。</p>
+
+  <div class="case">
+    <span class="tag">CASE 5-1　拦截器准入：非成员 403</span>
+    <p class="path">adapter/config/WorkspaceContextInterceptor.java</p>
+<pre><span class="k">public boolean</span> <span class="a">preHandle</span>(request, response, handler) {
+    String workspaceNum = request.getHeader(<span class="s">"X-Workspace-Num"</span>);
+    <span class="k">if</span> (StrUtil.isBlank(workspaceNum)) <span class="k">return true</span>;  <span class="c">// 无空间头，交下游按 num 校验</span>
+
+    String empNo = UserContextHolder.currentUserId();
+    <span class="k">if</span> (StrUtil.isBlank(empNo)) <span class="k">throw new</span> BusinessException(UNAUTHORIZED, <span class="s">"未登录"</span>);
+
+    <span class="c">// 查调用者在该空间的角色：ADMIN / MEMBER / null（非成员）</span>
+    String role = workspaceQueryService.getMyRole(workspaceNum, empNo);
+    <span class="k">if</span> (role == <span class="k">null</span>) <span class="k">throw new</span> BusinessException(FORBIDDEN, <span class="s">"无权访问该空间"</span>);
+
+    WorkspaceContextHolder.set(WorkspaceContext.builder()
+        .workspaceNum(workspaceNum).role(role).member(<span class="k">true</span>).build());
+    <span class="k">return true</span>;
+}</pre>
+    <p>注册在 <code>/api/v1/workspace/**</code>、<code>/api/v1/agents/**</code>、<code>/api/v1/skill/**</code>，排除 <code>list</code> / <code>create</code>。<code>afterCompletion</code> 中 <code>WorkspaceContextHolder.clear()</code> 防泄漏。</p>
+  </div>
+
+  <div class="case">
+    <span class="tag">CASE 5-2　应用层归属二次校验：防越权读取</span>
+    <p>即使请求头通过准入，应用层在读取具体资源时仍会校验<b>请求空间与资源归属是否一致</b>，阻断"伪造他人资源 num"的水平越权。</p>
+    <p class="path">application/skill/SkillQueryService.java · application/agent/AgentQueryService.java</p>
+<pre><span class="c">// 跨空间访问拦截：传入空间号与资源实际归属不一致 → 拒绝</span>
+<span class="k">if</span> (StrUtil.isNotBlank(workspaceNum)
+        &amp;&amp; !workspaceNum.equals(entity.getWorkspaceNum())) {
+    <span class="k">throw new</span> BusinessException(FORBIDDEN, <span class="s">"无权访问该空间的 Skill"</span>);
+}</pre>
+  </div>
+
+  <div class="case">
+    <span class="tag">CASE 5-3　数据库列级隔离</span>
+    <p>所有资产表带 <code>workspace_num</code> 列与联合索引，列表查询自动附加该过滤条件，从存储层兜住隔离：</p>
+<pre><span class="c">-- schema 迁移：每张资产表都加 workspace_num + 索引</span>
+ALTER TABLE agent ADD COLUMN workspace_num VARCHAR(64) NOT NULL
+    DEFAULT <span class="s">'WS-DEFAULT'</span> COMMENT <span class="s">'归属工作空间业务编号'</span>,
+    ADD KEY idx_agent_workspace (workspace_num, deleted);
+
+<span class="c">// 应用层查询自动带空间过滤</span>
+wrapper.eq(StrUtil.isNotBlank(workspaceNum),
+           AgentEntity::getWorkspaceNum, workspaceNum);</pre>
+    <p>成员关系存于 <code>workspace</code> 表的 <code>admin_list</code> / <code>member_list</code> JSON 列；<code>getMyRole()</code> 据此判定 ADMIN / MEMBER / 非成员。此外业务 schema（<code>rd_agent</code>）与 platform schema <b>物理隔离</b>，从库级别隔断越界访问。</p>
+  </div>
+
+  <!-- ============ 6 ============ -->
+  <h2 id="s6"><span class="num">06</span>输入校验与防注入 <span class="badge b-ok">已实现</span></h2>
+
+  <p>遵循"<b>边界处解析（Parse, don't validate）</b>"原则：在 HTTP 入口把输入解析成强类型并校验，进入业务层后即假定数据合法。</p>
+
+  <div class="case">
+    <span class="tag">CASE 6-1　Bean Validation 入口校验</span>
+    <p>Controller 用 <code>@Valid</code> 触发 Bean Validation，Param 上声明约束注解。校验失败由全局异常处理统一转 <code>INVALID_PARAM</code>。</p>
+<pre><span class="c">// client 层 Param 声明约束</span>
+<span class="k">public class</span> SkillCreateParam {
+    <span class="a">@NotBlank</span>(message = <span class="s">"name 不能为空"</span>) <span class="k">private</span> String name;
+    <span class="a">@NotBlank</span>(message = <span class="s">"agentType 不能为空"</span>) <span class="k">private</span> String agentType;
+}
+
+<span class="c">// adapter 层 Controller 用 @Valid 触发</span>
+<span class="a">@PostMapping</span>(<span class="s">"/create"</span>)
+<span class="k">public</span> Result&lt;SkillVo&gt; <span class="a">create</span>(<span class="a">@Valid @RequestBody</span> SkillCreateParam param) {
+    String operatorId = getCurrentUserId();  <span class="c">// 操作人取自 ThreadLocal，永不信任前端传入</span>
+    ...
+}</pre>
+  </div>
+
+  <div class="case">
+    <span class="tag">CASE 6-2　SQL 注入防护：全量参数化</span>
+    <p>持久层统一用 <b>MyBatis-Plus</b>，所有查询走 <code>LambdaQueryWrapper</code> 或注解参数绑定，<b>禁止字符串拼接 SQL</b>（由 ArchUnit 架构守卫机械检查）。参数化预编译从根本上消除 SQL 注入。</p>
+    <p>同时全表启用<b>逻辑删除</b>（<code>deleted</code> 字段），查询自动过滤 <code>deleted=0</code>，避免物理删除导致的数据不可追溯。</p>
+  </div>
+
+  <div class="note"><b>XSS 防护：</b>Prompt / Skill 内容作为纯字符串存储，<b>不做 HTML 渲染</b>（编辑器与调试台均用 textarea 展示），从源头规避存储型 XSS。操作人 ID 等敏感身份字段<b>一律从服务端 ThreadLocal 读取，绝不采信前端入参</b>，防止越权伪造操作者。</div>
+
+  <!-- ============ 7 ============ -->
+  <h2 id="s7"><span class="num">07</span>密钥安全：加密存储与脱敏</h2>
+
+  <p>平台涉及两类敏感密钥：① 业务侧的<b>模型供应商密钥</b> <code>ConfigSnapshot.modelApiKey</code>；② 对外开放调用的 <b>Agent API Key（<code>ak-</code> 前缀）</b>。两者统一遵循"<b>加密存储、绝不存明文、出参掩码、按需解密</b>"的密钥治理原则（2026-06-04 Agent 优化 v1.1）。加解密能力收敛在 <span class="path">infra/common/security/SecretCipher.java</span>，全局复用。</p>
+
+  <div class="case">
+    <span class="tag">CASE 7-1　模型密钥 SecretCipher 加密存储 + 出参脱敏</span>
+    <p>模型密钥 <code>modelApiKey</code> 通过 <code>SecretCipher</code> 加密后落库，<b>数据库中不存明文</b>；运行时在 <code>OpenAiChatModelFactory</code> / <code>ConfigAgentBuilder</code> 中按需解密再调 LLM。面向前端的详情/版本出参再叠加一层掩码，双重保护。</p>
+    <p class="path">infra/common/security/SecretCipher.java · application/agent/AgentQueryService.java</p>
+<pre><span class="c">// ① 写入：加密落库（绝不存明文）</span>
+entity.setModelApiKey(secretCipher.encrypt(plainKey));
+
+<span class="c">// ② 运行时：按需解密后调用 LLM</span>
+String real = secretCipher.decrypt(entity.getModelApiKey());
+
+<span class="c">// ③ 出参：面向前端再掩码（detail / versionList / 版本详情 三处）</span>
+<span class="k">private void</span> <span class="a">maskApiKey</span>(Map&lt;String,Object&gt; snapshot) {
+    Object apiKey = snapshot.get(<span class="s">"modelApiKey"</span>);
+    <span class="k">if</span> (apiKey != <span class="k">null</span> &amp;&amp; !apiKey.toString().isEmpty()) {
+        snapshot.put(<span class="s">"modelApiKey"</span>, <span class="s">"***"</span>);
+    }
+}</pre>
+    <p>"加密存储 + 出参掩码"形成纵深：即便出参脱敏被绕过，库内仍是密文；即便密文被读取，无密钥不可解。</p>
+  </div>
+
+  <div class="case">
+    <span class="tag">CASE 7-2　Agent API Key：hash 认证 + cipher 可逆 + prefix 掩码（三件套）</span>
+    <p>对外开放接口用 Agent 自己签发的 API Key（<code>ak-</code> 前缀）认证。一把 Key 在库内拆成<b>三个派生物</b>，认证、展示、可逆解耦：</p>
+    <p class="path">domain/agent/AgentApiKey.java · infra/agent/factory/AgentApiKeyFactoryImpl.java</p>
+    <table>
+      <tr><th>字段</th><th>算法</th><th>用途</th></tr>
+      <tr><td><code>key_hash</code></td><td>SHA-256（不可逆）</td><td>认证比对：请求来的 Key 算 hash 查库，命中即通过——<b>库内无明文也能验真</b></td></tr>
+      <tr><td><code>key_cipher</code></td><td>SecretCipher（可逆）</td><td>"小眼睛"按需解密展示/复制，单条解密接口取明文</td></tr>
+      <tr><td><code>key_prefix</code></td><td>截断掩码</td><td>列表只回前缀掩码，<b>列表接口绝不返回密文/明文</b></td></tr>
+    </table>
+    <p>约束：单 Agent ≤50 把；<code>key_hash</code> 全局唯一索引兜底；逻辑删除即认证失效；查看/删除强制校验 <code>key.agentNum</code> 与路径一致（防越权操作他人密钥）。</p>
+  </div>
+
+  <div class="case">
+    <span class="tag">CASE 7-3　对外接口 Bearer 密钥认证（独立于 SSO 平面）</span>
+    <p>对外 4 个开放接口（<code>/open/**</code>）不走 SSO Cookie，而用 <code>Authorization: Bearer ak-...</code> 头认证，由独立的<b>秘钥过滤器</b>处理：取 Bearer Key → 算 SHA-256 → <code>findByKeyHash</code> 查库 → 命中且未删除则放行并绑定 Agent 身份。机机调用与人机登录态彻底分离，互不污染。</p>
+<pre>Authorization: Bearer ak-xxxxxxxx
+        │
+        ▼  秘钥过滤器
+SHA-256(key) ──▶ AgentApiKeyReadGateway.findByKeyHash()
+        │ 命中且 deleted=0
+        ▼
+放行 + 绑定 agentNum 身份；touchUsed() 记录最近使用</pre>
+  </div>
+
+  <h3>7.4 基础设施凭据管理 <span class="badge b-ok">已实现</span></h3>
+  <p>数据库密码、JWT 密钥、GCAC <code>client_secret</code>、<code>X-Service-Token</code>、OSS AK/SK 等<b>全部通过环境变量 / K8s Secret 注入</b>，配置文件中只保留 <code>${ENV_VAR}</code> 占位符，<b>密钥不进代码、不进 git</b>。</p>
+<pre>datasource.password:        ${DB_PASSWORD:root}
+app.auth.jwt.secret:        ${JWT_SECRET:please-set-...-in-prod}
+gcac.client-secret:         ${GCAC_CLIENT_SECRET:}      <span class="c"># 默认空，强制注入</span>
+oss.access-key:             ${OSS_ACCESS_KEY:...}</pre>
+
+  <h3>7.5 日志脱敏约束</h3>
+  <p>安全红线规定：JWT 完整内容、<code>X-Service-Token</code>、GCAC <code>client_secret</code> / <code>access_token</code>、数据库密码、Apollo secret 类配置<b>禁止落日志</b>；工号/邮箱/姓名因审计需要允许记录。
+  <span class="badge b-plan">演进项</span> 统一的 <code>LogSanitizer</code> 拦截工具待落地（当前靠规范约束 + 代码评审保障）。</p>
+
+  <!-- ============ 8 ============ -->
+  <h2 id="s8"><span class="num">08</span>文件存储安全 <span class="badge b-ok">已实现</span></h2>
+
+  <p>文件不经过后端中转，采用 <b>OSS 预签名 URL（Presigned URL）</b>方案：后端只签发短期有效的临时凭据，前端直传/直取 OSS。后端不持有文件字节，前端不持有 OSS 长期密钥，双向收敛泄露面。</p>
+
+  <div class="case">
+    <span class="tag">CASE 8-1　预签名 URL：短时凭据 + UUID 路径隔离</span>
+    <p class="path">infra/common/client/oss/OssClient.java</p>
+<pre><span class="c">// 上传：生成 PUT 预签名，Content-Type 算进签名，10 分钟过期</span>
+String fileId = baseDir + <span class="s">"/file"</span> + IdUtil.fastSimpleUUID() + <span class="s">"/"</span> + fileName;
+PutObjectRequest req = PutObjectRequest.newBuilder()
+    .bucket(bucketName).key(fileId)
+    .contentType(resolveContentType(fileName)).build();   <span class="c">// 类型绑定进签名</span>
+PresignResult r = client.presign(req, PresignOptions.newBuilder()
+    .expiration(Duration.ofMinutes(uploadExpirationMinutes)).build());</pre>
+    <table>
+      <tr><th>安全特性</th><th>实现</th></tr>
+      <tr><td>临时凭据</td><td>预签名 URL 默认 10 分钟过期，过期即失效</td></tr>
+      <tr><td>密钥不下发</td><td>前端不接触 OSS AK/SK，签名在后端完成</td></tr>
+      <tr><td>内容绑定</td><td>Content-Type 计入签名，前端上传类型必须匹配</td></tr>
+      <tr><td>路径隔离</td><td>每文件 UUID 子目录，防目录遍历 / 文件名碰撞</td></tr>
+    </table>
+  </div>
+
+  <div class="note"><b>演进项：</b>若后续开放用户文件上传，需补齐<b>类型白名单 + 大小限制 + 病毒扫描 + 独立 bucket 隔离</b>（MVP 阶段 prompt 为纯文本，暂不支持上传）。</div>
+
+  <!-- ============ 9 ============ -->
+  <h2 id="s9"><span class="num">09</span>审计日志 <span class="badge b-ok">已实现</span></h2>
+
+  <h3>9.1 实体级审计字段</h3>
+  <p>所有领域实体继承 <span class="path">facade/domain/DomainEntity.java</span>，强制携带四个审计字段，<code>initialize()</code> 自动维护：</p>
+<pre><span class="k">public abstract class</span> DomainEntity {
+    <span class="k">protected</span> String createNo;        <span class="c">// 创建人工号</span>
+    <span class="k">protected</span> String updateNo;        <span class="c">// 最后操作人工号</span>
+    <span class="k">protected</span> LocalDateTime createTime; <span class="c">// 首次创建时间（不再覆盖）</span>
+    <span class="k">protected</span> LocalDateTime updateTime; <span class="c">// 每次操作刷新</span>
+
+    <span class="k">public void</span> <span class="a">initialize</span>(String operatorId) {
+        <span class="k">this</span>.createNo = <span class="k">this</span>.createNo == <span class="k">null</span> ? operatorId : <span class="k">this</span>.createNo;
+        <span class="k">this</span>.updateNo = operatorId;   <span class="c">// 操作人来自 ThreadLocal 身份</span>
+        ...
+    }
+}</pre>
+
+  <h3>9.2 领域事件审计 + 认证审计</h3>
+  <p>关键写操作发布<b>领域事件</b>（<code>AGENT_CREATED</code> / <code>AGENT_VERSION_PUBLISHED</code> / <code>SKILL_SAVED</code> / <code>WORKSPACE_*</code> 等，事件携带 <code>operatorId</code> 与时间戳）。认证侧由 <span class="path">infra/auth/audit/AuthAuditHelper.java</span> 记录 <code>LOGIN_SUCCESS / LOGIN_FAILED / ACCESS_DENIED / LOGOUT</code> 四类事件，统一前缀 <code>AUTH_AUDIT</code>，并与请求 <code>trace_id</code> 贯通，可在 ELK/SLS 检索关联。</p>
+  <div class="note"><b>演进项：</b>审计当前以结构化日志承载，规划接入<b>审计表落库</b>（append-only），保留期 1 年（待安全合规确认）。A2A 同步历史表 <code>a2a_sync_history</code> 已是无 <code>deleted</code> 字段的 append-only 审计表。</div>
+
+  <!-- ============ 10 ============ -->
+  <h2 id="s10"><span class="num">10</span>异常处理与信息收敛 <span class="badge b-ok">已实现</span></h2>
+
+  <p><span class="path">adapter/config/GlobalExceptionHandler.java</span> 用 <code>@RestControllerAdvice</code> 统一收口，避免堆栈、SQL 等内部细节直接暴露给前端，并统一携带 <code>traceId</code> 便于排障。</p>
+  <table>
+    <tr><th>异常类型</th><th>返回码</th><th>处理</th></tr>
+    <tr><td>参数校验类（<code>MethodArgumentNotValid</code> / <code>Constraint</code> / <code>IllegalArgument</code>）</td><td>INVALID_PARAM</td><td><code>warn</code> 级日志 + 校验消息</td></tr>
+    <tr><td><code>BusinessException</code></td><td>业务码（如 UNAUTHORIZED / FORBIDDEN）</td><td><code>warn</code> 级日志 + 业务消息</td></tr>
+    <tr><td>未捕获 <code>Exception</code></td><td>SYSTEM_BUSY</td><td><code>error</code> 全堆栈落服务端，前端只见"系统繁忙"</td></tr>
+  </table>
+
+  <h3>10.1 CORS 跨域白名单</h3>
+  <p><span class="path">adapter/config/CorsConfig.java</span>：因使用 Cookie 携带凭证，<code>allowCredentials=true</code>，此时 <b>origin 必须显式列举，禁用通配 <code>*</code></b>。生产环境必须在 <code>application-prod.yml</code> 覆盖为业务域名。</p>
+<pre>registry.addMapping(<span class="s">"/**"</span>)
+    .allowedOrigins(allowedOrigins.split(<span class="s">","</span>))  <span class="c">// 显式白名单，不可为 *</span>
+    .allowedMethods(<span class="s">"GET"</span>,<span class="s">"POST"</span>,<span class="s">"PUT"</span>,<span class="s">"DELETE"</span>,<span class="s">"OPTIONS"</span>)
+    .exposedHeaders(<span class="s">"X-Trace-Id"</span>)
+    .allowCredentials(<span class="k">true</span>).maxAge(<span class="a">3600</span>);</pre>
+
+  <!-- ============ 11 ============ -->
+  <h2 id="s11"><span class="num">11</span>威胁模型与缓解</h2>
+  <table>
+    <tr><th>威胁场景</th><th>潜在影响</th><th>缓解措施</th><th>状态</th></tr>
+    <tr><td>OAuth 回调重放 / CSRF</td><td>会话劫持</td><td>一次性 state（SecureRandom + Redis 原子消费，TTL 600s）</td><td><span class="badge b-ok">已实现</span></td></tr>
+    <tr><td>XSS 窃取会话令牌</td><td>账号被盗</td><td>HttpOnly Cookie + 内容不渲染 HTML</td><td><span class="badge b-ok">已实现</span></td></tr>
+    <tr><td>令牌明文嗅探</td><td>会话泄露</td><td>Secure Cookie + 全链路 HTTPS</td><td><span class="badge b-ok">已实现</span></td></tr>
+    <tr><td>水平越权（访问他人空间资源）</td><td>数据泄露</td><td>拦截器准入 + 应用层归属校验 + DB 列过滤（三层）</td><td><span class="badge b-ok">已实现</span></td></tr>
+    <tr><td>SQL 注入</td><td>拖库</td><td>MyBatis-Plus 全参数化 + ArchUnit 禁拼接</td><td><span class="badge b-ok">已实现</span></td></tr>
+    <tr><td>模型 API Key 经接口泄露</td><td>密钥被盗刷</td><td>SecretCipher 加密存储 + 出参掩码为 <code>***</code></td><td><span class="badge b-ok">已实现</span></td></tr>
+    <tr><td>Agent API Key 库内泄露</td><td>对外接口被冒用</td><td>仅存 SHA-256 hash（认证）+ 可逆 cipher + 前缀掩码，列表不回明文</td><td><span class="badge b-ok">已实现</span></td></tr>
+    <tr><td>Internal API 被外部访问</td><td>prompt 泄露</td><td>URL 前缀 SecurityFilter + K8s NetworkPolicy</td><td><span class="badge b-ok">已实现</span></td></tr>
+    <tr><td><code>X-Service-Token</code> 泄露</td><td>批量拉取 prompt</td><td>K8s Secret 存储 + 泄露即轮换；v0.2 升级 mTLS</td><td><span class="badge b-plan">部分</span></td></tr>
+    <tr><td>be↔sphere 流量嗅探</td><td>prompt 截获</td><td>K8s NetworkPolicy 限源 + 内网 HTTPS</td><td><span class="badge b-plan">网络层</span></td></tr>
+    <tr><td>调试台滥用跑高 token Agent</td><td>成本爆炸</td><td>用户级 QPS / 日预算限流（字段已就位）</td><td><span class="badge b-plan">v0.2</span></td></tr>
+  </table>
+
+  <!-- ============ 12 ============ -->
+  <h2 id="s12"><span class="num">12</span>已实现能力清单与演进规划</h2>
+
+  <h3>12.1 已实现安全能力</h3>
+  <table>
+    <tr><th>防护层</th><th>机制</th><th>关键实现类</th></tr>
+    <tr><td>认证</td><td>GCAC OAuth2 SSO + state 防重放</td><td>AuthController / GcacLoginService / OAuthStateStore</td></tr>
+    <tr><td>对外接口认证</td><td>Agent API Key（Bearer）SHA-256 hash 校验</td><td>秘钥过滤器 / AgentApiKeyReadGateway</td></tr>
+    <tr><td>会话</td><td>JWT(HS256) + HttpOnly/Secure/SameSite Cookie</td><td>JwtTokenProviderImpl / JwtProperties</td></tr>
+    <tr><td>接口鉴权</td><td>过滤器链 + 路径级 RBAC（401/403 区分）</td><td>JwtAuthenticationFilter / RouteRoleMapping</td></tr>
+    <tr><td>数据隔离</td><td>工作空间三层隔离（拦截器/应用层/DB 列）</td><td>WorkspaceContextInterceptor / *QueryService</td></tr>
+    <tr><td>输入校验</td><td>Bean Validation + 全局异常收口</td><td>@Valid / GlobalExceptionHandler</td></tr>
+    <tr><td>防注入</td><td>MyBatis-Plus 参数化 + ArchUnit 守卫</td><td>各 Mapper / LambdaQueryWrapper</td></tr>
+    <tr><td>敏感脱敏</td><td>模型密钥 SecretCipher 加密存储 + 出参掩码 ***</td><td>SecretCipher / AgentQueryService.maskApiKey</td></tr>
+    <tr><td>凭据管理</td><td>K8s Secret / 环境变量注入，零明文入库</td><td>application.yml ${ENV}</td></tr>
+    <tr><td>文件安全</td><td>OSS 预签名 URL（短时 + UUID 隔离）</td><td>OssClient</td></tr>
+    <tr><td>审计</td><td>实体审计字段 + 领域事件 + 认证审计</td><td>DomainEntity / AuthAuditHelper</td></tr>
+    <tr><td>跨域</td><td>CORS 显式白名单（禁 *）</td><td>CorsConfig</td></tr>
+    <tr><td>上下文隔离</td><td>ThreadLocal try-finally 强制清理</td><td>UserContextFilter 等</td></tr>
+  </table>
+
+  <h3>12.2 演进规划</h3>
+  <table>
+    <tr><th>项</th><th>当前状态</th><th>计划</th></tr>
+    <tr><td>方法级 @RequirePermission 注解 + AOP + ArchUnit 强制</td><td>路径级 RBAC</td><td>v0.2</td></tr>
+    <tr><td>资源级权限（仅可操作自有资源）</td><td>空间内成员共享</td><td>v0.2</td></tr>
+    <tr><td>QPS / 日预算限流落地</td><td>配置字段已就位</td><td>v0.2</td></tr>
+    <tr><td>审计表落库 + 查询 UI</td><td>结构化日志</td><td>v0.2</td></tr>
+    <tr><td>LogSanitizer 日志脱敏拦截</td><td>规范约束</td><td>—</td></tr>
+    <tr><td>服务间 mTLS</td><td>X-Service-Token + NetworkPolicy</td><td>v0.3</td></tr>
+    <tr><td>第三方依赖漏洞扫描（Dependabot/Snyk）</td><td>未接入</td><td>—</td></tr>
+  </table>
+
+  <h3>12.3 生产上线安全检查清单</h3>
+  <ul>
+    <li>☐ <code>JWT_SECRET</code> ≥32 字节，K8s Secret / Apollo 注入，<b>不明文落 git</b></li>
+    <li>☐ <code>GCAC_CLIENT_SECRET</code> 走 K8s Secret</li>
+    <li>☐ <code>COOKIE_SECURE=true</code>（HTTPS 环境）</li>
+    <li>☐ CORS <code>allowed-origins</code> 显式配为业务域名，<b>禁止 *</b></li>
+    <li>☐ <code>SPRING_PROFILES_ACTIVE=prod</code>，关闭 <code>disable-auth</code> 本地开关</li>
+    <li>☐ K8s NetworkPolicy 限制 be→sphere、platform→be internal 流量</li>
+    <li>☐ <code>X-Service-Token</code> 走 K8s Secret，建立轮换机制</li>
+    <li>☐ AUTH_AUDIT 审计日志已接入 ELK / SLS 监控告警</li>
+  </ul>
+
+  <footer>
+    <p>本文档基于 <code>rd-agent-be</code> 现有代码实现编写，所有 case 均对应仓库内真实存在的类与方法。标注 <span class="badge b-plan">规划/演进</span> 的能力为设计目标，尚未在当前代码中落地，上线评审时以代码实际状态为准。</p>
+    <p>编写日期 2026-06-04 · garry研发流程管理部 · 内部文档</p>
+  </footer>
+
+</div>
+</body>
+</html>

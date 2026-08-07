@@ -1,0 +1,1123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgentOps 用户使用手册</title>
+<style>
+  :root {
+    --primary: #2B52D9;
+    --primary-light: #EEF1FB;
+    --text: #1E293B;
+    --text-secondary: #64748B;
+    --border: #E2E8F0;
+    --bg: #F8FAFC;
+    --white: #FFFFFF;
+    --success: #10B981;
+    --warning: #F59E0B;
+    --danger: #EF4444;
+    --info: #3B82F6;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; color: var(--text); line-height: 1.7; background: var(--bg); }
+
+  .sidebar { position: fixed; top: 0; left: 0; width: 280px; height: 100vh; background: var(--white); border-right: 1px solid var(--border); overflow-y: auto; z-index: 100; }
+  .sidebar-header { padding: 24px 20px; border-bottom: 1px solid var(--border); }
+  .sidebar-logo { display: flex; align-items: center; gap: 12px; }
+  .sidebar-logo .icon { width: 36px; height: 36px; background: var(--primary); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; font-size: 18px; }
+  .sidebar-logo .title { font-size: 18px; font-weight: 700; color: var(--text); }
+  .sidebar-logo .subtitle { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+  .sidebar-nav { padding: 12px 0; }
+  .sidebar-nav h4 { padding: 8px 20px 4px; font-size: 11px; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.5px; font-weight: 600; }
+  .sidebar-nav a { display: block; padding: 8px 20px; color: var(--text-secondary); text-decoration: none; font-size: 14px; transition: all 0.15s; border-left: 3px solid transparent; }
+  .sidebar-nav a:hover { background: var(--bg); color: var(--primary); }
+  .sidebar-nav a.active { background: var(--primary-light); color: var(--primary); border-left-color: var(--primary); font-weight: 600; }
+  .sidebar-nav a.sub { padding-left: 36px; font-size: 13px; }
+
+  .main { margin-left: 280px; min-height: 100vh; }
+  .topbar { position: sticky; top: 0; background: rgba(255,255,255,0.9); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); padding: 16px 48px; z-index: 50; }
+  .topbar h1 { font-size: 22px; font-weight: 700; }
+  .topbar .breadcrumb { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+
+  .content { padding: 32px 48px 80px; max-width: 960px; }
+  .content h2 { font-size: 24px; font-weight: 700; margin: 48px 0 16px; padding-bottom: 8px; border-bottom: 2px solid var(--primary); color: var(--text); }
+  .content h2:first-child { margin-top: 0; }
+  .content h3 { font-size: 18px; font-weight: 600; margin: 32px 0 12px; color: var(--text); }
+  .content h4 { font-size: 15px; font-weight: 600; margin: 24px 0 8px; color: var(--text-secondary); }
+  .content p { margin: 8px 0; color: var(--text); }
+  .content ul, .content ol { margin: 8px 0 8px 20px; }
+  .content li { margin: 4px 0; }
+
+  .card { background: var(--white); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin: 16px 0; }
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin: 16px 0; }
+  .card-grid .card { margin: 0; }
+  .card h4 { margin: 0 0 8px; font-size: 16px; }
+  .card p { font-size: 14px; color: var(--text-secondary); margin: 0; }
+  .card .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; margin-right: 4px; }
+  .tag.blue { background: #DBEAFE; color: #1D4ED8; }
+  .tag.green { background: #D1FAE5; color: #059669; }
+  .tag.orange { background: #FEF3C7; color: #D97706; }
+  .tag.red { background: #FEE2E2; color: #DC2626; }
+  .tag.gray { background: #F1F5F9; color: #64748B; }
+  .tag.purple { background: #EDE9FE; color: #7C3AED; }
+
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; }
+  th, td { padding: 10px 14px; border: 1px solid var(--border); text-align: left; }
+  th { background: var(--bg); font-weight: 600; color: var(--text-secondary); font-size: 13px; }
+  td { color: var(--text); }
+
+  .note { background: #EFF6FF; border-left: 4px solid var(--info); padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 16px 0; font-size: 14px; }
+  .note.warning { background: #FFFBEB; border-left-color: var(--warning); }
+  .note.danger { background: #FEF2F2; border-left-color: var(--danger); }
+  .note.success { background: #F0FDF4; border-left-color: var(--success); }
+  .note strong { display: block; margin-bottom: 4px; }
+
+  .screenshot { background: var(--white); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin: 20px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+  .screenshot img { width: 100%; height: auto; border-radius: 8px; display: block; }
+  .screenshot .caption { text-align: center; font-size: 13px; color: var(--text-secondary); margin-top: 8px; }
+
+  .arch-diagram { background: var(--white); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin: 20px 0; }
+  .arch-layer { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; justify-content: center; }
+  .arch-layer-label { width: 100%; text-align: center; font-size: 12px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .arch-node { padding: 10px 18px; border-radius: 8px; font-size: 14px; font-weight: 600; white-space: nowrap; }
+  .arch-node.blue { background: #DBEAFE; color: #1D4ED8; border: 1px solid #93C5FD; }
+  .arch-node.green { background: #D1FAE5; color: #059669; border: 1px solid #6EE7B7; }
+  .arch-node.orange { background: #FEF3C7; color: #D97706; border: 1px solid #FCD34D; }
+  .arch-node.red { background: #FEE2E2; color: #DC2626; border: 1px solid #FCA5A5; }
+  .arch-node.purple { background: #EDE9FE; color: #7C3AED; border: 1px solid #C4B5FD; }
+  .arch-node.gray { background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1; }
+  .arch-arrow { text-align: center; color: var(--text-secondary); font-size: 20px; margin: -4px 0; }
+
+  .workflow { background: var(--white); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin: 20px 0; }
+  .workflow-step { display: flex; gap: 20px; margin-bottom: 24px; align-items: flex-start; }
+  .workflow-step:last-child { margin-bottom: 0; }
+  .workflow-step .num { flex-shrink: 0; width: 40px; height: 40px; background: var(--primary); color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; }
+  .workflow-step .content { flex: 1; }
+  .workflow-step .content h4 { margin: 0 0 8px; font-size: 16px; }
+  .workflow-step .content p { margin: 0 0 8px; font-size: 14px; }
+  .workflow-step .content ul { margin: 0 0 0 16px; font-size: 14px; }
+
+  code { background: #F1F5F9; padding: 2px 6px; border-radius: 4px; font-family: "SF Mono", "Fira Code", monospace; font-size: 13px; color: #E11D48; }
+  pre { background: #1E293B; color: #E2E8F0; padding: 20px; border-radius: 10px; overflow-x: auto; margin: 16px 0; font-size: 13px; line-height: 1.6; }
+  pre code { background: none; color: inherit; padding: 0; }
+
+  .step-list { counter-reset: step; list-style: none; margin-left: 0; }
+  .step-list li { counter-increment: step; padding: 12px 0 12px 52px; position: relative; border-left: 2px solid var(--border); margin-left: 20px; }
+  .step-list li:last-child { border-left-color: transparent; }
+  .step-list li::before { content: counter(step); position: absolute; left: -16px; top: 8px; width: 30px; height: 30px; background: var(--primary); color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
+
+  @media print { .sidebar { display: none; } .main { margin-left: 0; } .topbar { position: static; } .content { padding: 20px; } }
+  @media (max-width: 768px) { .sidebar { display: none; } .main { margin-left: 0; } .content { padding: 20px; } }
+</style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-logo">
+      <div class="icon">A</div>
+      <div>
+        <div class="title">AgentOps</div>
+        <div class="subtitle">用户使用手册 v1.2</div>
+      </div>
+    </div>
+  </div>
+  <nav class="sidebar-nav">
+    <h4>入门</h4>
+    <a href="#overview" class="active">平台概述</a>
+    <a href="#quickstart" class="sub">登录与快速入门</a>
+
+    <h4>工作空间</h4>
+    <a href="#workspace">工作空间管理</a>
+    <a href="#workspace-create" class="sub">创建空间</a>
+    <a href="#workspace-members" class="sub">成员管理</a>
+    <a href="#workspace-switch" class="sub">切换空间</a>
+
+    <h4>资产管理</h4>
+    <a href="#agent">Agent 管理</a>
+    <a href="#agent-create" class="sub">创建 Agent</a>
+    <a href="#agent-detail" class="sub">查看详情</a>
+    <a href="#agent-version" class="sub">版本管理</a>
+    <a href="#agent-apikey" class="sub">秘钥管理</a>
+    <a href="#skill">Skill 管理</a>
+    <a href="#skill-create" class="sub">创建 Skill</a>
+    <a href="#skill-sync" class="sub">同步公司库</a>
+    <a href="#tool">工具管理</a>
+    <a href="#prompt">Prompt 中心</a>
+    <a href="#model">模型管理</a>
+    <a href="#sandbox">沙箱管理</a>
+
+    <h4>运行与调试</h4>
+    <a href="#console">调试台</a>
+    <a href="#console-chat" class="sub">发起对话</a>
+    <a href="#console-trace" class="sub">步骤追踪</a>
+
+    <h4>评测体系</h4>
+    <a href="#evaluation">Skill 评测</a>
+    <a href="#eval-manual" class="sub">人工评测</a>
+    <a href="#eval-auto" class="sub">自动评测</a>
+    <a href="#eval-agent" class="sub">Agent 评测</a>
+    <a href="#eval-seeds" class="sub">种子用例</a>
+    <a href="#eval-report" class="sub">报告与对比</a>
+
+    <h4>权限管理</h4>
+    <a href="#role">角色与权限</a>
+    <a href="#role-workspace" class="sub">工作空间角色</a>
+    <a href="#role-platform" class="sub">平台角色</a>
+    <a href="#role-visibility" class="sub">菜单权限过滤</a>
+
+    <h4>系统设置</h4>
+    <a href="#system">系统设置概述</a>
+    <a href="#system-model" class="sub">系统模型管理</a>
+
+    <h4>附录</h4>
+    <a href="#api">API 接口</a>
+    <a href="#faq">常见问题</a>
+    <a href="#glossary">术语表</a>
+</aside>
+
+<div class="main">
+  <div class="topbar">
+    <h1>AgentOps 用户使用手册</h1>
+    <div class="breadcrumb">版本 v1.2 · 2026 年 6 月</div>
+  </div>
+
+  <div class="content">
+
+    <!-- ==================== 1. 平台概述 ==================== -->
+    <h2 id="overview">1. 平台概述</h2>
+    <p><strong>AgentOps</strong> 是面向研发团队的企业级 Agent 能力底座与治理平台。它帮助业务团队通过配置快速构建 Agent，将 MCP / Skill / 知识库沉淀为可复用的部门资产，并通过统一的评测体系确保 Agent 和 Skill 的质量可量化、可回归、可规模化。</p>
+
+    <div class="card">
+      <h4>平台定位</h4>
+      <p>研发团队的 Agent 能力中台——业务团队用配置出 Agent，部门把工具与提示词沉淀为可复用资产，通过统一评测把"能跑"升级到"敢规模化跑"。</p>
+    </div>
+
+    <h3>1.1 平台架构</h3>
+    <div class="arch-diagram">
+      <div class="arch-layer-label">接入层</div>
+      <div class="arch-layer">
+        <div class="arch-node blue">管理 Console</div>
+        <div class="arch-node blue">SDK / Open API</div>
+        <div class="arch-node blue">公司统一 SSO</div>
+      </div>
+      <div class="arch-arrow">↓</div>
+      <div class="arch-layer-label">平台核心（9 大模块）</div>
+      <div class="arch-layer">
+        <div class="arch-node purple">工作空间</div>
+        <div class="arch-node purple">Agent 管理</div>
+        <div class="arch-node green">Skill 管理</div>
+        <div class="arch-node green">工具管理</div>
+      </div>
+      <div class="arch-layer">
+        <div class="arch-node green">Prompt 中心</div>
+        <div class="arch-node green">模型管理</div>
+        <div class="arch-node green">沙箱管理</div>
+        <div class="arch-node red">评测体系</div>
+        <div class="arch-node purple">权限管理</div>
+      </div>
+      <div class="arch-arrow">↓</div>
+      <div class="arch-layer-label">运行时</div>
+      <div class="arch-layer">
+        <div class="arch-node orange">Agent 运行时 / 编排引擎</div>
+        <div class="arch-node orange">大模型代理</div>
+        <div class="arch-node orange">长/短期记忆</div>
+        <div class="arch-node orange">审计与监控</div>
+      </div>
+      <div class="arch-arrow">↓</div>
+      <div class="arch-layer-label">外部依赖与集成</div>
+      <div class="arch-layer">
+        <div class="arch-node gray">内/外部大模型</div>
+        <div class="arch-node gray">公司 Skill 库</div>
+        <div class="arch-node gray">Nacos 注册中心</div>
+        <div class="arch-node gray">OpenSandbox</div>
+        <div class="arch-node gray">配置 / 审计存储</div>
+      </div>
+    </div>
+
+    <h3>1.2 核心模块说明</h3>
+    <div class="card-grid">
+      <div class="card">
+        <span class="tag purple">基础</span>
+        <h4>工作空间</h4>
+        <p>资源归属与协作边界，支持多空间隔离与团队协作。空间管理者可配置角色与成员。</p>
+      </div>
+      <div class="card">
+        <span class="tag blue">核心</span>
+        <h4>Agent 管理</h4>
+        <p>两种创建方式：配置模式（单页表单）+ A2A 模式（Nacos 自动同步）。支持版本化管理与对外 API 秘钥。<span class="tag gray">规划中</span> 监督者（SUPERVISOR）/ 路由（ROUTER）Agent 类型</p>
+      </div>
+      <div class="card">
+        <span class="tag green">资产</span>
+        <h4>Skill 管理</h4>
+        <p>部门 Skill 资产统一目录，支持在线编辑（DIRECT）与 ZIP 上传（UPLOAD）双模式，支持版本对比与回滚。</p>
+      </div>
+      <div class="card">
+        <span class="tag green">资产</span>
+        <h4>工具管理</h4>
+        <p>管理 MCP 与 FunctionCall 工具，支持 REMOTE / API_PACKAGE / OPENAPI_SPEC / MANUAL 四种创建模式。</p>
+      </div>
+      <div class="card">
+        <span class="tag green">资产</span>
+        <h4>Prompt 中心</h4>
+        <p>提示词模板资产化管理，支持 <code>{{变量名}}</code> 占位语法与统一寻址。<span class="tag gray">规划中</span> SKILL.md 行级差异对比</p>
+      </div>
+      <div class="card">
+        <span class="tag green">资产</span>
+        <h4>模型管理</h4>
+        <p>统一管理大模型接入信息（API Key / Base URL），支持草稿→启用→禁用生命周期。</p>
+      </div>
+      <div class="card">
+        <span class="tag green">资产</span>
+        <h4>沙箱管理</h4>
+        <p>代码执行环境管理，对接阿里 OpenSandbox，支持草稿→初始化→在线→下线完整生命周期。</p>
+      </div>
+      <div class="card">
+        <span class="tag orange">运行</span>
+        <h4>调试台</h4>
+        <p>多轮对话调试入口，SSE 流式输出，支持 ThoughtChain 步骤级 trace 可视化与 Text/JSON 双模式。</p>
+      </div>
+      <div class="card">
+        <span class="tag red">质量</span>
+        <h4>评测体系</h4>
+        <p>Skill 评测（人工调试 / 自动评测）+ Agent 评测（四类测试），5 维评分模型，支持种子用例管理。</p>
+      </div>
+      <div class="card">
+        <span class="tag purple">管理</span>
+        <h4>权限管理</h4>
+        <p>两级角色体系：工作空间级角色（自定义权限）和平台级角色（全局管理），55 个权限点覆盖全部模块。菜单和操作按钮均按实际持有权限过滤显示。</p>
+      </div>
+    </div>
+
+    <h3>1.3 页面导航</h3>
+    <p>平台登录后进入<strong>工作台</strong>首页。左侧主导航按"Agent 与沙箱 / 模型与工具 / 调试与评测 / 权限与设置"分组，顶栏右侧提供<strong>工作空间切换器</strong>和用户菜单。</p>
+    <div class="note">
+      <strong>权限过滤导航</strong>
+      导航菜单中的每个页面入口均按您实际持有的权限决定是否显示——无权限的页面不会出现在菜单中，避免误操作。
+    </div>
+    <table>
+      <tr><th>导航分组</th><th>页面</th><th>所需权限（任一即可）</th></tr>
+      <tr><td rowspan="2">Agent 与沙箱</td><td>Agent 管理</td><td>agent:* 中任一</td></tr>
+      <tr><td>Sandbox 沙箱</td><td>sandbox:* 中任一</td></tr>
+      <tr><td rowspan="4">模型与工具</td><td>模型管理</td><td>model:* 中任一</td></tr>
+      <tr><td>工具管理</td><td>tool:* 中任一</td></tr>
+      <tr><td>Skill 管理</td><td>skill:* 中任一</td></tr>
+      <tr><td>Prompt 中心</td><td>prompt:* 中任一</td></tr>
+      <tr><td>调试与评测</td><td>Agent 调试</td><td>debug_console:access</td></tr>
+      <tr><td>权限与设置</td><td>角色管理</td><td>role_manage:* 中任一</td></tr>
+    </table>
+    <p>工作台（一级页面）还包含：</p>
+    <table>
+      <tr><th>一级功能</th><th>说明</th><th>可见条件</th></tr>
+      <tr><td>工作空间</td><td>创建与管理工作空间</td><td>所有登录用户</td></tr>
+      <tr><td>系统设置 → 模型管理</td><td>平台级系统模型管理</td><td>system:model_* 中任一</td></tr>
+      <tr><td>权限管理 → 角色管理</td><td>平台角色 CRUD</td><td>role_manage:* 中任一</td></tr>
+      <tr><td>权限管理 → 用户角色</td><td>为用户分配平台角色</td><td>user_role:* 中任一</td></tr>
+    </table>
+
+    <!-- ==================== 2. 登录与快速入门 ==================== -->
+    <h2 id="quickstart">2. 登录与快速入门</h2>
+
+    <h3>2.1 登录</h3>
+    <p>访问平台地址后自动跳转至登录页。使用 GT 账号（garry统一身份认证）一键登录。</p>
+
+    <div class="screenshot">
+      <img src="wireframes/login.png" alt="登录页面">
+      <div class="caption">图 1：AgentOps 登录页 — 点击"使用 GT 账号登录"即可进入管理后台</div>
+    </div>
+
+    <p>登录成功后默认进入<strong>工作台</strong>。若遇到权限问题，将看到对应的错误页：</p>
+
+    <div class="screenshot">
+      <img src="wireframes/error-403.png" alt="错误页面示例">
+      <div class="caption">图 2：错误页 — 403 权限不足 / 404 页面不存在 / 500 服务异常</div>
+    </div>
+
+    <div class="note success">
+      <strong>提示</strong>
+      已登录用户直接访问 <code>/login</code> 会自动跳转到工作台。
+    </div>
+
+    <div class="note">
+      <strong>首次登录自动分配角色</strong>
+      新用户首次通过 GT 账号登录时，平台自动分配<strong>「普通用户」</strong>内置平台角色，该角色具备工作空间的基础管理权限（创建/查看/编辑/删除工作空间）。如需更多权限，请联系平台管理员在「权限管理 → 用户角色」中分配其他平台角色。
+    </div>
+
+    <h3>2.2 新用户快速入门路径</h3>
+    <p>新用户只需按以下流程操作，即可在 15 分钟内跑通"配置 Agent → 调试台验证 → 运行评测"的完整链路：</p>
+
+    <div class="workflow">
+      <div class="workflow-step">
+        <div class="num">1</div>
+        <div class="content">
+          <h4>登录平台并确认工作空间</h4>
+          <p>登录后，在顶栏右侧查看当前工作空间。如果是首次使用，平台会自动将你加入"默认工作空间"。如需创建新空间，进入工作台 → "工作空间"即可。</p>
+          <ul>
+            <li>确保顶栏切换器显示你所在的工作空间。</li>
+            <li>切换工作空间后，所有资产列表（Agent / Skill / 工具）会自动刷新为当前空间下的内容。</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="workflow-step">
+        <div class="num">2</div>
+        <div class="content">
+          <h4>确认模型已启用（模型管理）</h4>
+          <p>Agent 配置时需要选用已启用的模型。进入左侧"模型管理"页面，确保至少有一个模型处于"已启用"状态。如无可用模型，可点击"新增"登记模型接入信息。</p>
+          <ul>
+            <li>模型管理统一登记大模型的 API Key、Base URL、模型名等信息。</li>
+            <li>Agent 配置中的模型字段直接引用这里的已启用模型，无需手填密钥。</li>
+            <li>API Key 在数据库中加密存储。</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="workflow-step">
+        <div class="num">3</div>
+        <div class="content">
+          <h4>创建或同步 Skill（可选）</h4>
+          <p>如果你希望 Agent 拥有特定能力（如查询 Jira、搜索知识库），需要先在"Skill 管理"中创建或同步 Skill。</p>
+          <ul>
+            <li><strong>自建 Skill</strong>：支持在线编辑（DIRECT 模式，直接编写 SKILL.md）和上传 ZIP（UPLOAD 模式）两种方式。</li>
+            <li><strong>同步公司库</strong>：点击"同步公司库"，一键拉取公司 Skill 库的最新 Skill。</li>
+            <li>创建/同步后，需经过发布检查（大小/格式/可用性 3 项检查）并发布，才能在 Agent 挂载列表中出现。</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="workflow-step">
+        <div class="num">4</div>
+        <div class="content">
+          <h4>配置一个 Agent</h4>
+          <p>在 Agent 管理页面点击 <strong>+ 新建 Agent</strong>，选择"配置模式"后进入<strong>单页分区表单</strong>。</p>
+          <ul>
+            <li><strong>基本信息</strong>：名称（必填）、描述、系统提示词（可从 Prompt 中心选取模板）、温度。</li>
+            <li><strong>关联模型</strong>：下拉选择模型管理中"已启用"的模型。</li>
+            <li><strong>工具与上下文</strong>：横向 Tab 切换，多选挂载已发布的 Skill / 工具，单选关联在线沙箱，配置记忆策略。</li>
+            <li>点击底部 <strong>"保存"</strong> 按钮后，Agent 自动发布为 v1.0.0。</li>
+          </ul>
+          <div class="note success">
+            <strong>单页配置优势</strong>
+            所有配置在一页内完成，无"下一步 / 上一步"跳转。模型 / Skill / 工具 / 沙箱均从对应资产模块下拉关联。
+          </div>
+        </div>
+      </div>
+
+      <div class="workflow-step">
+        <div class="num">5</div>
+        <div class="content">
+          <h4>在调试台验证 Agent</h4>
+          <p>Agent 发布后，进入"Agent 调试"页面进行实时验证。</p>
+          <ul>
+            <li><strong>步骤 1</strong>：在顶部上下文选择器中选择刚创建的"执行 Agent"（必选）。</li>
+            <li><strong>步骤 2</strong>：可选选择"调试 Skill"，若选择则将该 Skill 强制注入本次会话工具集。</li>
+            <li><strong>步骤 3</strong>：在底部 Sender 输入框中输入测试 prompt，按 Enter 发送。</li>
+            <li><strong>步骤 4</strong>：观察 LLM 流式输出（Bubble 气泡）和 Skill 执行步骤链（ThoughtChain）。</li>
+            <li><strong>步骤 5</strong>：每一步的入参 / 出参 / 状态 / 耗时均实时展示，error 步骤红色高亮。</li>
+          </ul>
+
+          <div class="screenshot">
+            <img src="wireframes/console-main.png" alt="调试台主界面">
+            <div class="caption">图 3：调试台主界面 — 顶部上下文选择器（执行 Agent + 调试 Skill）+ 中间对话区（Bubble 消息 + ThoughtChain 步骤链）+ 底部 Sender 输入器</div>
+          </div>
+
+          <div class="note">
+            <strong>输入模式</strong>
+            按 <code>⌘J / Ctrl+J</code> 可切换 Text / JSON 两种输入模式。选定 Skill 且该 Skill 有 input schema 时会自动切换到 JSON 模式并按 schema 校验。
+          </div>
+        </div>
+      </div>
+
+      <div class="workflow-step">
+        <div class="num">6</div>
+        <div class="content">
+          <h4>运行评测（可选）</h4>
+          <p>Agent / Skill 调试满意后，可进入评测台进行量化评估。</p>
+          <ul>
+            <li><strong>Skill 人工评测</strong>：选执行 Agent + 输入任务 + 期望结果 + 判分方式，执行后查看输出对比与判定结果。好用例可保存为种子。</li>
+            <li><strong>Skill 自动评测</strong>：配置执行 Agent + 评测 Agent + 5 维评分 + 用例数，自动生成用例并判分，生成报告（总分 / 维度雷达图 / 用例明细）。</li>
+            <li><strong>Agent 评测</strong>：从 Agent 详情页"评测"按钮进入，支持四类测试（单元 / 评估 / 轨迹 / 回归）。</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="workflow-step">
+        <div class="num">7</div>
+        <div class="content">
+          <h4>查看对外接口文档与秘钥</h4>
+          <p>在 Agent 详情页"API 信息" Tab 中，自动生成 4 个标准 API 的 URL + cURL 调用示例。在"秘钥管理" Tab 中创建 API 调用密钥（Bearer Token），可直接发给业务方接入。</p>
+          <ul>
+            <li>POST <code>/v1/agents/{agentId}/invoke</code> — SSE 流式调用</li>
+            <li>POST <code>/v1/agents/{agentId}/sessions</code> — 创建会话</li>
+            <li>GET <code>/v1/agents/{agentId}/sessions</code> — 查询会话列表</li>
+            <li>GET <code>/v1/agents/{agentId}/sessions/{sessionId}</code> — 查询会话详情</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="note success">
+      <strong>完整链路总结</strong>
+      确认工作空间 → 新建模型 → 新建 Skill（可选）→ 单页表单新建 Agent → 调试台验证 → 评测台评估 → 对外 API 接入。整个流程均在平台内闭环完成。
+    </div>
+
+    <!-- ==================== 3. 工作空间管理 ==================== -->
+    <h2 id="workspace">3. 工作空间管理</h2>
+    <p>工作空间是平台中所有资产（Agent / Skill / 工具等）的<strong>归属边界和协作容器</strong>。一个用户可同时归属多个空间，切换空间即切换资产视图。权限控制也以工作空间为粒度。</p>
+
+    <div class="screenshot">
+      <img src="wireframes/workspace-list.png" alt="工作空间管理">
+      <div class="caption">图 4：工作空间管理 — 创建和管理团队协作空间，设置成员与角色</div>
+    </div>
+
+    <h3 id="workspace-create">3.1 创建空间</h3>
+    <p>在工作台进入<strong>"工作空间"</strong>页面，点击右上角 <strong>+ 新建空间</strong> 按钮：</p>
+    <ol>
+      <li>填写<strong>空间名称</strong>（必填，≤64 字符，在可见范围内唯一）。</li>
+      <li>填写<strong>空间描述</strong>（可选，≤200 字符）。</li>
+      <li>可选添加<strong>初始成员</strong>（按工号 / 姓名搜索）。</li>
+      <li>点击<strong>"创建空间"</strong>。创建人自动成为管理员。</li>
+    </ol>
+
+    <h3 id="workspace-members">3.2 成员管理</h3>
+    <p>在空间卡片菜单中点击<strong>"编辑"</strong>，打开右侧编辑抽屉：</p>
+    <ul>
+      <li><strong>添加成员</strong>：搜索工号 / 姓名 <span class="tag gray">规划中</span> GCAC 通讯录接通后支持按姓名搜索，当前仅支持按工号搜索，选择加为管理员或成员。</li>
+      <li><strong>提升/降级</strong>：成员可提升为管理员，管理员可降为成员。</li>
+      <li><strong>移除</strong>：将成员从空间中移除。</li>
+      <li>所有改动点击<strong>"保存"</strong>后一次性提交生效。</li>
+    </ul>
+    <div class="note warning">
+      <strong>注意</strong>
+      空间至少保留 1 名管理员。当只剩一名管理员时，"降为成员"和"移除"按钮将被禁用。
+    </div>
+
+    <h3 id="workspace-switch">3.3 切换空间</h3>
+    <p>顶栏右侧提供<strong>空间切换器</strong>（用户头像左侧）。点击下拉选择目标空间，切换后所有资产列表自动刷新为当前空间的资产。</p>
+    <ul>
+      <li>选中的空间会在卡片列表中高亮显示"当前"标识。</li>
+      <li>选中状态自动持久化，下次登录默认载入上次选择的空间。</li>
+    </ul>
+
+    <h3>3.4 删除空间</h3>
+    <p>仅管理员可删除空间。删除前需满足：</p>
+    <ul>
+      <li>空间内无资产（Agent / Skill / 工具数量均为 0）。</li>
+      <li>在确认弹窗中输入完整的确认词：<code>我确认删除 &lt;空间名&gt; 空间</code>。</li>
+    </ul>
+    <p>删除为<strong>逻辑删除</strong>，数据库记录保留但不再可见。</p>
+
+    <!-- ==================== 4. Agent 管理 ==================== -->
+    <h2 id="agent">4. Agent 管理</h2>
+    <p>Agent 管理是平台的核心模块，提供 Agent 的创建、查看、调试、秘钥管理和对外接口文档等能力。平台支持两种 Agent 创建方式：</p>
+    <table>
+      <tr><th>创建方式</th><th>说明</th><th>平台可改</th></tr>
+      <tr><td><strong>配置模式</strong></td><td>在平台通过单页分区表单配置出 Agent，挂载 Skill / 工具等。</td><td>可编辑 / 发布 / 下线</td></tr>
+      <tr><td><strong>A2A 模式</strong></td><td>通过 Nacos 注册中心自动发现并同步外部 A2A Agent。</td><td>只读，信息从 Nacos 同步</td></tr>
+    </table>
+
+    <h3 id="agent-create">4.1 创建 Agent（配置模式）</h3>
+    <p>在 Agent 管理页面点击 <strong>+ 新建 Agent</strong>，选择"配置模式"后进入<strong>单页分区表单</strong>：</p>
+
+    <h4>分区 1 — 基本信息</h4>
+    <ul>
+      <li><strong>名称</strong>：必填，在同工作空间内唯一。</li>
+      <li><strong>描述</strong>：可选，列表与详情页展示用。</li>
+      <li><strong>系统提示词</strong>：必填。支持从 Prompt 中心选择已有模板一键填入，也可手动编辑。</li>
+      <li><strong>用户提示词</strong>：可选。</li>
+      <li><strong>温度</strong>：0.0 ~ 2.0，默认 0.7。</li>
+    </ul>
+
+    <h4>分区 2 — 关联模型</h4>
+    <ul>
+      <li>从<strong>模型管理</strong>的"已启用"模型列表中下拉选择（单选）。</li>
+      <li>平台自动从模型管理解析接入信息，不再手填密钥。</li>
+      <li><strong>Plan 模式</strong>（必填，默认关闭）：开启后 Agent 运行时将启用 Plan 规划能力。</li>
+    </ul>
+
+    <h4>分区 3 — 工具与上下文（横向 Tab 交互）</h4>
+    <p>该区块以横向 Tab 形式组织以下配置：</p>
+    <table>
+      <tr><th>Tab</th><th>内容</th><th>数量</th></tr>
+      <tr><td><strong>Skills</strong></td><td>从 Skill 管理多选挂载"已发布"Skill。</td><td>多选</td></tr>
+      <tr><td><strong>工具</strong></td><td>从工具管理多选挂载"已发布"工具（含 MCP / FunctionCall）。</td><td>多选</td></tr>
+      <tr><td><strong>沙箱</strong></td><td>从沙箱管理下拉选择"在线"沙箱。</td><td>单选（可空）</td></tr>
+      <tr><td><strong>知识库</strong></td><td>保留占位，暂未上线。<span class="tag gray">规划中</span></td><td>—</td></tr>
+      <tr><td><strong>记忆</strong></td><td>长期记忆策略（无 / 向量召回 / 全文召回）+ 短期记忆策略（无 / 最近 N 轮 / 滑动窗口）+ QPS + 日预算。<span class="tag gray">规划中</span> QPS 与日预算限流</td><td>单选</td></tr>
+    </table>
+
+    <p>每个 Tab 右侧提供 <strong>+ 添加</strong> 按钮，点击弹出对应资产选择器。</p>
+
+    <h4>提交</h4>
+    <p>表单底部固定三个按钮：<strong>取消 / 保存草稿 / 发布</strong>。保存成功后 Agent 自动发布为 v1.0.0，状态变为"在线"。</p>
+
+    <h3 id="agent-detail">4.2 查看 Agent 详情</h3>
+    <div class="screenshot">
+      <img src="wireframes/agent-list.png" alt="Agent 列表">
+      <div class="caption">图 5：Agent 管理列表 — 展示所有 Agent 的编码 / 名称 / 创建方式 / 状态 / Skills 信息</div>
+    </div>
+
+    <p>在 Agent 列表中点击某行的 <strong>"查看"</strong> 进入详情页。配置模式详情页包含以下 Tab：</p>
+    <table>
+      <tr><th>Tab</th><th>内容</th></tr>
+      <tr><td>基本信息</td><td>名称 / 描述 / 标签 / <strong>Plan 模式</strong>（开启/关闭）/ 系统提示词 / 用户提示词。</td></tr>
+      <tr><td>模型配置</td><td>所选模型详情（名称 / 模型 ID / Base URL 脱敏展示）/ 温度。</td></tr>
+      <tr><td>Skill 配置</td><td>当前挂载的 Skill 列表。</td></tr>
+      <tr><td>工具配置</td><td>当前挂载的工具列表。</td></tr>
+      <tr><td>沙箱配置</td><td>关联的沙箱规格。</td></tr>
+      <tr><td>记忆配置</td><td>长期 / 短期记忆策略 + 限流参数（QPS / 日预算）。</td></tr>
+      <tr><td>API 信息</td><td>4 个对外 API 的 URL + cURL 调用示例。</td></tr>
+      <tr><td>秘钥管理</td><td>API 调用密钥的创建 / 查看（脱敏）/ 明文查看 / 删除。</td></tr>
+      <tr><td>版本管理</td><td>版本列表 + 创建版本 / 编辑 / 发布；编辑草稿保存后自动跳回本 Tab。</td></tr>
+    </table>
+
+    <p>A2A 模式详情页显示 6 个 Tab（基本信息 / Skills / MCP / API 信息 / 秘钥管理 / 版本历史），不含版本编辑能力。当 Nacos 同步状态异常时顶部显示橙色提示横幅。</p>
+
+    <p>详情页顶部操作按钮：<strong>调试 / 上线（离线时）/ 更多（下线 / 删除 / A2A 手动重新同步）</strong>。</p>
+
+    <h3 id="agent-version">4.3 版本管理</h3>
+    <p>配置模式 Agent 采用 <strong>草稿 → 发布 → 不可变历史快照</strong> 的版本化机制：</p>
+    <ol>
+      <li>在"版本管理" Tab 右上角点击 <strong>+ 创建版本</strong>，基于当前在线版本生成草稿。</li>
+      <li>在版本列表的 DRAFT 行点击 <strong>"编辑"</strong>，进入全页分区表单修改配置。</li>
+      <li>修改完成后点击 <strong>"保存草稿"</strong>，系统自动保存并跳回<strong>版本管理 Tab</strong>，方便继续查看版本列表或发布。</li>
+      <li>在版本管理 Tab 点击 <strong>"发布"</strong>，选择影响等级（patch / minor / major）并填写变更说明（≥10 字）。</li>
+      <li>发布后版本号自动递增（Semver），历史版本只读保留。</li>
+    </ol>
+
+    <table>
+      <tr><th>影响等级</th><th>何时选</th><th>递增规则</th></tr>
+      <tr><td><strong>patch</strong></td><td>提示词文字微调 / 温度调整</td><td>v1.0.3 → v1.0.4</td></tr>
+      <tr><td><strong>minor</strong></td><td>加挂/解绑 Skill / 改 QPS</td><td>v1.0.4 → v1.1.0</td></tr>
+      <tr><td><strong>major</strong></td><td>模型大换 / 不兼容变更</td><td>v1.1.0 → v2.0.0</td></tr>
+    </table>
+
+    <p>历史版本支持<strong>查看快照</strong>。<span class="tag gray">规划中</span> 版本对比与回滚</p>
+
+    <h3 id="agent-apikey">4.4 秘钥管理</h3>
+    <p>每个 Agent 可创建多个 API 调用密钥（Bearer Token），供外部系统通过 Open API 调用该 Agent。</p>
+    <ul>
+      <li><strong>创建密钥</strong>：点击"创建密钥"，填写备注（可选），生成后只展示一次明文，请立即保存。</li>
+      <li><strong>查看密钥</strong>：列表中的密钥均脱敏展示（如 <code>sk-abc****def</code>）。</li>
+      <li><strong>明文查看</strong>：点击"查看"，需二次确认，操作记录写入审计日志。</li>
+      <li><strong>删除密钥</strong>：逻辑删除，立即失效。</li>
+    </ul>
+
+    <div class="note warning">
+      <strong>安全提醒</strong>
+      密钥创建后仅展示一次明文，请妥善保存。密钥泄漏请立即删除并创建新密钥。
+    </div>
+
+    <!-- ==================== 5. Skill 管理 ==================== -->
+    <h2 id="skill">5. Skill 管理</h2>
+    <p>Skill 管理是部门 Skill 资产的统一目录与评测入口。每个 Skill 既可部门自建，也可一键同步公司 Skill 库。</p>
+
+    <div class="screenshot">
+      <img src="wireframes/skill-list.png" alt="Skill 列表">
+      <div class="caption">图 6：Skill 管理列表 — 支持创建、同步公司库、发布检查与评测</div>
+    </div>
+
+    <h3 id="skill-create">5.1 创建 Skill</h3>
+    <p>在 Skill 管理页面点击 <strong>+ 新建 Skill</strong>。Skill 支持两种创建模式：</p>
+    <table>
+      <tr><th>模式</th><th>适用场景</th><th>操作方式</th></tr>
+      <tr><td><strong>DIRECT（在线编辑）</strong></td><td>简单 Skill，直接在浏览器中编写</td><td>填写前部元数据 + 在线 Markdown 编辑器编写 SKILL.md</td></tr>
+      <tr><td><strong>UPLOAD（ZIP 上传）</strong></td><td>复杂 Skill，含多个资源文件</td><td>上传 .zip 包（≤2MB），解压后根目录必须含 SKILL.md</td></tr>
+    </table>
+
+    <p>DIRECT 模式下，编辑器分为"前部元数据"、"SKILL.md 编辑"和"资源文件管理"三个区域：</p>
+    <ul>
+      <li><strong>元数据</strong>：skillId（对外唯一标识，slug 风格）、名称、Semver 版本号、标签。</li>
+      <li><strong>SKILL.md</strong>：Monaco 编辑器在线编写，自动从首段抽取描述。</li>
+      <li><strong>资源文件</strong>：文件树面板 + 内容编辑区，支持添加/删除/重命名文件。</li>
+    </ul>
+
+    <h4>发布检查</h4>
+    <p>点击"发布"时，系统自动执行三项检查：</p>
+    <ol>
+      <li><strong>大小检查</strong>：SKILL.md 不超过 1MB，总资源文件不超过 10MB。</li>
+      <li><strong>格式检查</strong>：SKILL.md 的 YAML 前部元数据解析是否合法。</li>
+      <li><strong>可用性检查</strong>：运行时验证 Skill 能否正确加载。</li>
+    </ol>
+    <p>检查通过后 Skill 变为"发布"状态；未通过则显示"检查失败"及具体错误信息。</p>
+
+    <h3 id="skill-sync">5.2 同步公司库 <span class="tag gray">规划中</span></h3>
+    <p>点击顶部 <strong>"同步公司库"</strong> 按钮，平台自动拉取公司 Skill 库的最新 Skill 并增量入库：</p>
+    <ul>
+      <li>同步完成后弹出结果 Modal，显示新增 X 个、更新 Y 个、无变化 Z 个。</li>
+      <li>同步过来的 Skill 标记为"公司库"来源，<strong>本地只读不可改</strong>；如需修改请点击"fork 为自建"生成本地副本。</li>
+    </ul>
+    <p><span class="tag gray">规划中</span> 当前版本公司库同步功能暂不实现，接口已下线。后续版本恢复后本章节将生效。</p>
+
+    <h3>5.3 Skill 状态与版本管理</h3>
+    <p>Skill 生命周期：<strong>草稿 → 检查中 → 检查失败 → 发布（在线） → 弃用</strong>。</p>
+    <ul>
+      <li><strong>草稿</strong>：仅作者可见，不影响调试台 / 评测台 / Agent 挂载。</li>
+      <li><strong>检查中 / 检查失败</strong>：发布检查流程中的中间状态。</li>
+      <li><strong>发布</strong>：Skill 上线，可被调试台调用、被 Agent 挂载。</li>
+      <li><strong>弃用</strong>：Skill 不再出现在下拉列表中，但历史版本仍可只读查看。</li>
+    </ul>
+
+    <p>Skill 详情页包含 4 个 Tab：</p>
+    <table>
+      <tr><th>Tab</th><th>内容</th></tr>
+      <tr><td>基本信息</td><td>名称 / skillId / 描述 / 标签 / 来源 / 当前版本 / 复用数。</td></tr>
+      <tr><td>资源文件</td><td>文件树（可展开/折叠）+ 文件内容预览。</td></tr>
+      <tr><td>检测记录</td><td>每次发布检查的历史记录，包含检查结果和错误详情。</td></tr>
+      <tr><td>版本管理</td><td>版本历史列表，支持版本对比与回滚。</td></tr>
+    </table>
+
+    <h3>5.4 版本对比与回滚 <span class="tag gray">规划中</span></h3>
+    <p>在版本管理 Tab 中选择两个历史版本进行对比，展示字段级差异（名称 / 描述 / 标签的 onlyA / onlyB / 差异项）。<span class="tag gray">规划中</span> SKILL.md 行级差异对比和后端对比接口暂未实现。</p>
+
+    <!-- ==================== 6. 工具管理 ==================== -->
+    <h2 id="tool">6. 工具管理</h2>
+    <p>工具管理负责 MCP 与 FunctionCall 工具的统一注册、健康探活和 Agent 粒度授权。</p>
+
+    <div class="screenshot">
+      <img src="wireframes/tool-list.png" alt="工具列表">
+      <div class="caption">图 7：工具管理列表 — 管理 MCP 与 FunctionCall 工具的健康状态与授权</div>
+    </div>
+
+    <h3>6.1 工具类型与创建模式</h3>
+    <table>
+      <tr><th>工具类型</th><th>创建模式</th><th>说明</th></tr>
+      <tr><td rowspan="2"><strong>MCP</strong></td><td>REMOTE</td><td>输入 SSE 端点 URL，直连远程 MCP Server</td></tr>
+      <tr><td>API_PACKAGE</td><td>包装已有的 FunctionCall 工具或粘贴 OpenAPI Spec 生成 MCP 工具</td></tr>
+      <tr><td rowspan="2"><strong>FunctionCall</strong></td><td>OPENAPI_SPEC</td><td>粘贴 OpenAPI Spec（JSON/YAML），自动提取端点为 FC 工具</td></tr>
+      <tr><td>MANUAL</td><td>手动输入 Base URL + 逐个添加请求端点</td></tr>
+    </table>
+
+    <h3>6.2 工具状态与生命周期</h3>
+    <p>工具生命周期：<strong>草稿 → 发布 → 弃用 → 重新发布</strong>。</p>
+    <table>
+      <tr><th>状态</th><th>含义</th><th>可操作</th></tr>
+      <tr><td><span class="tag gray">草稿</span></td><td>新建后默认状态，仅元数据</td><td>编辑 / 发布 / 删除</td></tr>
+      <tr><td><span class="tag green">发布</span></td><td>工具可用，可被 Agent 挂载</td><td>弃用 / 编辑（变为草稿）</td></tr>
+      <tr><td><span class="tag orange">弃用</span></td><td>不再出现在 Agent 挂载候选</td><td>重新发布 / 删除</td></tr>
+    </table>
+
+    <h3>6.3 核心功能</h3>
+    <ul>
+      <li><strong>工具列表</strong>：展示名称 / 类型（MCP / FunctionCall）/ 创建模式 / 状态 / 复用数（点击可查看挂了哪些 Agent）。</li>
+      <li><strong>列表操作</strong>：查看详情 / 编辑（状态回草稿）/ 发布 / 弃用 / 重新发布 / 删除草稿。</li>
+      <li><strong>新增工具</strong>：选择类型和创建模式后，展示对应的配置表单。</li>
+      <li><strong>代理头配置</strong>：支持配置转发代理的 HTTP Headers。</li>
+    </ul>
+
+    <!-- ==================== 7. Prompt 中心 ==================== -->
+    <h2 id="prompt">7. Prompt 中心</h2>
+    <p>Prompt 中心将提示词从代码中抽离，沉淀为可检索、可编辑、可按 Key 引用的结构化资产。</p>
+
+    <div class="screenshot">
+      <img src="wireframes/prompt-center.png" alt="Prompt 中心">
+      <div class="caption">图 8：Prompt 中心 — 管理提示词模板，支持 <code>{{变量名}}</code> 占位语法</div>
+    </div>
+
+    <h3>7.1 新建 Prompt</h3>
+    <p>在 Prompt 中心页面点击 <strong>+ 新建</strong>，从右侧弹出 Drawer 填写：</p>
+    <ul>
+      <li><strong>业务编码</strong>：Prompt 所属业务空间（命名空间），如 <code>agent-ops</code>。</li>
+      <li><strong>Prompt Key</strong>：在业务编码内唯一的引用键，如 <code>jira-summary-prompt</code>。</li>
+      <li><strong>描述</strong>：用途说明（可选）。</li>
+      <li><strong>模板内容</strong>：提示词正文，支持 <code>{{变量名}}</code> 占位语法。编辑时自动识别变量并展示变量清单。</li>
+      <li><strong>标签</strong>：用于分类与检索（可选）。</li>
+    </ul>
+    <p>保存即时生效（无草稿 / 发布态）。</p>
+
+    <h3>7.2 检索与引用</h3>
+    <p>列表支持按标签 + 关键字搜索筛选。调用方通过<strong>「业务编码 + Prompt Key」</strong>在代码中稳定引用。Agent 配置时可通过 Prompt 选择器直接选取模板填入系统提示词。</p>
+
+    <!-- ==================== 8. 模型管理 ==================== -->
+    <h2 id="model">8. 模型管理</h2>
+    <p>模型管理分为<strong>空间模型</strong>（归属某个工作空间）和<strong>系统模型</strong>（平台级共享，位于系统设置）两种类型。Agent 直接选用已启用模型，无需手填密钥与 URL。</p>
+
+    <div class="screenshot">
+      <img src="wireframes/model-list.png" alt="模型列表">
+      <div class="caption">图 9：模型管理列表 — 登记并启用大模型，供 Agent 配置时直接引用</div>
+    </div>
+
+    <h3>8.1 模型类型</h3>
+    <table>
+      <tr><th>类型</th><th>归属</th><th>入口</th><th>说明</th></tr>
+      <tr><td><strong>空间模型</strong></td><td>某工作空间</td><td>左侧导航 → 模型管理</td><td>仅在当前空间内可见和引用，由空间成员管理</td></tr>
+      <tr><td><strong>系统模型</strong></td><td>平台级（跨空间共享）</td><td>工作台 → 系统设置 → 模型管理</td><td>全平台共享，供所有空间的 Agent 引用；需持有 system:model_* 权限</td></tr>
+    </table>
+
+    <h3>8.2 模型生命周期</h3>
+    <table>
+      <tr><th>状态</th><th>含义</th><th>可操作</th></tr>
+      <tr><td><span class="tag gray">草稿</span></td><td>新建后默认，API Key 存储但模型不可用</td><td>编辑 / 启用 / 删除</td></tr>
+      <tr><td><span class="tag green">已启用</span></td><td>模型可用，出现在 Agent 配置下拉列表中</td><td>禁用 / 编辑（状态回草稿）</td></tr>
+      <tr><td><span class="tag orange">已禁用</span></td><td>不再出现在 Agent 配置下拉中</td><td>启用 / 编辑 / 删除</td></tr>
+    </table>
+
+    <h3>8.3 核心功能</h3>
+    <ul>
+      <li><strong>新增模型</strong>：登记模型的 API Key、Base URL、模型名等接入信息。API Key 在数据库中加密存储。</li>
+      <li><strong>编辑模型</strong>：API Key 字段为空时保留原值（不覆盖）。</li>
+      <li><strong>启用/禁用</strong>：控制模型是否在 Agent 配置下拉中可见。</li>
+      <li>Agent 配置中的模型字段<strong>只存引用（模型编号）</strong>，运行时按模型编号解析密钥与 URL。</li>
+    </ul>
+
+    <!-- ==================== 9. 沙箱管理 ==================== -->
+    <h2 id="sandbox">9. 沙箱管理</h2>
+    <p>沙箱管理提供代码执行环境的统一承载与可视化管理，底层基于阿里 OpenSandbox 运行时。</p>
+
+    <div class="screenshot">
+      <img src="wireframes/sandbox-list.png" alt="沙箱列表">
+      <div class="caption">图 10：沙箱管理列表 — 管理代码沙箱的生命周期（草稿 → 初始化 → 在线 → 下线）</div>
+    </div>
+
+    <h3>9.1 沙箱生命周期</h3>
+    <p>沙箱有五个状态：</p>
+    <table>
+      <tr><th>状态</th><th>含义</th><th>可操作</th></tr>
+      <tr><td><span class="tag gray">草稿</span></td><td>仅元数据，无底层实例</td><td>编辑全部字段 / 提交 / 删除</td></tr>
+      <tr><td><span class="tag blue">初始化中</span></td><td>底层 OpenSandbox 实例正在创建（异步）</td><td>仅改备注</td></tr>
+      <tr><td><span class="tag green">在线</span></td><td>沙箱可用，可被 Agent 挂载</td><td>下线 / 仅改备注</td></tr>
+      <tr><td><span class="tag orange">下线</span></td><td>实例已释放</td><td>重新上线 / 删除 / 仅改备注</td></tr>
+      <tr><td><span class="tag red">失败</span></td><td>初始化失败</td><td>重新提交 / 删除</td></tr>
+    </table>
+
+    <h3>9.2 新建沙箱</h3>
+    <p>填写名称 / 类型（本期固定为代码沙箱 <span class="tag gray">规划中</span> 后续支持更多沙箱类型）/ CPU（0.5 核步进）/ 内存（MB）/ 存活时间（1~1440 分钟）/ 备注。保存后状态为草稿，点击"提交"后异步调用 OpenSandbox 创建实例。</p>
+
+    <h3>9.3 自动调度</h3>
+    <p>平台每 5 分钟对在线 / 初始化中的沙箱进行健康检查回协调度，异常状态自动标记为失败或下线。</p>
+
+    <!-- ==================== 10. 调试台 ==================== -->
+    <h2 id="console">10. 调试台</h2>
+    <p>调试台（Agent 调试）是业务方对 Agent / Skill 的<strong>"可点可看可演示"</strong>入口——选定执行 Agent，可选定调试 Skill，发起多轮对话，并在每次执行中<strong>可视化每一步 Skill 调用的入参 / 出参 / 状态 / 耗时</strong>。<span class="tag gray">规划中</span> Fixtures 库</p>
+
+    <h3 id="console-chat">10.1 发起对话</h3>
+    <ol class="step-list">
+      <li><strong>选择执行 Agent</strong>（必选）：从下拉列表选择当前工作空间内可见的 Agent。切换 Agent 时若当前会话有消息，系统提示将开启新会话。</li>
+      <li><strong>选择调试 Skill</strong>（可选）：下拉首项为「不限（Agent 自主决策）」。选定特定 Skill 后，该 Skill 将被强制注入本次会话的工具集。</li>
+      <li><strong>输入消息</strong>：在底部 Sender 输入框中输入文本，按 Enter 发送（Shift+Enter 换行）。</li>
+      <li><strong>JSON 模式</strong>：按 <code>⌘J / Ctrl+J</code> 快捷键切换到 JSON 模式，可输入结构化 JSON 并按 Skill input schema 校验。</li>
+      <li><strong>查看回复</strong>：LLM 输出以 SSE 流式方式逐字渲染到消息气泡中。消息支持复制 / 重新生成。</li>
+    </ol>
+
+    <h3>10.2 会话管理</h3>
+    <p>会话列表通过顶部 SubToolbar 的<strong>会话胶囊</strong>管理（如「📂 当前会话标题 · N turns」），点击下拉可切换 / 重命名 / 删除 / 新建会话。每次 invoke 调用自动关联当前会话，多轮对话上下文保持。</p>
+
+    <h3 id="console-trace">10.3 步骤级 Trace</h3>
+    <p>当 Agent 调用 Skill / 工具时，调试台以 <strong>ThoughtChain 步骤链</strong>可视化整个执行过程：</p>
+    <ul>
+      <li>每步展示：<strong>步骤名 / 入参 / 出参 / 状态（pending / success / error）/ 耗时 ms</strong>。</li>
+      <li>入参/出参默认折叠，点击展开查看完整 JSON。</li>
+      <li>error 状态步骤以红色边框高亮 + 内嵌错误消息，不阻塞后续步骤渲染。</li>
+      <li>步骤链顶部展示 <code>trace_id</code>，可复制用于后端排查。</li>
+    </ul>
+
+    <h3>10.4 异常处理</h3>
+    <table>
+      <tr><th>场景</th><th>处理</th></tr>
+      <tr><td>未选 Agent</td><td>Sender 禁用 + 顶部 Alert "请先选择执行 Agent"。</td></tr>
+      <tr><td>JSON 模式校验失败</td><td>Sender 禁用 + 编辑器底部红色错误提示（行号 + 原因）。</td></tr>
+      <tr><td>SSE 中断</td><td>"重试"按钮可见；已渲染步骤保留。</td></tr>
+      <tr><td>流式输出中</td><td>Sender 显示 loading + 中止按钮。</td></tr>
+    </table>
+
+    <!-- ==================== 11. 评测体系 ==================== -->
+    <h2 id="evaluation">11. 评测体系</h2>
+    <p>评测体系是平台的"质量哨兵"，提供 Skill 评测和 Agent 评测两大模块，覆盖<strong>人工评测</strong>与<strong>自动评测</strong>两种模式。</p>
+
+    <div class="screenshot">
+      <img src="wireframes/eval-list.png" alt="评测任务列表">
+      <div class="caption">图 11：评测任务列表 — 展示所有评测任务的状态与进度</div>
+    </div>
+
+    <h3 id="eval-manual">11.1 Skill 人工评测</h3>
+    <p>从 Skill 列表行操作点击"评测"进入评测台，切换到<strong>「人工评测」</strong>Tab：</p>
+    <ol>
+      <li><strong>选择执行 Agent</strong>：下拉选择，可选"空白沙盒 Agent"（系统内置，模型配置最经济，提示词为空）。</li>
+      <li><strong>输入任务</strong>：填写测试任务内容。</li>
+      <li><strong>填写期望结果</strong>（可选，"不判分"模式时可留空）。</li>
+      <li><strong>选择判分方式</strong>：LLM Judge（用评测 Agent 判分）/ 关键词匹配 / 不判分。</li>
+      <li>点击<strong>"执行"</strong>，系统同步调用 Skill 并展示实际输出。</li>
+      <li>输出对比区展示<strong>实际输出 vs 期望结果</strong>，以及自动判定结果（通过/不通过 + 分值 + 时延）。</li>
+      <li>可将好用例<strong>"保存为种子"</strong>，回流到自动评测的数据源。</li>
+    </ol>
+
+    <h3 id="eval-auto">11.2 Skill 自动评测</h3>
+    <p>切换到<strong>「自动评测」</strong>Tab，配置并执行批量评测：</p>
+    <ol>
+      <li><strong>执行 Agent</strong>：选择用于执行 Skill 的 Agent。</li>
+      <li><strong>评测 Agent</strong>：选择用于判分的 LLM Judge Agent。</li>
+      <li><strong>评测维度</strong>：勾选评分维度——准确性 / 相关性 / 完整性 / 风格一致 / 安全合规（5 维）。</li>
+      <li><strong>用例数量</strong>：默认 20 条，范围 1~500 条。</li>
+      <li><strong>数据来源</strong>：Skill 描述自动生成 / 历史样本 / 种子用例。</li>
+      <li>点击<strong>"生成并执行评测"</strong>，系统自动生成用例 → 异步执行 → 判分 → 生成报告。</li>
+    </ol>
+
+    <div class="note">
+      <strong>5 维评分模型</strong>
+      准确性（关键事实与预期一致）/ 相关性（是否回答了输入）/ 完整性（是否覆盖所有要点）/ 风格一致（语气/格式）/ 安全合规（无敏感/违规内容）。
+    </div>
+
+    <h3 id="eval-agent">11.3 Agent 评测</h3>
+    <p>从 Agent 详情页顶部"评测"按钮进入 Agent 评测台，支持四类测试类型：</p>
+    <table>
+      <tr><th>测试类型</th><th>测什么</th><th>判分方式</th></tr>
+      <tr><td><strong>单元测试（UNIT）</strong></td><td>单点能力是否达标</td><td>关键词 / 规则</td></tr>
+      <tr><td><strong>评估测试（QUALITY）</strong></td><td>LLM 输出质量 + 多轮连贯性</td><td>评估 Agent 5 维打分</td></tr>
+      <tr><td><strong>轨迹测试（TRAJECTORY）</strong></td><td>多步骤行为合理性（工具/子 Agent 调用）</td><td>轨迹规则 + 评估 Agent</td></tr>
+      <tr><td><strong>回归测试（REGRESSION）</strong></td><td>行为稳定性（跨版本对比）</td><td>与基线报告逐项对比</td></tr>
+    </table>
+
+    <p>Agent 评测采用<strong>两阶段流程</strong>：</p>
+    <ol>
+      <li><strong>阶段一：构建测试用例集</strong>（自动生成 / 手动导入 <span class="tag gray">规划中</span> / 复用已有）。</li>
+      <li><strong>阶段二：执行评估任务</strong>（配置被测 Agent + 评估 Agent + 维度 + 并发数 → 逐用例执行 → 评估 Agent 判分 → 生成报告）。</li>
+    </ol>
+
+    <h3 id="eval-seeds">11.4 种子用例管理</h3>
+    <p>种子用例（Golden Test Cases）是经过人工验证的高质量测试用例，可回流到自动评测数据源，持续提升评测准确性。</p>
+    <ul>
+      <li><strong>保存种子</strong>：在人工评测结果中，点击"保存为种子"，将 input / expectedOutput 保存至种子库。</li>
+      <li><strong>管理种子</strong>：评测台"种子库"页面查看 / 删除某个 Skill 下的种子用例。</li>
+      <li><strong>复用种子</strong>：自动评测的数据源支持选择"种子用例"，优先使用种子数据生成评测。</li>
+    </ul>
+
+    <h3 id="eval-report">11.5 评测报告与版本对比</h3>
+    <h4>评测报告内容</h4>
+    <ul>
+      <li><strong>概览</strong>：总分 / 通过率 / 平均时延 / 用例数 / 被测版本号 / 评测模式。</li>
+      <li><strong>5 维雷达图</strong>：评估 / 轨迹测试展示维度得分雷达图。</li>
+      <li><strong>用例明细</strong>：每条 input / actual / expected / 判定 / 维度分 / 时延 / traceId。</li>
+      <li><strong>轨迹明细</strong>（轨迹测试）：每步思考 / 工具调用 / 参数 / 子 Agent / 观察，标注合理性。</li>
+      <li>支持<strong>导出 CSV</strong>。<span class="tag gray">规划中</span></li>
+    </ul>
+
+    <h4>版本对比 <span class="tag gray">规划中</span></h4>
+    <p>选择两次评测报告进行对比，展示：</p>
+    <ul>
+      <li>总分差 / 通过率差 / 时延差（正负彩色标注）。</li>
+      <li>维度差异表：每项标注趋势（↑ 提升 / ↓ 回退 / — 持平）。</li>
+      <li>逐用例对比标注"回退 / 持平 / 提升"。</li>
+    </ul>
+
+    <!-- ==================== 12. 权限管理 ==================== -->
+    <h2 id="role">12. 权限管理</h2>
+    <p>平台采用<strong>两级角色体系</strong>：工作空间级角色和平台级角色，共 55 个权限点覆盖全部模块。</p>
+
+    <div class="note">
+      <strong>无权限不显示</strong>
+      菜单导航和页面操作按钮均按实际持有权限决定是否展示——您看不到的操作即为无权限。若需要某个功能的权限，请联系平台管理员或空间管理员分配。
+    </div>
+
+    <div class="note warning">
+      <strong>权限错误提示</strong>
+      如果操作触发了权限校验失败，页面将弹出具体的错误消息（如"缺少 agent:create 权限，请联系空间管理员"），而非笼统的"403 禁止访问"，方便快速定位所需权限。
+    </div>
+
+    <h3 id="role-workspace">12.1 工作空间角色</h3>
+    <p>每个工作空间可自定义角色，控制成员在该空间内对各模块的访问权限。入口：侧导航「权限与设置 → 角色管理」。</p>
+    <ul>
+      <li><strong>角色列表</strong>：展示当前空间的所有角色（内置角色只读显示勾选状态，自定义角色可编辑/删除）。</li>
+      <li><strong>新建角色</strong>：填写角色名称 + 从权限树勾选权限点。权限按资源域分组（Agent / Skill / 工具 / 模型 / 沙箱 / Prompt / 评测 / 调试台等）。</li>
+      <li><strong>绑定成员</strong>：在编辑角色时，选择该角色的成员列表。</li>
+      <li><strong>我的权限</strong>：在角色管理页面可查看自己在当前空间拥有的权限明细。</li>
+    </ul>
+
+    <h3 id="role-platform">12.2 平台角色</h3>
+    <p>平台级角色由平台管理员在<strong>工作台 → 权限管理</strong>中配置。</p>
+    <table>
+      <tr><th>角色</th><th>编号</th><th>说明</th><th>自动分配</th></tr>
+      <tr><td><strong>平台管理员</strong></td><td>RL-PLATFORM-ADMIN</td><td>拥有全部 55 个权限，可管理所有系统设置与用户角色</td><td>手动分配</td></tr>
+      <tr><td><strong>普通用户</strong></td><td>RL-PLATFORM-USER</td><td>仅含工作空间基础管理权限（创建/查看/编辑/删除工作空间）</td><td><strong>首次登录自动分配</strong></td></tr>
+    </table>
+    <ul>
+      <li><strong>平台角色列表</strong>：展示所有平台角色（内置角色只读）。</li>
+      <li><strong>用户角色绑定</strong>：通过工号搜索用户，分配/回收其平台角色。</li>
+      <li>平台角色具有全局管理权限，超越工作空间边界。</li>
+    </ul>
+
+    <h3 id="role-visibility">12.3 菜单与操作按钮权限过滤</h3>
+    <p>所有菜单入口和操作按钮（新建、编辑、删除、发布等）均遵循以下原则：</p>
+    <ul>
+      <li><strong>无权限不显示</strong>：没有权限的菜单项和操作按钮直接隐藏，而非置灰。</li>
+      <li><strong>平台管理员全量可见</strong>：持有 RL-PLATFORM-ADMIN 角色的用户可见所有功能。</li>
+      <li><strong>实时生效</strong>：管理员修改角色权限后，用户下次请求即生效（Redis 缓存 TTL ≤30 分钟）。</li>
+    </ul>
+
+    <h3>12.4 权限点说明</h3>
+    <p>主要权限域包括（共 55 个权限点）：</p>
+    <table>
+      <tr><th>资源域</th><th>典型权限</th><th>作用范围</th></tr>
+      <tr><td>Agent</td><td>查看 / 创建 / 编辑 / 删除 / 发布 / 调用 / 管理 API Key</td><td>空间</td></tr>
+      <tr><td>Skill</td><td>查看 / 创建 / 编辑 / 删除 / 发布 / 同步公司库</td><td>空间</td></tr>
+      <tr><td>工具</td><td>查看 / 创建 / 编辑 / 删除 / 发布</td><td>空间</td></tr>
+      <tr><td>模型</td><td>查看 / 创建 / 编辑 / 删除 / 启用（复用编辑权限）/ 禁用</td><td>空间</td></tr>
+      <tr><td>沙箱</td><td>查看 / 创建 / 编辑 / 删除</td><td>空间</td></tr>
+      <tr><td>Prompt</td><td>查看 / 创建 / 编辑 / 删除 / 发布</td><td>空间</td></tr>
+      <tr><td>评测</td><td>查看 / 创建 / 执行 / 删除 / 管理种子</td><td>空间</td></tr>
+      <tr><td>调试台</td><td>访问</td><td>空间</td></tr>
+      <tr><td>工作空间</td><td>创建 / 查看 / 编辑 / 删除</td><td>平台</td></tr>
+      <tr><td>系统模型</td><td>查看 / 创建 / 编辑 / 删除</td><td>平台</td></tr>
+      <tr><td>角色管理</td><td>创建 / 编辑 / 删除</td><td>平台</td></tr>
+      <tr><td>用户角色</td><td>分配 / 编辑 / 解除</td><td>平台</td></tr>
+    </table>
+
+    <!-- ==================== 13. 系统设置 ==================== -->
+    <h2 id="system">13. 系统设置</h2>
+    <p>系统设置位于工作台一级页面，提供平台级的全局配置管理。入口仅对持有对应权限的用户显示。</p>
+
+    <h3 id="system-model">13.1 系统模型管理</h3>
+    <p>系统模型是<strong>全平台共享</strong>的大模型配置，与工作空间无关，一次配置全平台所有空间的 Agent 均可引用。</p>
+    <div class="note">
+      <strong>所需权限</strong>
+      访问系统设置 → 模型管理，需持有 <code>system:model_read</code>（查看）或其他 system:model_* 权限。
+    </div>
+    <ul>
+      <li><strong>新建系统模型</strong>：登记平台级模型的接入信息（需 <code>system:model_create</code>）。</li>
+      <li><strong>编辑 / 启用 / 禁用</strong>：修改模型配置或状态（需 <code>system:model_update</code>）。</li>
+      <li><strong>删除草稿</strong>：仅草稿状态的系统模型可删除（需 <code>system:model_delete</code>）。</li>
+    </ul>
+    <p>系统模型与空间模型在 Agent 配置的模型下拉中统一展示（标注"系统"或"空间"归属 Tag），无需用户区分接口路径。</p>
+
+    <!-- ==================== 14. API 接口 ==================== -->
+    <h2 id="api">14. API 接口</h2>
+    <p>每个 Agent 自动暴露 4 个标准 Open API，可在详情页"API 信息" Tab 中查看完整 URL 与 cURL 示例。调用时需通过<strong> API 密钥（Bearer Token）</strong>鉴权。</p>
+    <table>
+      <tr><th>接口</th><th>Method</th><th>路径</th><th>说明</th></tr>
+      <tr><td>调用 Agent</td><td>POST</td><td><code>/v1/open/agents/command/invoke</code></td><td>SSE 流式调用；body 含 input / input_type / skill_hint / session_id</td></tr>
+      <tr><td>创建会话</td><td>POST</td><td><code>/v1/open/agents/command/createSession</code></td><td>起新会话，返回 sessionId</td></tr>
+      <tr><td>查询会话列表</td><td>POST</td><td><code>/v1/open/agents/query/sessionList</code></td><td>分页查询会话</td></tr>
+      <tr><td>查询会话详情</td><td>GET</td><td><code>/v1/open/agents/query/sessionDetail</code></td><td>含消息链</td></tr>
+    </table>
+
+    <h3>13.1 invoke 请求体</h3>
+    <pre><code>{
+  "input": "你好，帮我查一下 PROJ-X 的本周 issue",
+  "input_type": "text",
+  "skill_hint": "jira-issue-summary",
+  "session_id": "sess-abc123"
+}</code></pre>
+    <table>
+      <tr><th>字段</th><th>类型</th><th>必填</th><th>说明</th></tr>
+      <tr><td><code>input</code></td><td>string / object</td><td>是</td><td>text 模式为字符串；JSON 模式为对象</td></tr>
+      <tr><td><code>input_type</code></td><td>"text" / "json"</td><td>是</td><td>显式标识输入模式</td></tr>
+      <tr><td><code>skill_hint</code></td><td>string</td><td>否</td><td>调试 Skill 时强制注入的 skill_name</td></tr>
+      <tr><td><code>session_id</code></td><td>string</td><td>否</td><td>不传则起新会话</td></tr>
+    </table>
+
+    <h3>13.2 SSE 事件协议</h3>
+    <table>
+      <tr><th>事件类型</th><th>触发时机</th><th>关键字段</th></tr>
+      <tr><td><code>message.delta</code></td><td>LLM 输出每段文本</td><td>content, index</td></tr>
+      <tr><td><code>step.start</code></td><td>进入工具 / Skill 调用</td><td>step_id, skill_name, input, started_at</td></tr>
+      <tr><td><code>step.end</code></td><td>工具 / Skill 调用结束</td><td>step_id, output, status, latency_ms, error?</td></tr>
+      <tr><td><code>final</code></td><td>整个 invoke 结束</td><td>session_id, trace_id, total_tokens, total_latency_ms</td></tr>
+      <tr><td><code>error</code></td><td>不可恢复错误</td><td>code, message, step_id?</td></tr>
+    </table>
+
+    <h3>13.3 API 鉴权</h3>
+    <p>调用 Open API 需在 HTTP Header 中传入 API Key：</p>
+    <pre><code>Authorization: Bearer sk-xxxxx</code></pre>
+    <p>API Key 在"秘钥管理" Tab 中创建。每个密钥可分别管理，删除即即刻失效。</p>
+
+    <!-- ==================== 15. 常见问题 ==================== -->
+    <h2 id="faq">15. 常见问题</h2>
+
+    <h3>Q1：为什么 Agent 配置中模型下拉为空？</h3>
+    <p>请先到<strong>模型管理</strong>中登记模型并设为"已启用"状态。Agent 配置中的模型下拉仅展示已启用的模型。如已有模型仍不可见，请确认其状态不是"草稿"或"已禁用"。</p>
+
+    <h3>Q2：为什么我创建的 Skill 在 Agent 挂载列表中看不到？</h3>
+    <p>Skill 必须处于<strong>"已发布"</strong>状态才会出现在 Agent 挂载的下拉列表中。请在 Skill 列表中将该 Skill 发布。如发布检查失败，请查看检查记录中的错误详情。</p>
+
+    <h3>Q3：A2A 模式的 Agent 可以编辑吗？</h3>
+    <p>不可以。A2A Agent 的所有字段以 Nacos 为唯一权威源，平台只读展示。您可以在详情页点击"手动重新同步"拉取最新信息。如需修改，请到 Nacos 端变更配置。</p>
+
+    <h3>Q4：如何对比同一 Agent 两个版本的效果？</h3>
+    <p>进入 Agent 详情页的"版本管理" Tab，选择两个历史版本点击<strong>"对比"</strong>，或进入评测报告页面选择两次评测报告进行对比。</p>
+
+    <h3>Q5：调试台 SSE 连接中断怎么办？</h3>
+    <p>已渲染的消息和步骤会保留。点击 Sender 中的<strong>"重试"</strong>按钮，系统将从最后一条用户消息重新发送。</p>
+
+    <h3>Q6：如何删除一个工作空间？</h3>
+    <p>需满足两个条件：空间内无资产（Agent / Skill / 工具数量均为 0）；在删除确认弹窗中输入完整确认词。删除为逻辑删除，数据库记录保留。</p>
+
+    <h3>Q7：Prompt 中心的 <code>{{变量名}}</code> 是如何工作的？</h3>
+    <p>平台负责存储和展示模板原文。编辑时系统自动识别 <code>{{变量名}}</code> 并展示变量清单。变量的<strong>实际替换由调用方在运行时完成</strong>。</p>
+
+    <h3>Q8：评测的"空白沙盒 Agent"是什么？</h3>
+    <p>系统内置的一个轻量 Agent，模型配置为最经济选项，提示词为空。它专为 Skill 评测设计——评测时 Skill 会被动态注入为其工具集，无需为每次评测创建专属 Agent。</p>
+
+    <h3>Q9：API Key 泄漏了怎么办？</h3>
+    <p>请立即在 Agent 详情页"秘钥管理" Tab 中删除泄漏的密钥，并创建新密钥。密钥删除后即刻失效。平台会对密钥查看操作记录审计日志。</p>
+
+    <h3>Q10：为什么我在某个页面看到"无权访问"？</h3>
+    <p>请确认当前登录的工作空间是否正确（顶栏右侧切换器）。如工作空间正确，请联系空间管理员在"角色管理"中为您的账号分配所需权限。操作失败时系统会显示具体缺少哪个权限（如"缺少 agent:create 权限"），可据此向管理员申请。</p>
+
+    <h3>Q11：首次登录后为什么看不到左侧导航菜单？</h3>
+    <p>首次登录自动分配的「普通用户」角色仅含工作空间基础管理权限，不含 Agent / 模型等资产模块权限。因此左侧导航中与这些模块对应的菜单不会显示。请联系平台管理员为您分配适合您工作的平台角色，或由空间管理员将您加入工作空间并赋予空间角色。</p>
+
+    <!-- ==================== 16. 术语表 ==================== -->
+    <h2 id="glossary">16. 术语表</h2>
+    <table>
+      <tr><th>术语</th><th>全称</th><th>说明</th></tr>
+      <tr><td>Agent</td><td>智能体</td><td>通过配置或外部接入的 AI 代理，可执行用户任务。</td></tr>
+      <tr><td>Skill</td><td>技能</td><td>Agent 可调用的能力单元，以 SKILL.md 文档形态描述。</td></tr>
+      <tr><td>MCP</td><td>Model Context Protocol</td><td>模型上下文协议，一种工具接入标准。</td></tr>
+      <tr><td>FunctionCall</td><td>函数调用</td><td>另一种工具接入方式，与 MCP 统一在工具管理中管理。</td></tr>
+      <tr><td>Prompt</td><td>提示词</td><td>给 LLM 的指令模板文本，支持 <code>{{变量名}}</code> 占位。</td></tr>
+      <tr><td>SSE</td><td>Server-Sent Events</td><td>服务端推送事件协议，用于调试台的流式输出。</td></tr>
+      <tr><td>LLM Judge</td><td>大模型裁判</td><td>用 LLM 自动评判评测结果的 Agent 角色。</td></tr>
+      <tr><td>Semver</td><td>Semantic Versioning</td><td>语义化版本号：major.minor.patch。</td></tr>
+      <tr><td>A2A</td><td>Agent-to-Agent</td><td>Agent 间通信协议，本平台中特指通过 Nacos 订阅的 Agent 同步模式。</td></tr>
+      <tr><td>Nacos</td><td>—</td><td>阿里巴巴开源的服务注册与发现中心。</td></tr>
+      <tr><td>OpenSandbox</td><td>阿里沙箱运行时</td><td>底层代码执行沙箱，提供隔离的代码运行环境。</td></tr>
+      <tr><td>trace_id</td><td>追踪标识</td><td>一次 invoke 调用的全局追踪 ID，用于后端审计与排查。</td></tr>
+      <tr><td>TestSuite</td><td>测试用例集</td><td>独立于评测任务的用例集合，可被多次复用。</td></tr>
+      <tr><td>GT 账号</td><td>—</td><td>garry统一身份认证账号。</td></tr>
+      <tr><td>Bearer Token</td><td>持有者令牌</td><td>Open API 调用的鉴权方式，通过 HTTP Header 传入。</td></tr>
+      <tr><td>Plan 模式</td><td>—</td><td>Agent 配置中的规划能力开关，必填，默认关闭；开启后运行时启用 Plan 规划。</td></tr>
+      <tr><td>系统模型</td><td>Platform Model</td><td>归属平台（非工作空间）的全局共享大模型配置，全平台所有 Agent 均可引用。</td></tr>
+      <tr><td>普通用户</td><td>RL-PLATFORM-USER</td><td>平台内置角色，首次登录自动分配，仅含工作空间基础管理权限。</td></tr>
+      <tr><td>RBAC</td><td>Role-Based Access Control</td><td>基于角色的访问控制，平台的两级权限体系。</td></tr>
+      <tr><td>DRAFT</td><td>草稿</td><td>资产创建后的初始状态，仅创建者可见。</td></tr>
+      <tr><td>ConfigSnapshot</td><td>配置快照</td><td>Agent 在某个版本的完整配置副本（不可变）。</td></tr>
+      <tr><td>ThoughtChain</td><td>思考链</td><td>Agent 执行过程中的步骤链可视化。</td></tr>
+    </table>
+
+    <div style="margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--border); text-align: center; color: var(--text-secondary); font-size: 13px;">
+      <p>AgentOps 用户使用手册 v1.2</p>
+      <p>最后更新：2026 年 6 月</p>
+    </div>
+
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('.sidebar-nav a').forEach(link => {
+  link.addEventListener('click', function(e) {
+    e.preventDefault();
+    const target = document.querySelector(this.getAttribute('href'));
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    document.querySelectorAll('.sidebar-nav a').forEach(a => a.classList.remove('active'));
+    this.classList.add('active');
+  });
+});
+
+const sections = document.querySelectorAll('h2[id], h3[id]');
+const navLinks = document.querySelectorAll('.sidebar-nav a');
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      navLinks.forEach(link => {
+        link.classList.toggle('active',
+          link.getAttribute('href') === '#' + entry.target.id);
+      });
+    }
+  });
+}, { rootMargin: '-20% 0px -70% 0px' });
+sections.forEach(s => observer.observe(s));
+</script>
+
+</body>
+</html>

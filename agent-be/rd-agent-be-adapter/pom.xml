@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>ink.garry.rd</groupId>
+        <artifactId>rd-agent-be-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>rd-agent-be-adapter</artifactId>
+    <name>rd-agent-be-adapter</name>
+    <description>Adapter 层：HTTP Controller、SSE、过滤器、启动类</description>
+
+    <properties>
+        <!-- JDK17 模块封装：部分第三方库反射需开放 java.lang；值只写一处，
+             本地(spring-boot:run)与容器(jib entrypoint)各自引用 -->
+        <jvm.addOpens>--add-opens=java.base/java.lang=ALL-UNNAMED</jvm.addOpens>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>ink.garry.rd</groupId>
+            <artifactId>rd-agent-be-application</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <!-- 与 rd-points-platform 一致：fat jar 固定为 app.jar，便于 Dockerfile / jib 路径稳定 -->
+        <finalName>app</finalName>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring-boot.version}</version>
+                <configuration>
+                    <mainClass>ink.garry.rd.agent.ws.adapter.AgentBeApplication</mainClass>
+                    <!-- 本地 spring-boot:run 的 JVM 参数 -->
+                    <jvmArguments>${jvm.addOpens}</jvmArguments>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- jib：公有基础镜像 eclipse-temurin；仅 -Pdocker 时启用（根 pom dockerfile.skip） -->
+            <plugin>
+                <groupId>com.google.cloud.tools</groupId>
+                <artifactId>jib-maven-plugin</artifactId>
+                <configuration>
+                    <skip>${dockerfile.skip}</skip>
+                    <from>
+                        <image>${docker.from.image}</image>
+                    </from>
+                    <to>
+                        <image>${docker.image}</image>
+                    </to>
+                    <container>
+                        <!-- 自定义 entrypoint 后 jib 的 <jvmFlags> 会被忽略，JVM 参数写进 entrypoint -->
+                        <entrypoint>
+                            <arg>java</arg>
+                            <arg>${jvm.addOpens}</arg>
+                            <arg>-Duser.timezone=Asia/Shanghai</arg>
+                            <arg>-Dfile.encoding=UTF-8</arg>
+                            <arg>-Dclient.encoding.override=UTF-8</arg>
+                            <arg>-Djava.security.egd=file:/dev/./urandom</arg>
+                            <arg>-XX:InitialRAMPercentage=40.0</arg>
+                            <arg>-XX:MinRAMPercentage=40.0</arg>
+                            <arg>-XX:MaxRAMPercentage=80.0</arg>
+                            <arg>-XX:MetaspaceSize=128m</arg>
+                            <arg>-XX:MaxMetaspaceSize=256m</arg>
+                            <arg>-XX:+UseG1GC</arg>
+                            <arg>-XX:MaxGCPauseMillis=200</arg>
+                            <arg>-XX:+ExplicitGCInvokesConcurrent</arg>
+                            <arg>-XX:-OmitStackTraceInFastThrow</arg>
+                            <arg>-XX:+HeapDumpOnOutOfMemoryError</arg>
+                            <arg>-XX:HeapDumpPath=/app/heapdump/heapdump.hprof</arg>
+                            <arg>-Xlog:gc*:file=/app/logs/gc.log:time,uptime,level,tags</arg>
+                            <arg>-jar</arg>
+                            <arg>/app/app.jar</arg>
+                        </entrypoint>
+                        <workingDirectory>/app</workingDirectory>
+                        <volumes>
+                            <volume>/app/heapdump</volume>
+                            <volume>/app/logs</volume>
+                        </volumes>
+                        <environment>
+                            <TZ>Asia/Shanghai</TZ>
+                        </environment>
+                    </container>
+                    <extraDirectories>
+                        <paths>
+                            <path>
+                                <from>target</from>
+                                <into>/app</into>
+                                <includes>app.jar</includes>
+                            </path>
+                        </paths>
+                    </extraDirectories>
+                </configuration>
+                <executions>
+                    <execution>
+                        <phase>verify</phase>
+                        <goals>
+                            <!-- dockerBuild：写入本地 Docker daemon，无需私有 Harbor -->
+                            <goal>dockerBuild</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

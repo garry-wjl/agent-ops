@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>ink.garry.rd</groupId>
+        <artifactId>rd-agent-be-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>rd-agent-be-domain</artifactId>
+    <name>rd-agent-be-domain</name>
+    <description>Domain 层：聚合根、领域规则、Repository/Factory/Gateway 接口</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>ink.garry.rd</groupId>
+            <artifactId>rd-agent-be-facade</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.hutool</groupId>
+            <artifactId>hutool-all</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-core</artifactId>
+        </dependency>
+        <!-- v2.6：domain 层 SkillFactory 等领域工厂作为 @Component 受 Spring 管理，
+             依赖通过 @Resource 注入（spring-context 提供 @Component；
+             jakarta.annotation-api 提供 @Resource）。 -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.annotation</groupId>
+            <artifactId>jakarta.annotation-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

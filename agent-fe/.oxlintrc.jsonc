@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "env": {
+    "browser": true,
+  },
+  "plugins": ["react", "typescript"],
+  /**
+   * categories:
+   * @see https://oxc.rs/docs/guide/usage/linter/config.html#enable-groups-of-rules-with-categories
+   *
+   * 不同 rules 所属 categories:
+   * @see https://oxc.rs/docs/guide/usage/linter/rules.html
+   */
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+  },
+  "rules": {
+    "react/react-in-jsx-scope": "off",
+    "react-hooks/exhaustive-deps": "warn",
+  },
+}

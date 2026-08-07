@@ -1,0 +1,134 @@
+/* 顶栏品牌 LOGO */
+.header-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  height: 100%;
+  padding: 0 12px;
+}
+
+.header-logo-icon {
+  font-size: 18px;
+}
+
+.header-logo-text {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172b;
+  line-height: 19px;
+}
+
+/* 顶栏中间导航区 */
+.header-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 8px;
+}
+
+.header-nav-sep {
+  color: #cbd5e1;
+  font-size: 13px;
+  user-select: none;
+}
+
+/* 空间切换器（顶栏版） */
+.header-ws-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.header-ws-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172b;
+  max-width: 140px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header-ws-caret {
+  color: #94a3b8;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+/* 面包屑 */
+.header-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.header-breadcrumb-link {
+  color: #64748b;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background 0.18s, color 0.18s;
+
+  &:hover {
+    background: #f1f5f9;
+    color: #2b52d9;
+  }
+}
+
+.header-breadcrumb-sep {
+  color: #cbd5e1;
+  font-size: 13px;
+  user-select: none;
+}
+
+.header-breadcrumb-current {
+  color: #0f172b;
+  font-weight: 500;
+  padding: 2px 4px;
+}
+
+/* 顶栏用户区（头像 + 名称，紧凑型） */
+.header-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.18s;
+
+  &:hover {
+    background: #f1f5f9;
+  }
+}
+
+.header-user-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #eff6ff;
+  color: #2563eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.header-user-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #0f172b;
+  max-width: 140px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

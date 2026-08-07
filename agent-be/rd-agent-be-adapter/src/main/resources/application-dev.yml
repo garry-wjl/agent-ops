@@ -1,0 +1,82 @@
+# 本地开发 profile
+#
+# 启动方式:application.yml 已配置 spring.profiles.active=dev,直接
+#   mvn -pl rd-agent-be-adapter spring-boot:run
+# 即可走本 profile;若要切其他 profile,显式覆盖 -Dspring-boot.run.profiles=xxx。
+#
+# 前置条件（本机需起着）：
+#   - MySQL 127.0.0.1:3306,db: rd_agent
+#   - Redis 127.0.0.1:6379
+#
+# SSO/GCAC 已移除；本地默认 disable-auth=true，身份可由 X-User-Id header 注入。
+
+server:
+  port: 8081
+
+spring:
+  datasource:
+    password: ${DB_PASSWORD:}
+
+app:
+  auth:
+    # SSO 已移除：本地默认关闭鉴权，便于联调；生产务必 false
+    disable-auth: ${AUTH_DISABLED:true}
+    # 无 X-User-Id 时的本地默认身份（建议是 platform-admins 之一）
+    dev-user-id: ${AUTH_DEV_USER_ID:alice.zhang}
+    jwt:
+      # 仅本地用；生产必须替换为 环境变量 / K8s Secret 覆盖的强密钥
+      secret: dev-only-secret-please-change-this-must-be-at-least-32-bytes-long
+      expiration-hours: 24
+      cookie-name: session_token
+      # 本地走 HTTP：Secure 必须 false（否则浏览器拒发 cookie），SameSite 用 Lax
+      cookie-secure: false
+      cookie-same-site: Lax
+  cors:
+    # 本地前端常见 dev 端口（rd-agent-fe 实际跑在 8001：8000 被占用时 vite 自动顺延）
+    allowed-origins: http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://localhost:8001,http://localhost:8081
+
+logging:
+  level:
+    ink.garry.rd.agent.ws.adapter.auth: DEBUG
+    ink.garry.rd.agent.ws.adapter.security: DEBUG
+    ink.garry.rd.agent.ws.application.auth: DEBUG
+    ink.garry.rd.agent.ws.infra.auth: DEBUG
+    # 临时诊断:A2A 调用 sendMessage 后挂死,需要 DEBUG 看到
+    # "build A2a Client" / "call with input messages" / "receive event" / "execute error" 这些细节日志
+    io.agentscope: DEBUG
+    io.a2a: DEBUG
+    reactor.netty.http.client: DEBUG
+    jdk.internal.httpclient: DEBUG
+
+# OSS 文件存储接入参数
+oss:
+  endpoint: ${OSS_ENDPOINT:https://test-static.garrycorp.com}
+  access-key: ${OSS_ACCESS_KEY:}
+  secret-key: ${OSS_SECRET_KEY:}
+  bucket-name: ${OSS_BUCKET:sz-static-fe-test}
+  base-dir: ${OSS_BASE_DIR:rd-agent-be}
+  region: ${OSS_REGION:cn-shenzhen}
+  is-replace-bucket-name: ${OSS_IS_REPLACE_BUCKET_NAME:true}
+  upload-presign-expiration-minutes: ${OSS_UPLOAD_EXPIRATION_MINUTES:10}
+  donload-presign-expiration-minutes: ${OSS_PRESIGN_EXPIRATION_MINUTES:10}
+
+agentscope:
+  # 关掉 starter 默认的 agentscopePromptAiService（Nacos Prompt AutoCfg）。
+  # dev 默认不联 Nacos；即便 A2A_NACOS_ENABLED=true 切到真拉取，
+  # 也只让 starter 的 AgentscopeA2aNacosAutoConfiguration 装 a2aService（private 字段，
+  # 本服务不直接注入），保证 IoC 里没有重复的 AiService bean。
+  nacos:
+    prompt:
+      enabled: false
+  a2a:
+    server:
+      enabled: false
+    nacos:
+      discovery:
+        enabled: true      # 本地 dev 关闭 Nacos AI Registry 拉取（默认无 Nacos 连通）；运维需联调时改为 true
+      server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+      username: ${NACOS_USERNAME:nacos}
+      password: ${NACOS_PASSWORD:nacos}
+      namespace: ${NACOS_NAMESPACE:public}
+      access-key: ${NACOS_ACCESS_KEY:}
+      secret-key: ${NACOS_SECRET_KEY:}

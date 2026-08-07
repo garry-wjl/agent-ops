@@ -1,0 +1,326 @@
+/**
+ * 全局样式
+ * - 主色 #2B52D9
+ * - 字体走 system stack（PingFang SC / 微软雅黑 / 苹方）；
+ *   不再 @import Google Fonts（圈内 CI 和部署环境均无法访问，且本地未必装 Noto Sans SC）
+ * - 扁平化：无卡片阴影、无内分隔线、纯白底
+ */
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: #ffffff;
+  font-family:
+    'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'PingFang SC',
+    'Helvetica Neue', Arial, sans-serif;
+  color: #0f172b;
+  font-size: 14px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* 扁平化：移除全局卡片阴影 */
+.ant-card,
+.ant-pro-card {
+  box-shadow: none !important;
+  border-color: transparent !important;
+}
+
+/* 工作空间卡片：覆盖上面的扁平规则，恢复可见边框 + 投影 */
+.ws-card.ant-card {
+  border: 1px solid #d5dbe6 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 43, 0.06) !important;
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+.ws-card.ant-card:hover {
+  border-color: #2b52d9 !important;
+  box-shadow: 0 4px 12px rgba(43, 82, 217, 0.12) !important;
+}
+.ws-card--active.ant-card {
+  border: 2px solid #2b52d9 !important;
+  box-shadow: 0 2px 8px rgba(43, 82, 217, 0.14) !important;
+}
+
+/* 工作区侧栏顶部 · 面包屑（旧侧栏版，保留以兼容仍引用此样式的页面，可后续清理） */
+.ws-breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 13px;
+}
+.ws-crumb-home {
+  color: #64748b;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 6px;
+  transition: background 0.18s, color 0.18s;
+}
+.ws-crumb-home:hover {
+  background: #f1f5f9;
+  color: #2b52d9;
+}
+.ws-crumb-sep {
+  color: #cbd5e1;
+  font-size: 13px;
+}
+.ws-crumb-ws {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 150px;
+  padding: 3px 6px;
+  border-radius: 7px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.18s, border-color 0.18s;
+}
+.ws-crumb-ws:hover {
+  background: #f1f5f9;
+  border-color: rgba(43, 82, 217, 0.25);
+}
+.ws-crumb-ws-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172b;
+  max-width: 78px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-crumb-caret {
+  color: #94a3b8;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+/* ProLayout mix 模式顶栏 —— 统一高度 48px。
+ * 必须同步覆盖：
+ *  1. .ant-pro-global-header（内层视觉条）
+ *  2. .ant-pro-layout-header / .ant-layout-header（外层 fixed 壳，默认 56/64px，
+ *     不一起改会让内层 48 上对齐、下面空出 8~16px，看起来就是「没贴住内容」）
+ *  3. 内容区由 ProLayout 用 padding-top 留位，所以外壳高度对齐后 gap 自然消失 */
+.ant-pro-layout .ant-pro-global-header {
+  height: 48px !important;
+  min-height: 48px !important;
+  line-height: 48px;
+  border-bottom: none !important;
+  box-shadow: none !important;
+}
+.ant-pro-layout .ant-pro-layout-header,
+.ant-pro-layout header.ant-layout-header,
+.ant-pro-layout .ant-pro-layout-header-fixed-header {
+  height: 48px !important;
+  min-height: 48px !important;
+  line-height: 48px !important;
+  padding: 0 !important;
+  border-bottom: 1px solid #e5e7eb;
+  box-shadow: none !important;
+}
+
+/* fixedHeader 模式下，ProLayout 给内容容器留出顶栏占位（默认 56/64），
+ * 改成 48 才能与上方对齐，否则内容区上方会多出空白条。 */
+.ant-pro-layout.ant-pro-layout-fix-siders.ant-pro-layout-fix-header,
+.ant-pro-layout .ant-pro-layout-content,
+.ant-pro-layout .ant-pro-layout-bg-list,
+.ant-pro-layout .ant-pro-layout-content-has-page-container {
+  /* 只对那些会被 ProLayout 注入 padding-top 的层兜底 */
+}
+.ant-pro-layout {
+  --ant-pro-layout-header-height: 48px;
+}
+
+/* 顶栏内部所有容器统一垂直居中 —— ProLayout 默认依赖 line-height，
+ * 但我们的自定义子组件（HeaderLogo / HeaderNav / 用户区）是 flex 排版，
+ * 需要强制 align-items: center 才会真正垂直居中。 */
+.ant-pro-layout .ant-pro-global-header,
+.ant-pro-layout .ant-pro-global-header-logo,
+.ant-pro-layout .ant-pro-global-header-header-actions,
+.ant-pro-layout .ant-pro-global-header > *,
+.ant-pro-layout .ant-pro-top-nav-header-main,
+.ant-pro-layout .ant-pro-top-nav-header-main-left,
+.ant-pro-layout .ant-pro-top-nav-header-main-right {
+  display: flex !important;
+  align-items: center !important;
+}
+
+/* LOGO 区（顶栏左侧）—— 去掉与右侧 header / 下方 sider 之间多余的分隔线 */
+.ant-pro-layout .ant-pro-sider-logo,
+.ant-pro-layout .ant-pro-top-nav-header,
+.ant-pro-layout .ant-pro-top-nav-header-logo,
+.ant-pro-layout .ant-pro-top-nav-header-main,
+.ant-pro-layout .ant-pro-top-nav-header-main-left,
+.ant-pro-layout .ant-pro-top-nav-header-main-right {
+  border-right: none !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+}
+
+/* LOGO 下方 / sider 顶部的内缩分隔线（带左右间距那根）—— 由
+ *  .ant-pro-sider-actions / .ant-pro-sider-actions-list / .ant-menu-item-divider
+ *  在 mix 模式下注入，需要清掉。 */
+.ant-pro-layout .ant-pro-sider-actions,
+.ant-pro-layout .ant-pro-sider-actions-list,
+.ant-pro-layout .ant-pro-sider-collapsed-button,
+.ant-pro-layout .ant-pro-base-menu-inline-divider,
+.ant-pro-layout .ant-menu-item-divider,
+.ant-pro-layout .ant-pro-sider .ant-menu::before,
+.ant-pro-layout .ant-pro-sider-menu::before {
+  border-top: none !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+/* ProTable 工具栏左对齐、薄分隔 */
+.ant-pro-table-list-toolbar {
+  padding-bottom: 8px;
+}
+
+/* Sider 与 Content 之间的分隔线（与设计稿对齐 #E5E7EB） */
+.ant-pro-sider {
+  border-right: 1px solid #e5e7eb !important;
+  background: #ffffff !important;
+}
+
+/* Sider 内菜单背景统一到白色（与 mix 模式默认顶栏一致） */
+.ant-pro-sider .ant-menu,
+.ant-pro-sider .ant-menu-sub,
+.ant-pro-sider .ant-pro-base-menu {
+  background: #ffffff !important;
+}
+
+/* 菜单项左右内边距 + 圆角，避免顶到边 */
+.ant-pro-sider .ant-menu-item,
+.ant-pro-sider .ant-menu-submenu-title {
+  margin-inline: 12px !important;
+  width: calc(100% - 24px) !important;
+  border-radius: 6px !important;
+}
+
+/* 二级菜单（在一级展开下）的左侧缩进收一点 */
+.ant-pro-sider .ant-menu-submenu .ant-menu-item {
+  padding-inline-start: 36px !important;
+}
+
+/* 分组导航：去掉所有分组标题分割线（仅保留个人信息上方那条，见 avatar.tsx） */
+.ant-pro-sider .ant-menu-item-group-title {
+  border-top: none !important;
+}
+
+/* 分组标题用浅灰；分组下的菜单项（图标 + 文字）用更深的颜色 */
+.ant-pro-sider .ant-menu-item-group-title {
+  color: #90a1b9 !important;
+}
+.ant-pro-sider .ant-menu-item:not(.ant-menu-item-selected),
+.ant-pro-sider .ant-menu-item:not(.ant-menu-item-selected) .anticon,
+.ant-pro-sider .ant-menu-item:not(.ant-menu-item-selected) a {
+  color: #1e293b !important;
+}
+
+/* 文本 5 档（设计稿同源） */
+:root {
+  --text-1: #0f172b; /* 主标题 */
+  --text-2: #1e293b; /* 正文 */
+  --text-3: #475569; /* 次要 */
+  --text-4: #64748b; /* 辅助 */
+  --text-5: #90a1b9; /* 占位 */
+  --brand: #2b52d9;
+  --color-step-text: #2b52d9;
+  --color-step-thinking: #7c3aed;
+  --color-step-tool-use: #10b981;
+  --color-step-tool-result: #f59e0b;
+  --color-step-error: #ef4444;
+}
+
+.text-secondary {
+  color: var(--text-3);
+}
+.text-tertiary {
+  color: var(--text-4);
+}
+.text-muted {
+  color: var(--text-5);
+}
+
+/* =========================================================
+ * Agent 时间线（AssistantSegmentList）
+ * 一根贯穿竖线 + 每段圆点,视觉对齐 VSCode 内 Claude Code 的执行过程
+ * ========================================================= */
+.agent-timeline {
+  position: relative;
+  padding-left: 24px;
+
+  /* 贯穿竖线 — 起止距首/末圆点中心收 8px,避免突兀 */
+  &::before {
+    content: '';
+    position: absolute;
+    left: 9px;
+    top: 12px;
+    bottom: 12px;
+    width: 2px;
+    background: #e2e8f0;
+    border-radius: 1px;
+  }
+}
+
+.agent-timeline-item {
+  position: relative;
+}
+
+/* 圆点 — 直径 12,白色描边盖住竖线,内填 segment 主色 */
+.agent-timeline-dot {
+  position: absolute;
+  left: -20px;
+  top: 6px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px #e2e8f0;
+  background: var(--brand);
+  z-index: 1;
+}
+
+/* 流式中的最后一段圆点 — 外圈脉冲扩散 */
+.agent-timeline-dot-pulse {
+  animation: agent-timeline-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes agent-timeline-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px #e2e8f0,
+      0 0 0 0 rgba(43, 82, 217, 0.45);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px #e2e8f0,
+      0 0 0 6px rgba(43, 82, 217, 0);
+  }
+}
+
+/* ============ Agent 5 步表单 Drawer：底部操作条钉底 ============ */
+/* StepsForm 根节点 .ant-pro-steps-form 源码写死不撑高，这里让它在 Drawer body 内
+ * 撑满高度并成为 flex 列，配合 CreateForm stepsFormRender 的 flex:1 内容区，
+ * 使「上一步/下一步/提交」按钮真正固定在 Drawer 底部。 */
+.stepform-drawer-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
+  .ant-pro-steps-form {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+  }
+}
