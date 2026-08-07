@@ -16,8 +16,9 @@ import path from 'node:path';
 export default defineConfig(({ mode }) => {
   const envDir = path.resolve(__dirname, 'env');
   const env = loadEnv(mode, envDir, '');
-  const enableMock = env.NO_MOCK !== 'true';
-  const bePort = env.BE_PORT || '8081';
+  // 进程环境变量优先（本地联调可 `BE_PORT=8082 NO_MOCK=true pnpm dev`）
+  const enableMock = (process.env.NO_MOCK ?? env.NO_MOCK) !== 'true';
+  const bePort = process.env.BE_PORT || env.BE_PORT || '8081';
 
   return {
     envDir,

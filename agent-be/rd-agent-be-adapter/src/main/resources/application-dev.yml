@@ -5,8 +5,8 @@
 # 即可走本 profile;若要切其他 profile,显式覆盖 -Dspring-boot.run.profiles=xxx。
 #
 # 前置条件（本机需起着）：
-#   - MySQL 127.0.0.1:3306,db: rd_agent
-#   - Redis 127.0.0.1:6379
+#   - MySQL Docker 容器 mysql-test：127.0.0.1:3306，库 rd_agent，root / 123456
+#   - Redis（本机 docker redis-test）：127.0.0.1:6379
 #
 # SSO/GCAC 已移除；本地默认 disable-auth=true，身份可由 X-User-Id header 注入。
 
@@ -15,7 +15,10 @@ server:
 
 spring:
   datasource:
-    password: ${DB_PASSWORD:}
+    # 对齐本机 docker mysql-test（MYSQL_ROOT_PASSWORD=123456）
+    # host/port/库名沿用 application.yml：127.0.0.1:3306 / rd_agent
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:123456}
 
 app:
   auth:

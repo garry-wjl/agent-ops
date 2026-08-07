@@ -5,6 +5,8 @@
 import { ArrowRightOutlined } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/providers/AuthProvider';
+import BrandMark from '@/components/BrandMark';
+import { APP_BRAND } from '@/layouts/avatar';
 import { useEffect, useState } from 'react';
 
 const COLOR = {
@@ -12,7 +14,6 @@ const COLOR = {
   cardBg: '#FFFFFF',
   cardBorder: '#E2E8F0',
   divider: '#F1F5F9',
-  logoBg: '#0F172B',
   textPrimary: '#0F172B',
   textMuted: '#90A1B9',
   primary: '#2B52D9',
@@ -102,28 +103,7 @@ export default function LoginPage() {
             gap: 12,
           }}
         >
-          <div
-            style={{
-              width: 56,
-              height: 56,
-              background: COLOR.logoBg,
-              borderRadius: 12,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <span
-              style={{
-                color: '#fff',
-                fontSize: 28,
-                fontWeight: 700,
-                lineHeight: 1,
-              }}
-            >
-              A
-            </span>
-          </div>
+          <BrandMark size={56} />
           <div
             style={{
               fontSize: 24,
@@ -131,7 +111,7 @@ export default function LoginPage() {
               color: COLOR.textPrimary,
             }}
           >
-            Agent Sphere
+            {APP_BRAND}
           </div>
           <div
             style={{
@@ -140,7 +120,7 @@ export default function LoginPage() {
               color: COLOR.textMuted,
             }}
           >
-            Sphere 管理后台
+            Agent 管理后台
           </div>
         </div>
 

@@ -5,12 +5,13 @@
  */
 import { useNavigate } from 'react-router-dom';
 import { APP_BRAND } from '@/layouts/avatar';
+import BrandMark from '@/components/BrandMark';
 
 export default function HeaderLogo() {
   const navigate = useNavigate();
   return (
     <div className="header-logo" onClick={() => navigate('/workbench')}>
-      <span className="header-logo-icon">🛰️</span>
+      <BrandMark size={28} className="header-logo-mark" />
       <span className="header-logo-text">{APP_BRAND}</span>
     </div>
   );
