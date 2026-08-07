@@ -36,6 +36,7 @@ public class RouteRoleMapping {
 
     /** 完全公开路径；不解析 JWT。 */
     private static final List<String> PUBLIC_PATHS = List.of(
+            "/api/v1/auth/login",
             "/api/v1/debug-console/test",
             "/api/v1/open/**",
             "/actuator/**",

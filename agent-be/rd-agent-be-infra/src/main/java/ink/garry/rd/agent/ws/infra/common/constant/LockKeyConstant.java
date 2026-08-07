@@ -236,6 +236,13 @@ public final class LockKeyConstant {
      */
     public static final String MODEL_CREATE_LOCK_PREFIX = "model:create:lock:";
 
+
+    /** 用户写用例互斥锁前缀；拼接用户 num 后守护 UserCommandService 单条命令。 */
+    public static final String USER_COMMAND_LOCK_PREFIX = "user:command:lock:";
+
+    /** 用户新建用例锁前缀；拼接 username 后守护 createUser 临界区。 */
+    public static final String USER_CREATE_LOCK_PREFIX = "user:create:lock:";
+
     private LockKeyConstant() {
     }
 }

@@ -68,6 +68,8 @@ app:
     api-key: ${LLM_API_KEY:}
   auth:
     platform-admins: garry.wang1,alice.zhang
+    # 引导创建平台管理员用户时的默认初始密码（生产务必覆盖）
+    bootstrap-default-password: ${AUTH_BOOTSTRAP_DEFAULT_PASSWORD:ChangeMe@123456}
     # 鉴权总开关：本地 dev 可 true，注入由 X-User-Id header 走的兜底登录态；生产强制 false
     disable-auth: ${AUTH_DISABLED:false}
     jwt:

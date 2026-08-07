@@ -14,6 +14,9 @@ import {
 } from 'react';
 import { Spin } from 'antd';
 import { fetchCurrentUser, type CurrentUser } from '@/services/auth';
+import { markForceLogin } from '@/services/auth/session';
+import { userApi } from '@/services/user';
+import { useWorkspaceStore } from '@/stores/workspace';
 
 interface AuthContextValue {
   currentUser?: CurrentUser;
@@ -45,8 +48,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    // disable-auth 下 /me 仍会成功；打标避免登录页立刻被踢回业务页
+    markForceLogin();
+    // 清掉上次活动空间，避免下次登录携带无效 X-Workspace-Num
+    useWorkspaceStore.getState().setCurrentWorkspace(undefined);
     setCurrentUser(undefined);
-    window.location.href = '/login';
+    void userApi.logout().finally(() => {
+      window.location.assign('/login');
+    });
   }, []);
 
   useEffect(() => {

@@ -1,9 +1,10 @@
 /**
- * 成员选择器 — 工号 / 姓名远程搜索多选（通讯录）。
+ * 成员选择器 — 按用户名远程搜索多选。
  * 创建空间 / 编辑空间共用。
- * - value / onChange 为工号数组（string[]）
- * - 远程搜索走 commonApi.searchEmployees（mock 直连通讯录）
- * - 通过 labelMap 透传已知工号→姓名，保证回显 chip 显示姓名
+ * - value / onChange 为用户编号数组（string[]，内部标识）
+ * - 界面只展示用户名，不展示编号
+ * - 远程搜索走 commonApi.searchEmployees
+ * - 通过 labelMap 透传已知编号→用户名，保证回显 chip 显示用户名
  */
 import { useMemo, useRef, useState } from 'react';
 import { Select, Spin } from 'antd';
@@ -26,7 +27,7 @@ export default function MemberSelect({
   onChange,
   labelMap = {},
   excludeEmpNos = [],
-  placeholder = '按工号 / 姓名搜索添加',
+  placeholder = '按用户名搜索添加',
   disabled,
 }: MemberSelectProps) {
   const [fetching, setFetching] = useState(false);
@@ -72,13 +73,13 @@ export default function MemberSelect({
     .filter(e => !excludeEmpNos.includes(e.empNo))
     .map(e => ({
       value: e.empNo,
-      label: `${e.displayName ?? e.empNo}（${e.empNo}${e.dept ? ' · ' + e.dept : ''}）`,
+      label: e.displayName ?? e.empNo,
     }));
 
-  // 已选项也要有 option 以正确显示 label
+  // 已选项也要有 option 以正确显示 label（仅用户名）
   const selectedOptions = (value ?? []).map(empNo => ({
     value: empNo,
-    label: labels[empNo] ? `${labels[empNo]}（${empNo}）` : empNo,
+    label: labels[empNo] ?? empNo,
   }));
 
   const mergedOptions = [

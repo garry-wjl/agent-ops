@@ -2,6 +2,8 @@ package ink.garry.rd.agent.ws.application.workspace;
 
 import cn.hutool.core.lang.Assert;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import cn.hutool.core.util.StrUtil;
+import ink.garry.rd.agent.ws.application.user.UserQueryService;
 import ink.garry.rd.agent.ws.client.common.BizCode;
 import ink.garry.rd.agent.ws.client.workspace.constant.WorkspaceConstants;
 import ink.garry.rd.agent.ws.client.workspace.dto.WorkspaceAssetCountDTO;
@@ -21,7 +23,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Workspace 读侧应用服务。
@@ -43,6 +47,8 @@ public class WorkspaceQueryService {
     private AgentMapper agentMapper;
     @Resource
     private SkillMapper skillMapper;
+    @Resource
+    private UserQueryService userQueryService;
 
     /**
      * 列出当前用户可见的全部空间（「我创建 + 我加入」，deleted=0），不分页。
@@ -52,12 +58,25 @@ public class WorkspaceQueryService {
      */
     public List<WorkspaceDTO> listMyWorkspaces(String operatorId) {
         Assert.notBlank(operatorId, "operatorId 不能为空");
-        List<WorkspaceEntity> entities = workspaceMapper.selectVisibleByEmpNo(operatorId);
-        List<WorkspaceDTO> result = new ArrayList<>();
-        if (entities == null) {
-            return result;
+        // 兼容历史成员 ID 仍为 username：同时用 num 与 username 检索
+        Map<String, WorkspaceEntity> merged = new LinkedHashMap<>();
+        List<WorkspaceEntity> byNum = workspaceMapper.selectVisibleByEmpNo(operatorId);
+        if (byNum != null) {
+            for (WorkspaceEntity e : byNum) {
+                merged.put(e.getNum(), e);
+            }
         }
-        for (WorkspaceEntity entity : entities) {
+        String username = userQueryService.findUsernameByNum(operatorId);
+        if (StrUtil.isNotBlank(username) && !username.equals(operatorId)) {
+            List<WorkspaceEntity> byName = workspaceMapper.selectVisibleByEmpNo(username);
+            if (byName != null) {
+                for (WorkspaceEntity e : byName) {
+                    merged.putIfAbsent(e.getNum(), e);
+                }
+            }
+        }
+        List<WorkspaceDTO> result = new ArrayList<>();
+        for (WorkspaceEntity entity : merged.values()) {
             result.add(toCardDTO(WorkspaceEntity.toDomain(entity), operatorId));
         }
         return result;
@@ -82,23 +101,31 @@ public class WorkspaceQueryService {
         }
         Workspace workspace = WorkspaceEntity.toDomain(entity);
 
-        // 访问鉴权：调用者必须在该空间内（管理员或成员）
-        boolean isAdmin = workspace.getAdminList() != null && workspace.getAdminList().contains(operatorId);
-        boolean isMember = workspace.getMemberList() != null && workspace.getMemberList().contains(operatorId);
+        // 访问鉴权：调用者必须在该空间内（管理员或成员；兼容旧 username）
+        boolean isAdmin = containsUser(workspace.getAdminList(), operatorId);
+        boolean isMember = containsUser(workspace.getMemberList(), operatorId);
         if (!isAdmin && !isMember) {
             throw new BusinessException(BizCode.FORBIDDEN.getCode(), "无权访问该空间 num=" + num);
         }
 
-        // 成员 displayName：通讯录下线后暂用工号原样展示
+        List<String> allIds = new ArrayList<>();
+        if (workspace.getAdminList() != null) {
+            allIds.addAll(workspace.getAdminList());
+        }
+        if (workspace.getMemberList() != null) {
+            allIds.addAll(workspace.getMemberList());
+        }
+        Map<String, String> names = userQueryService.resolveDisplayNames(allIds);
+
         List<WorkspaceMemberDTO> members = new ArrayList<>();
         if (workspace.getAdminList() != null) {
             for (String empNo : workspace.getAdminList()) {
-                members.add(toMemberDTO(empNo, WorkspaceConstants.ROLE_ADMIN));
+                members.add(toMemberDTO(empNo, names.getOrDefault(empNo, empNo), WorkspaceConstants.ROLE_ADMIN));
             }
         }
         if (workspace.getMemberList() != null) {
             for (String empNo : workspace.getMemberList()) {
-                members.add(toMemberDTO(empNo, WorkspaceConstants.ROLE_MEMBER));
+                members.add(toMemberDTO(empNo, names.getOrDefault(empNo, empNo), WorkspaceConstants.ROLE_MEMBER));
             }
         }
 
@@ -108,7 +135,7 @@ public class WorkspaceQueryService {
                 .description(workspace.getDescription())
                 .createNo(workspace.getCreateNo())
                 .myRole(isAdmin ? WorkspaceConstants.ROLE_ADMIN : WorkspaceConstants.ROLE_MEMBER)
-                .isCreator(operatorId.equals(workspace.getCreateNo()))
+                .isCreator(isSameUser(operatorId, workspace.getCreateNo()))
                 .createTime(workspace.getCreateTime())
                 .members(members)
                 .build();
@@ -167,10 +194,10 @@ public class WorkspaceQueryService {
             return null;
         }
         Workspace workspace = WorkspaceEntity.toDomain(entity);
-        if (workspace.getAdminList() != null && workspace.getAdminList().contains(empNo)) {
+        if (containsUser(workspace.getAdminList(), empNo)) {
             return WorkspaceConstants.ROLE_ADMIN;
         }
-        if (workspace.getMemberList() != null && workspace.getMemberList().contains(empNo)) {
+        if (containsUser(workspace.getMemberList(), empNo)) {
             return WorkspaceConstants.ROLE_MEMBER;
         }
         return null;
@@ -181,10 +208,10 @@ public class WorkspaceQueryService {
     // ============================================================
 
     /** 领域对象 → 卡片 DTO（计算计数 + 当前用户角色 + 是否创建人）。 */
-    private static WorkspaceDTO toCardDTO(Workspace w, String operatorId) {
+    private WorkspaceDTO toCardDTO(Workspace w, String operatorId) {
         int adminCount = w.getAdminList() == null ? 0 : w.getAdminList().size();
         int memberCount = w.getMemberList() == null ? 0 : w.getMemberList().size();
-        boolean isAdmin = w.getAdminList() != null && w.getAdminList().contains(operatorId);
+        boolean isAdmin = containsUser(w.getAdminList(), operatorId);
         return WorkspaceDTO.builder()
                 .num(w.getNum())
                 .name(w.getName())
@@ -192,17 +219,39 @@ public class WorkspaceQueryService {
                 .adminCount(adminCount)
                 .memberCount(memberCount)
                 .myRole(isAdmin ? WorkspaceConstants.ROLE_ADMIN : WorkspaceConstants.ROLE_MEMBER)
-                .isCreator(operatorId.equals(w.getCreateNo()))
+                .isCreator(isSameUser(operatorId, w.getCreateNo()))
                 .createTime(w.getCreateTime())
                 .build();
     }
 
-    /** 工号 + 角色 → 成员 DTO（displayName 暂回退工号）。 */
-    private static WorkspaceMemberDTO toMemberDTO(String empNo, String role) {
+    private WorkspaceMemberDTO toMemberDTO(String empNo, String displayName, String role) {
         return WorkspaceMemberDTO.builder()
                 .empNo(empNo)
-                .displayName(empNo)
+                .displayName(displayName)
                 .role(role)
                 .build();
+    }
+
+    /** 成员列表是否包含用户（num 或兼容 username）。 */
+    private boolean containsUser(List<String> ids, String userNum) {
+        if (ids == null || ids.isEmpty() || StrUtil.isBlank(userNum)) {
+            return false;
+        }
+        if (ids.contains(userNum)) {
+            return true;
+        }
+        String username = userQueryService.findUsernameByNum(userNum);
+        return StrUtil.isNotBlank(username) && ids.contains(username);
+    }
+
+    private boolean isSameUser(String userNum, String otherId) {
+        if (StrUtil.isBlank(userNum) || StrUtil.isBlank(otherId)) {
+            return false;
+        }
+        if (userNum.equals(otherId)) {
+            return true;
+        }
+        String username = userQueryService.findUsernameByNum(userNum);
+        return StrUtil.isNotBlank(username) && username.equals(otherId);
     }
 }

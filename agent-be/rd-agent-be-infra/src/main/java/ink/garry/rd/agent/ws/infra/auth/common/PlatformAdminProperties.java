@@ -17,6 +17,11 @@ import java.util.List;
 @ConfigurationProperties(prefix = "app.auth")
 public class PlatformAdminProperties {
 
-    /** 平台管理员工号清单（启动时被绑定为 platform_admin） */
+    /** 平台管理员用户名清单（启动时确保 sys_user 存在并绑定 platform_admin） */
     private List<String> platformAdmins = new ArrayList<>();
+
+    /**
+     * 引导创建用户时的默认初始密码（仅 bootstrap；生产务必覆盖）。
+     */
+    private String bootstrapDefaultPassword = "ChangeMe@123456";
 }

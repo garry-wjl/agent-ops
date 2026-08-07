@@ -86,6 +86,13 @@ public enum BizCode {
     // ---- Prompt 域（Prompt 中心） ----
     PROMPT_NOT_FOUND(8001, "Prompt 不存在"),
 
+    // ---- 用户管理域 ----
+    USER_NOT_FOUND(1101, "用户不存在"),
+    USER_DISABLED(1102, "用户已禁用"),
+    USER_LOGIN_FAILED(1103, "用户名或密码错误"),
+    USER_LAST_PLATFORM_ADMIN(1104, "不能禁用最后一名平台管理员"),
+    USER_PASSWORD_INVALID(1105, "密码不符合要求"),
+
     // ---- 系统 ----
     SYSTEM_BUSY(9001, "系统繁忙"),
     THIRD_PARTY_ERROR(9002, "第三方服务异常");
