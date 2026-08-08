@@ -2,7 +2,6 @@
 FROM registry.cn-shenzhen.aliyuncs.com/ys-common/eclipse-temurin-17-jre-jammy:17-jre-jammy
 
 ENV TZ=Asia/Shanghai
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # 多模块项目：fat jar 在 adapter 子模块的 target 下
 # 默认 JAR_FILE = rd-agent-be-adapter/target/app.jar（与 adapter pom <finalName>app</finalName> 一致）
