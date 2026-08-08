@@ -1,5 +1,5 @@
-# 运行镜像：公开 eclipse-temurin JRE 17（Docker Hub）
-FROM eclipse-temurin:17-jre-jammy
+# 运行镜像：阿里云 ACR 同步的 eclipse-temurin JRE 17
+FROM registry.cn-shenzhen.aliyuncs.com/ys-common/eclipse-temurin-17-jre-jammy:17-jre-jammy
 
 ENV TZ=Asia/Shanghai
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone

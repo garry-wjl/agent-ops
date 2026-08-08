@@ -62,7 +62,7 @@
                 </executions>
             </plugin>
 
-            <!-- jib：公有基础镜像 eclipse-temurin；仅 -Pdocker 时启用（根 pom dockerfile.skip） -->
+            <!-- jib：基础镜像见根 pom docker.from.image；仅 -Pdocker 时启用（根 pom dockerfile.skip） -->
             <plugin>
                 <groupId>com.google.cloud.tools</groupId>
                 <artifactId>jib-maven-plugin</artifactId>

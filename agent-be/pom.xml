@@ -41,12 +41,12 @@
         <jacoco.version>0.8.12</jacoco.version>
 
         <!-- ============================================================
-             Docker / Jib 镜像构建（公有基础镜像）
-             - docker.from.image：运行时基础镜像（Docker Hub 公开）
+             Docker / Jib 镜像构建（基础镜像）
+             - docker.from.image：运行时基础镜像（阿里云 ACR）
              - docker.image：构建产物镜像名（可用 -Ddocker.image=registry/repo:tag 覆盖）
              - dockerfile.skip：默认 true 跳过 jib；-Pdocker 时设 false
              ============================================================ -->
-        <docker.from.image>eclipse-temurin:17-jre-jammy</docker.from.image>
+        <docker.from.image>registry.cn-shenzhen.aliyuncs.com/ys-common/eclipse-temurin-17-jre-jammy:17-jre-jammy</docker.from.image>
         <docker.image>rd-agent-be:latest</docker.image>
         <dockerfile.skip>true</dockerfile.skip>
         <jib.version>3.5.1</jib.version>
