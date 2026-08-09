@@ -15,10 +15,9 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
-    # /api/* 反代到 BE
-    # NOTE: rd-agent-be 是 K8s Service 名的假设值，部署后如不通需运维确认实际 service
+    # /api/* 反代到 BE；BACKEND_HOST / BACKEND_PORT 由容器环境变量注入（启动时 envsubst）
     location /api/ {
-        proxy_pass http://rd-agent-be:8081;
+        proxy_pass http://${BACKEND_HOST}:${BACKEND_PORT};
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
