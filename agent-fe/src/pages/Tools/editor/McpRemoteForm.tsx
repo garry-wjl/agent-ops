@@ -27,8 +27,8 @@ const LOCAL_SAMPLE = `{
 }`;
 
 const REMOTE_SAMPLE = `{
-  "url": "https://mcp.example.com/sse",
-  "transport": "sse",
+  "url": "https://mcp.example.com/mcp",
+  "transport": "streamable-http",
   "headers": { "Authorization": "Bearer xxx" }
 }`;
 
