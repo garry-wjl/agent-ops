@@ -30,6 +30,7 @@ import io.agentscope.core.tool.mcp.McpClientWrapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.PrintWriter;
@@ -38,7 +39,9 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -78,11 +81,16 @@ public class ToolRunnerFactory {
     private static final int MCP_TIMEOUT_SECONDS = 30;
 
     /**
-     * 不可透传的请求头（小写比较）：传输 / 实体层语义，随入站请求透传到出站会破坏目标调用
-     * （Host 指向错误主机、Content-Length 与出站体不符、压缩 / 连接控制头错配）。
+     * MCP 入站透传默认黑名单（小写）。传输 / 实体层 / 内容协商语义，透传到出站会破坏 MCP 握手。
+     * <p>
+     * 尤其 {@code Accept}：调试台 SSE 入站常带 {@code text/event-stream}，透传到 streamable-http
+     * 会使远程网关返回 {@code Not Acceptable: Client must accept application/json}。
+     * 可通过 {@code app.tool.mcp.non-forwardable-headers} /
+     * 环境变量 {@code APP_TOOL_MCP_NON_FORWARDABLE_HEADERS}（逗号分隔）整表覆盖。
      */
-    private static final Set<String> NON_FORWARDABLE_HEADERS = Set.of(
-            "host", "content-length", "connection", "transfer-encoding", "accept-encoding");
+    static final Set<String> DEFAULT_NON_FORWARDABLE_HEADERS = Set.of(
+            "host", "content-length", "connection", "transfer-encoding", "accept-encoding",
+            "accept", "content-type");
 
     /** OpenAPI path-item 中视为「可执行端点」的 HTTP 方法（与 {@code HttpMethod} 枚举对齐，其余如 head/options 跳过）。 */
     private static final Set<String> OPENAPI_METHODS = Set.of("get", "post", "put", "delete", "patch");
@@ -93,11 +101,36 @@ public class ToolRunnerFactory {
      */
     private static final Set<String> OPENAPI_RESERVED_HEADERS = Set.of("accept", "content-type", "authorization");
 
+    /**
+     * 当前生效的入站透传黑名单（小写比较）。未配置覆盖时等于 {@link #DEFAULT_NON_FORWARDABLE_HEADERS}。
+     */
+    private Set<String> nonForwardableHeaders = DEFAULT_NON_FORWARDABLE_HEADERS;
+
     @Resource
     private ToolQueryService toolQueryService;
 
     @Resource
     private FunctionCallInvoker functionCallInvoker;
+
+    /**
+     * 注入 MCP 入站透传黑名单覆盖值。
+     * <p>
+     * 配置键 {@code app.tool.mcp.non-forwardable-headers}，环境变量
+     * {@code APP_TOOL_MCP_NON_FORWARDABLE_HEADERS}；逗号分隔、大小写不敏感。
+     * 空 / 未传 → 回落 {@link #DEFAULT_NON_FORWARDABLE_HEADERS}；非空 → <b>整表覆盖</b>（不与默认合并）。
+     *
+     * @param csv 逗号分隔的请求头名；可空
+     */
+    @Value("${app.tool.mcp.non-forwardable-headers:}")
+    void setNonForwardableHeaders(String csv) {
+        if (StrUtil.isBlank(csv)) {
+            this.nonForwardableHeaders = DEFAULT_NON_FORWARDABLE_HEADERS;
+            return;
+        }
+        this.nonForwardableHeaders = parseHeaderNameSet(csv);
+        log.info("MCP 入站透传黑名单已覆盖 size={} headers={}",
+                nonForwardableHeaders.size(), nonForwardableHeaders);
+    }
 
     /**
      * 按工具编码构建一组可执行工具（一端点一 {@link FunctionCallTool}），供 Agent 自主执行。
@@ -501,9 +534,10 @@ public class ToolRunnerFactory {
      */
     private Map<String, String> buildMcpHeaders(JSONObject config, ToolDTO tool, Map<String, String> inboundHeaders) {
         Map<String, String> headers = new LinkedHashMap<>();
+        Set<String> blocked = nonForwardableHeaders;
         if (CollUtil.isNotEmpty(inboundHeaders)) {
             inboundHeaders.forEach((name, value) -> {
-                if (name != null && !NON_FORWARDABLE_HEADERS.contains(name.toLowerCase())) {
+                if (name != null && !blocked.contains(name.toLowerCase(Locale.ROOT))) {
                     headers.put(name, value);
                 }
             });
@@ -517,6 +551,23 @@ public class ToolRunnerFactory {
             }
         }
         return headers;
+    }
+
+    /**
+     * 将逗号分隔的请求头名解析为小写集合（去空白、忽略空段）。
+     *
+     * @param csv 逗号分隔头名
+     * @return 不可变小写集合
+     */
+    private static Set<String> parseHeaderNameSet(String csv) {
+        Set<String> names = new LinkedHashSet<>();
+        for (String part : csv.split(",")) {
+            String trimmed = part == null ? "" : part.trim().toLowerCase(Locale.ROOT);
+            if (!trimmed.isEmpty()) {
+                names.add(trimmed);
+            }
+        }
+        return Set.copyOf(names);
     }
 
     /** JSONObject → Map&lt;String,String&gt;（值取字符串形式）；空对象返回空 Map。 */
