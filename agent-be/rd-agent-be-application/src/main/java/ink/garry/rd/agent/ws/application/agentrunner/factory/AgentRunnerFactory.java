@@ -16,7 +16,6 @@ import ink.garry.rd.agent.ws.client.sandbox.dto.SandboxDetailDTO;
 import ink.garry.rd.agent.ws.client.tool.dto.ToolDTO;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.AgentStatus;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.CreationMode;
-import ink.garry.rd.agent.ws.domain.tool.valueobject.PackageMode;
 import ink.garry.rd.agent.ws.domain.tool.valueobject.ToolType;
 import ink.garry.rd.agent.ws.infra.agent.a2a.Http1JdkA2AHttpClient;
 import ink.garry.rd.agent.ws.infra.agent.a2a.LocalAgentCardResolver;
@@ -47,8 +46,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * AgentRunner 工厂。
@@ -210,22 +212,40 @@ public class AgentRunnerFactory {
 
             //3.3 注册挂载的工具（FunctionCall 构建可执行工具；MCP 构建客户端连接；按类型各自分流，互不命中返回空/null）
             List<String> toolNums = resolveToolNums(agent.getConfigSnapshot());
-            if (CollectionUtil.isNotEmpty(toolNums)) {
+            if (CollectionUtil.isEmpty(toolNums)) {
+                log.warn("Agent {} 运行时快照未挂载任何工具（toolNums/toolRefs 为空），"
+                                + "若前端已绑定请确认已发布对应版本",
+                        agent.getNum());
+            } else {
                 // 在请求线程抓取入站请求头随工具链传入：工具实际在 boundedElastic 异步线程执行，
                 // 届时 RequestContextHolder 已取不到当前请求上下文，故必须此处先取好。
                 Map<String, String> inboundHeaders = HttpHeaderUtil.getHeaderMap();
+                // MCP 远程连接不默认透传入站管理端请求头（Cookie/Content-Type 等易破坏握手）；
+                // 仅保留工具自身 mcpConfig.headers / proxyHeaders，与「测试连接」行为对齐。
+                Map<String, String> mcpInboundHeaders = Map.of();
                 for (String toolNum : toolNums) {
                     // 读查询统一在此完成：一次按 num 加载工具 DTO，供 FC / MCP 两条构建路径复用
                     ToolDTO toolDTO = toolQueryService.findByNum(toolNum);
                     if (isMcpServerConnection(toolDTO)) {
                         // MCP server 连接：外部 server 不可用不应拖垮整个 Agent 装配，故兜底跳过
                         try {
-                            McpClientWrapper mcpClient = toolRunnerFactory.buildMcpClient(toolDTO, inboundHeaders);
-                            if (mcpClient != null) {
-                                toolkit.registerMcpClient(mcpClient).block();
+                            McpClientWrapper mcpClient = toolRunnerFactory.buildMcpClient(toolDTO, mcpInboundHeaders);
+                            if (mcpClient == null) {
+                                log.error("buildMcpClient 返回 null，MCP 工具未注册 toolNum={} creationMode={} packageMode={}",
+                                        toolNum, toolDTO.getCreationMode(), toolDTO.getPackageMode());
+                                continue;
                             }
+                            // 不入 tool group（ungrouped）：ReActAgent 每轮会按 session 的
+                            // activatedGroups 做 setActiveGroups 全量覆盖，EXTERNAL 分组也会被关掉，
+                            // 导致 maps_* 虽已注册却报 Unauthorized tool call / is not available。
+                            // ungrouped 工具不受该覆盖影响，与 FC / 文件类工具行为一致。
+                            toolkit.registration()
+                                    .mcpClient(mcpClient)
+                                    .apply();
+                            log.info("已注册 MCP 客户端 toolNum={} toolkitTools={}",
+                                    toolNum, toolkit.getToolNames());
                         } catch (Exception e) {
-                            log.warn("注册 MCP 工具失败，已跳过 toolNum={}", toolNum, e);
+                            log.error("注册 MCP 工具失败，已跳过 toolNum={}", toolNum, e);
                         }
                     } else {
                         // FunctionCall（含 MCP API 打包-EXISTING_API，内部委托来源 FC 工具）：一端点一可执行工具
@@ -242,6 +262,8 @@ public class AgentRunnerFactory {
             String effectiveSysPrompt = buildSandboxAwareSysPrompt(
                     agent.getConfigSnapshot().getSystemPrompt(),
                     StrUtil.isNotBlank(agent.getConfigSnapshot().getSandboxRef()));
+            // 挂载工具清单写入系统提示：避免模型只看 reset_equipped_tools（仅 META 分组）后误答「没有工具」。
+            effectiveSysPrompt = appendMountedToolsSysPrompt(effectiveSysPrompt, toolkit);
             // 创建 BYPASS 权限上下文：允许所有工具调用（包括 SkillBox 内置的 load_skill_through_path），
             // 避免因缺少 allow 规则导致 PermissionEngine 拒绝工具调用。
             PermissionContextState permissionCtx = PermissionContextState.builder()
@@ -332,15 +354,50 @@ public class AgentRunnerFactory {
     /**
      * 是否以「MCP server 连接」方式构建工具。
      * <p>
-     * MCP 类型且<b>非</b> API 打包-已有 API（{@link PackageMode#EXISTING_API}）—— EXISTING_API 虽为 MCP 类型，
-     * 但本质是引用一个 FC 工具、动态跟随其端点，走 {@code buildTools} 的 FunctionCall 路径而非真起 MCP server。
+     * 仅 {@link ToolType#MCP} + 远程连接（creationMode=REMOTE）走 {@code buildMcpClient}。
+     * API 打包（EXISTING_API / OPENAPI_PASTE）走 {@code buildTools} 或另行处理，避免误进 MCP 客户端路径后被静默丢弃。
      *
      * @param tool 工具 DTO
      * @return true 走 {@code buildMcpClient}（MCP 远程连接）；false 走 {@code buildTools}（FunctionCall）
      */
     private boolean isMcpServerConnection(ToolDTO tool) {
-        return ToolType.MCP.name().equals(tool.getType())
-                && !PackageMode.EXISTING_API.name().equals(tool.getPackageMode());
+        return tool != null
+                && ToolType.MCP.name().equals(tool.getType())
+                && "REMOTE".equals(tool.getCreationMode());
+    }
+
+    /**
+     * 将已挂载、对模型可见的业务工具名写入系统提示，避免「问有没有工具」时模型只看
+     * {@code reset_equipped_tools}（仅描述 META 分组）后误答没有。
+     */
+    static String appendMountedToolsSysPrompt(String userSysPrompt, Toolkit toolkit) {
+        if (toolkit == null) {
+            return userSysPrompt;
+        }
+        Set<String> builtin = Set.of(
+                "execute_shell_command",
+                "read_file",
+                "write_file",
+                "reset_equipped_tools",
+                "load_skill_through_path",
+                "todo_write");
+        List<String> mounted = toolkit.getToolSchemas().stream()
+                .map(s -> s.getName())
+                .filter(StrUtil::isNotBlank)
+                .filter(name -> !builtin.contains(name))
+                .filter(name -> !name.startsWith("load_skill"))
+                .collect(Collectors.toCollection(LinkedHashSet::new))
+                .stream()
+                .toList();
+        if (mounted.isEmpty()) {
+            return userSysPrompt;
+        }
+        String inventory = "【已挂载可调用工具】" + String.join("、", mounted)
+                + "。当用户询问你具备哪些工具时，请据此如实回答；需要时直接调用这些工具，不要声称未挂载。";
+        if (StrUtil.isBlank(userSysPrompt)) {
+            return inventory;
+        }
+        return userSysPrompt + "\n\n" + inventory;
     }
 
     private void registerSkills(AgentDTO.ConfigSnapshot snapshot, SkillBox skillBox) {

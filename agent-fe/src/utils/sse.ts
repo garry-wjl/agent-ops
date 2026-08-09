@@ -49,13 +49,18 @@ export async function invokeStream(
 ): Promise<void> {
   const { url, body, signal, headers = {} } = options;
   try {
+    // 身份与 REST 一致：依赖 cookie JWT；本地 disable-auth 时由后端回落默认用户。
+    // 切勿硬编码 X-User-Id（曾用 mock-user 导致「先建会话、再 invoke」归属校验 500）。
+    const workspaceNum =
+      typeof localStorage !== 'undefined'
+        ? localStorage.getItem('currentWorkspaceNum')
+        : null;
     const resp = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Accept: 'text/event-stream',
-        'X-User-Id': 'mock-user',
-        'X-User-Name': 'mock-user',
+        ...(workspaceNum ? { 'X-Workspace-Num': workspaceNum } : {}),
         ...headers,
       },
       credentials: 'include',
