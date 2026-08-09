@@ -5,6 +5,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
+import java.util.Map;
+
 /**
  * 调试控制台 invoke 请求体。
  * <p>
@@ -40,4 +42,9 @@ public class DebugInvokeRequest {
      */
     @JsonProperty("target_version")
     private String targetVersion;
+
+    /**
+     * 调用上下文（可空）：扁平键值，用于系统提示词变量替换并合并进会话默认上下文。
+     */
+    private Map<String, Object> context;
 }

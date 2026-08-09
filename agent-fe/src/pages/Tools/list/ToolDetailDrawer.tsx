@@ -18,6 +18,7 @@ import {
   TOOL_TYPE_META,
 } from "../constants";
 import MountedAgentsModal from "./MountedAgentsModal";
+import UserName from "@/components/UserName";
 
 const { Text, Paragraph } = Typography;
 
@@ -87,13 +88,13 @@ export default function ToolDetailDrawer({
             {renderShapeFields(tool)}
 
             <Descriptions.Item label="创建人">
-              {tool.createNo}
+              <UserName userNum={tool.createNo} />
             </Descriptions.Item>
             <Descriptions.Item label="创建时间">
               {tool.createTime}
             </Descriptions.Item>
             <Descriptions.Item label="更新人">
-              {tool.updateNo}
+              <UserName userNum={tool.updateNo} />
             </Descriptions.Item>
             <Descriptions.Item label="更新时间">
               {tool.updateTime}

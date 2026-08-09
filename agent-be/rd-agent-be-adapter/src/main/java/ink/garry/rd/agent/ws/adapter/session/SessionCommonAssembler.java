@@ -43,6 +43,7 @@ public final class SessionCommonAssembler {
         vo.setLastMessageAt(dto.getLastMessageAt());
         vo.setCreateTime(dto.getCreateTime());
         vo.setOrigin(dto.getOrigin());
+        vo.setInvokeContext(dto.getInvokeContext());
         return vo;
     }
 }

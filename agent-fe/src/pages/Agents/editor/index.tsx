@@ -598,22 +598,69 @@ export default function AgentEditorPage() {
                     }}
                   >
                     <RequiredLabel text="系统提示词" />
-                    <a
-                      onClick={() => setPromptOpen(true)}
-                      style={{ fontSize: 13 }}
-                    >
-                      + 从提示词中心选择
-                    </a>
+                    <Space size={12}>
+                      <a
+                        onClick={() => {
+                          const example = [
+                            '',
+                            '## 默认业务上下文',
+                            '当用户未特别说明时，优先使用当前页面上下文：',
+                            '- 当前订单：{{orderId}}',
+                            '若用户明确提到其他业务主键或无关问题时，按用户意图处理，不要强行绑定上述默认对象。',
+                          ].join('\n');
+                          const cur = draft.systemPrompt ?? '';
+                          patch({
+                            systemPrompt: cur
+                              ? `${cur.replace(/\s+$/, '')}\n${example}`
+                              : example.trimStart(),
+                          });
+                          message.success('已插入默认上下文示例');
+                        }}
+                        style={{ fontSize: 13 }}
+                      >
+                        插入默认上下文示例
+                      </a>
+                      <a
+                        onClick={() => setPromptOpen(true)}
+                        style={{ fontSize: 13 }}
+                      >
+                        + 从提示词中心选择
+                      </a>
+                    </Space>
                   </div>
                 }
                 style={{ width: '100%' }}
               >
                 <Input.TextArea
-                  placeholder="定义 Agent 的角色与行为；可从提示词中心选择模板填入"
+                  placeholder="定义 Agent 的角色与行为；支持 {{orderId}} 等变量，调用时由 context 替换"
                   rows={4}
                   value={draft.systemPrompt}
                   onChange={(e) => patch({ systemPrompt: e.target.value })}
                 />
+                <div
+                  style={{
+                    marginTop: 8,
+                    padding: '8px 12px',
+                    background: COLOR.bgInfo,
+                    border: `1px solid ${COLOR.borderInfo}`,
+                    borderRadius: 6,
+                    fontSize: 12,
+                    color: COLOR.textSecondary,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  <div style={{ fontWeight: 500, marginBottom: 4, color: COLOR.textPrimary }}>
+                    变量替换说明
+                  </div>
+                  <div>
+                    业务变量：调用方传入的 context 键，如 {'{{orderId}}'}（缺失则保留原文）。
+                  </div>
+                  <div>
+                    内置变量（全大写）：{'{{SESSION_NUM}}'} · {'{{AGENT_NUM}}'} ·{' '}
+                    {'{{AGENT_VERSION_NUM}}'} · {'{{WORKSPACE_NUM}}'} ·{' '}
+                    {'{{OPERATOR_ID}}'}
+                  </div>
+                </div>
               </Form.Item>
               <Form.Item label="用户提示词模板">
                 <Input.TextArea

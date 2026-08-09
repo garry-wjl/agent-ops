@@ -36,7 +36,8 @@ public class DebugInvokeController extends BaseController {
 
     @PostMapping(value = "/invoke", produces = "text/event-stream;charset=UTF-8")
     public Flux<ServerSentEvent<String>> invoke(@Valid @RequestBody DebugInvokeRequest req) {
-        return agentInvokeService.invokeStream(req.getAgentNum(), String.valueOf(req.getInput()), req.getSessionNum(), getCurrentUserId(), req.getTargetVersion())
+        return agentInvokeService.invokeStream(req.getAgentNum(), String.valueOf(req.getInput()),
+                        req.getSessionNum(), getCurrentUserId(), req.getTargetVersion(), req.getContext())
                 .map(event -> {
                     try {
                         // 1. 将 Event 序列化为 JSON 树

@@ -80,6 +80,12 @@ export default function CreateWorkspaceModal({
 
   const isLoading = !hasCurrentWorkspace ? false : rolesQuery.isLoading && allRoles.length === 0;
 
+  /** 默认管理员回显用户名（value 仍为用户编号） */
+  const creatorLabelMap = useMemo(() => {
+    if (!currentUser?.userId) return {};
+    return { [currentUser.userId]: currentUser.userName || currentUser.userId };
+  }, [currentUser?.userId, currentUser?.userName]);
+
   return (
     <Modal
       title="新建工作空间"
@@ -142,6 +148,7 @@ export default function CreateWorkspaceModal({
             onChange={(next) =>
               setRoleMembers(prev => ({ ...prev, [role.roleNum]: next }))
             }
+            labelMap={creatorLabelMap}
             placeholder={`选择「${role.name}」的成员`}
           />
         </div>

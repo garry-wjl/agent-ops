@@ -6,6 +6,7 @@
  */
 import { Descriptions, Drawer, Spin } from "antd";
 import { useSandboxDetailQuery } from "@/services/sandbox";
+import UserName from "@/components/UserName";
 import { SANDBOX_STATUS_META, SANDBOX_TYPE_LABEL } from "../constants";
 
 interface SandboxDetailDrawerProps {
@@ -59,13 +60,13 @@ export default function SandboxDetailDrawer({
             {sandbox.remark || "—"}
           </Descriptions.Item>
           <Descriptions.Item label="创建人">
-            {sandbox.createNo}
+            <UserName userNum={sandbox.createNo} />
           </Descriptions.Item>
           <Descriptions.Item label="创建时间">
             {sandbox.createTime}
           </Descriptions.Item>
           <Descriptions.Item label="更新人">
-            {sandbox.updateNo}
+            <UserName userNum={sandbox.updateNo} />
           </Descriptions.Item>
           <Descriptions.Item label="更新时间">
             {sandbox.updateTime}

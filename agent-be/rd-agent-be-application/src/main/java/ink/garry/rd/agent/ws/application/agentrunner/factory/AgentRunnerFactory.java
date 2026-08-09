@@ -6,6 +6,7 @@ import cn.hutool.core.util.StrUtil;
 import ink.garry.rd.agent.ws.application.agent.AgentQueryService;
 import ink.garry.rd.agent.ws.application.agentrunner.tool.JsonFormatTool;
 import ink.garry.rd.agent.ws.application.agentrunner.tool.SandboxTool;
+import ink.garry.rd.agent.ws.application.common.prompt.SysPromptVariableSubstitutor;
 import ink.garry.rd.agent.ws.application.sandbox.SandboxQueryService;
 import ink.garry.rd.agent.ws.application.sandbox.runner.SandboxRunner;
 import ink.garry.rd.agent.ws.application.sandbox.runner.SandboxSession;
@@ -102,7 +103,7 @@ public class AgentRunnerFactory {
      * @return AgentRunner
      */
     public AgentBase build(String agentNum, String sessionNum) {
-        return build(agentNum, sessionNum, null);
+        return build(agentNum, sessionNum, null, null);
     }
 
     /**
@@ -124,6 +125,19 @@ public class AgentRunnerFactory {
      * @return AgentRunner
      */
     public AgentBase build(String agentNum, String sessionNum, String targetVersion) {
+        return build(agentNum, sessionNum, targetVersion, null);
+    }
+
+    /**
+     * 创建 AgentRunner（带系统提示词变量表）。
+     * <p>
+     * {@code vars} 非空时，先对业务 {@code systemPrompt} 做 {@code {{key}}} 替换，
+     * 再拼接沙箱环境说明与挂载工具清单（与现网顺序一致）。
+     *
+     * @param vars 已合并的变量表（内置 + 会话 + 本轮）；可空
+     */
+    public AgentBase build(String agentNum, String sessionNum, String targetVersion,
+                           java.util.Map<String, String> vars) {
         Assert.notBlank(agentNum, "Agent编号不能为空");
         //1. 获取Agent信息（按目标版本解析快照；空→当前在线镜像）
         AgentDTO agent = agentQueryService.loadAgentForDebug(agentNum, targetVersion);
@@ -255,10 +269,13 @@ public class AgentRunnerFactory {
             }
 
             //4. 构建计划模式
+            // 先对业务系统提示词做 {{key}} 变量替换，再拼接沙箱说明 / 挂载工具清单。
+            String rawSysPrompt = agent.getConfigSnapshot().getSystemPrompt();
+            String substitutedSysPrompt = SysPromptVariableSubstitutor.substitute(rawSysPrompt, vars);
             // 沙箱环境认知:绑定沙箱时给系统提示词前置「沙箱运行环境」说明,
             // 让 Agent 知晓已预装的运行时并遵循「先探测后安装」,避免重复初始化环境。
             String effectiveSysPrompt = buildSandboxAwareSysPrompt(
-                    agent.getConfigSnapshot().getSystemPrompt(),
+                    substitutedSysPrompt,
                     StrUtil.isNotBlank(agent.getConfigSnapshot().getSandboxRef()));
             // 挂载工具清单写入系统提示：避免模型只看 reset_equipped_tools（仅 META 分组）后误答「没有工具」。
             effectiveSysPrompt = appendMountedToolsSysPrompt(effectiveSysPrompt, toolkit);

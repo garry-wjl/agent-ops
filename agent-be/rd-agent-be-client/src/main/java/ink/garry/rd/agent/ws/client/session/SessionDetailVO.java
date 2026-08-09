@@ -4,6 +4,7 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 会话详情 VO（含完整消息历史）。
@@ -26,6 +27,8 @@ public class SessionDetailVO {
     private LocalDateTime createTime;
     /** 会话来源：DEBUG_CONSOLE / API */
     private String origin;
+    /** 会话默认调用上下文；可空 */
+    private Map<String, Object> invokeContext;
     /** 全部消息历史，按时间正序 */
     private List<MessageVO> messages;
 }

@@ -54,6 +54,8 @@ export interface SessionVO {
   lastMessageAt?: string | null;
   createTime: string;
   origin?: string;
+  /** 会话默认调用上下文 */
+  invokeContext?: Record<string, string | number | boolean> | null;
 }
 
 /** 列表项 */
@@ -76,6 +78,8 @@ export interface SessionDetailVO {
   title?: string;
   createTime: string;
   origin?: string;
+  /** 会话默认调用上下文 */
+  invokeContext?: Record<string, string | number | boolean> | null;
   messages: MessageVO[];
 }
 
@@ -96,6 +100,8 @@ export interface DebugInvokeRequest {
    * 空 = 当前在线版本；'DRAFT' = 草稿态版本；'vX.Y.Z' = 指定历史 / 发布版本。
    */
   target_version?: string;
+  /** 调用上下文：用于系统提示词 {{key}} 替换并合并进会话默认上下文 */
+  context?: Record<string, string | number | boolean>;
 }
 
 /* ============================================================

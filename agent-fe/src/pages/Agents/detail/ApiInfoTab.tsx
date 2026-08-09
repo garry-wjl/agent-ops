@@ -61,23 +61,25 @@ function buildSpecs(agentNum: string): ApiSpec[] {
       path: '/api/v1/open/agents/command/invoke',
       title: 'Invoke（SSE 流式调用）',
       description:
-        '对外触发 Agent 推理，响应为 SSE 事件流（text/event-stream）。operatorId 可选，留空记为 system。',
+        '对外触发 Agent 推理，响应为 SSE 事件流（text/event-stream）。operatorId 可选，留空记为 system。可选 context 用于系统提示词 {{key}} 替换并合并进会话默认上下文。',
       curl: `curl -N -X POST '${base}/api/v1/open/agents/command/invoke' \\
   -H 'Authorization: Bearer ak-xxxxxxxx' \\
   -H 'Content-Type: application/json' \\
   -d '{
     "agentNum": "${agentNum}",
-    "input": "你好",
+    "input": "这个单什么时候发货？",
     "inputType": "text",
     "sessionNum": null,
-    "operatorId": null
+    "operatorId": null,
+    "context": { "orderId": "ORD-123", "page": "order_detail" }
   }'`,
     },
     {
       method: 'POST',
       path: '/api/v1/open/agents/command/createSession',
       title: '创建 Session',
-      description: '为当前 Agent 创建一条新的对外会话上下文',
+      description:
+        '为当前 Agent 创建一条新的对外会话；可选 context 写入会话默认调用上下文，供后续 invoke 继承。',
       curl: `curl -X POST '${base}/api/v1/open/agents/command/createSession' \\
   -H 'Authorization: Bearer ak-xxxxxxxx' \\
   -H 'Content-Type: application/json' \\
@@ -85,7 +87,8 @@ function buildSpecs(agentNum: string): ApiSpec[] {
     "agentNum": "${agentNum}",
     "title": "外部会话",
     "skillHint": null,
-    "operatorId": null
+    "operatorId": null,
+    "context": { "orderId": "ORD-123" }
   }'`,
     },
     {

@@ -4,6 +4,7 @@ import cn.hutool.core.util.StrUtil;
 import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import ink.garry.rd.agent.ws.application.common.prompt.SysPromptVariableSubstitutor;
 import ink.garry.rd.agent.ws.client.common.BizCode;
 import ink.garry.rd.agent.ws.client.session.AssistantSegmentVO;
 import ink.garry.rd.agent.ws.client.session.MessageVO;
@@ -21,7 +22,9 @@ import ink.garry.rd.agent.ws.infra.session.mapper.SessionMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 会话查询服务：按 §5.1 / §5.3 新规直接走 infra Mapper，不再经 ReadGateway 跳转。
@@ -86,6 +89,8 @@ public class SessionQueryService {
         vo.setTitle(entity.getTitle());
         vo.setCreateTime(entity.getCreateTime());
         vo.setOrigin(entity.getOrigin());
+        Map<String, Object> invokeContext = SysPromptVariableSubstitutor.parseJson(entity.getInvokeContext());
+        vo.setInvokeContext(invokeContext.isEmpty() ? null : new LinkedHashMap<>(invokeContext));
         vo.setMessages(listMessagesInternal(sessionNum, DEFAULT_MESSAGE_LIMIT));
         return vo;
     }

@@ -27,6 +27,8 @@ public class SessionEntity {
     @TableField("last_message_at")
     private LocalDateTime lastMessageAt;
     private String origin;
+    @TableField("invoke_context")
+    private String invokeContext;
     @TableField("create_no")
     private String createNo;
     @TableField("update_no")
@@ -51,6 +53,7 @@ public class SessionEntity {
         s.setTitle(e.getTitle());
         s.setLastMessageAt(e.getLastMessageAt());
         s.setOrigin(e.getOrigin());
+        s.setInvokeContextJson(e.getInvokeContext());
         s.setCreateNo(e.getCreateNo());
         s.setUpdateNo(e.getUpdateNo());
         s.setDeleted(e.getDeleted());
@@ -70,6 +73,7 @@ public class SessionEntity {
         e.setTitle(s.getTitle());
         e.setLastMessageAt(s.getLastMessageAt());
         e.setOrigin(s.getOrigin());
+        e.setInvokeContext(s.getInvokeContextJson());
         e.setCreateNo(s.getCreateNo());
         e.setUpdateNo(s.getUpdateNo());
         e.setDeleted(s.getDeleted() == null ? 0 : s.getDeleted());

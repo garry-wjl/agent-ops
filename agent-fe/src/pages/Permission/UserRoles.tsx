@@ -1,12 +1,12 @@
 /**
  * 一级 · 权限管理 → 用户角色。
- * <p>仅 platform_admin 可见；列出已绑定平台角色的工号，支持「添加用户角色」与「编辑」覆盖式保存。</p>
+ * <p>仅 platform_admin 可见；列出已绑定平台角色的用户，支持「添加用户角色」与「编辑」覆盖式保存。</p>
  *
- * 交互（按用户决策）：
- * - 点「添加用户角色」：先搜员工 → 选中 → 自动回填该工号已绑定的平台角色 → 多选角色 → 保存
- * - 表格行「编辑」：直接以 empNo 为初值打开同一弹窗，可改可清空
- * - 表格行「解除全部」：直接 saveUserPlatformRoles 传空集合
- * - 一个工号在平台只有"一套"角色（后端覆盖式 bindUser/unbindUser）
+ * 交互：
+ * - 点「添加用户角色」：按用户名搜用户 → 选中 → 回填已绑定平台角色 → 多选角色 → 保存
+ * - 表格行「编辑」：以用户编号为内部键打开弹窗，界面展示用户名
+ * - 表格行「解除全部」：saveUserPlatformRoles 传空集合
+ * - 内部标识仍为用户编号（历史字段名 empNo）；展示一律用 username
  */
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -29,19 +29,22 @@ import {
   usePlatformRolesQuery,
   useSaveUserPlatformRolesMutation,
 } from '@/services/authz';
+import { userApi } from '@/services/user/api';
 import { ROLE_PLATFORM_ADMIN } from '@/types';
 import MemberSelect from '@/pages/Workspaces/list/MemberSelect';
 
 const { Title, Text, Paragraph } = Typography;
 
 interface AdminRow {
+  /** 用户业务编号（API 仍称 empNo） */
   empNo: string;
+  username: string;
   roleNums: string[];
 }
 
 interface EditorState {
   open: boolean;
-  /** 编辑模式时为已选中工号；新增模式为 undefined */
+  /** 编辑/选中时的用户编号；新增未选为 undefined */
   empNo?: string;
   /** 当前选中的角色 num 列表（受控） */
   roleNums: string[];
@@ -54,18 +57,57 @@ export default function PermissionUserRolesPage() {
   const { data: platformRoles = [] } = usePlatformRolesQuery();
   const saveMut = useSaveUserPlatformRolesMutation();
 
+  /** 用户编号 → 用户名（表格 / 弹窗展示用） */
+  const [usernameMap, setUsernameMap] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const nums = Object.keys(adminsMap);
+    if (nums.length === 0) {
+      setUsernameMap({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const map: Record<string, string> = {};
+      try {
+        const page = await userApi.page({ pageNo: 1, pageSize: 500 });
+        page.list.forEach((u) => {
+          map[u.num] = u.username;
+        });
+      } catch {
+        /* 列表失败时再逐个 detail 兜底 */
+      }
+      const missing = nums.filter((n) => !map[n]);
+      await Promise.all(
+        missing.map(async (n) => {
+          try {
+            const d = await userApi.detail(n);
+            map[n] = d.username;
+          } catch {
+            map[n] = n;
+          }
+        }),
+      );
+      if (!cancelled) setUsernameMap(map);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [adminsMap]);
+
   const rows: AdminRow[] = useMemo(
     () =>
       Object.entries(adminsMap).map(([empNo, roles]) => ({
         empNo,
+        username: usernameMap[empNo] ?? empNo,
         roleNums: (roles ?? []).map((r) => r.roleNum),
       })),
-    [adminsMap],
+    [adminsMap, usernameMap],
   );
 
   const [editor, setEditor] = useState<EditorState>(EMPTY_EDITOR);
 
-  // 选中工号变化时，从已有平台管理员列表里回填该工号现有角色
+  // 选中用户变化时，从已有平台角色列表回填
   useEffect(() => {
     if (!editor.open || !editor.empNo) return;
     const current = adminsMap[editor.empNo];
@@ -81,13 +123,12 @@ export default function PermissionUserRolesPage() {
   const close = () => setEditor(EMPTY_EDITOR);
 
   const onEmpNoChange = (selected: string[]) => {
-    // MemberSelect 是多选；这里限定单选语义：只保留最后选中的工号
+    // MemberSelect 是多选；这里限定单选：只保留最后选中的用户
     const next = selected.length === 0 ? undefined : selected[selected.length - 1];
     if (!next) {
       setEditor({ open: true, empNo: undefined, roleNums: [] });
       return;
     }
-    // 切换工号 → 重置角色集合，由 useEffect 回填新的现有角色
     setEditor({ open: true, empNo: next, roleNums: [] });
   };
 
@@ -122,11 +163,16 @@ export default function PermissionUserRolesPage() {
     value: r.roleNum,
   }));
 
+  const displayName = (userNum?: string) =>
+    (userNum && (usernameMap[userNum] || rows.find((r) => r.empNo === userNum)?.username)) ||
+    userNum ||
+    '';
+
   const columns: NonNullable<TableProps<AdminRow>['columns']> = [
     {
-      title: '工号',
-      dataIndex: 'empNo',
-      width: 200,
+      title: '用户名',
+      dataIndex: 'username',
+      width: 220,
       render: (v: string) => <Text strong>{v}</Text>,
     },
     {
@@ -159,7 +205,7 @@ export default function PermissionUserRolesPage() {
             编辑
           </Button>
           <Popconfirm
-            title="确认解除该工号的所有平台角色？"
+            title={`确认解除「${row.username}」的所有平台角色？`}
             onConfirm={() => onRemoveAll(row.empNo)}
             okText="解除"
             cancelText="取消"
@@ -205,7 +251,11 @@ export default function PermissionUserRolesPage() {
       />
 
       <Modal
-        title={isEdit ? `编辑用户角色 · ${editor.empNo}` : '添加用户角色'}
+        title={
+          isEdit
+            ? `编辑用户角色 · ${displayName(editor.empNo)}`
+            : '添加用户角色'
+        }
         open={editor.open}
         onCancel={close}
         onOk={onSubmit}
@@ -221,12 +271,13 @@ export default function PermissionUserRolesPage() {
           </Text>
           <div style={{ marginTop: 6 }}>
             {isEdit ? (
-              <Text>{editor.empNo}</Text>
+              <Text>{displayName(editor.empNo)}</Text>
             ) : (
               <MemberSelect
                 value={editor.empNo ? [editor.empNo] : []}
                 onChange={onEmpNoChange}
-                placeholder="按工号 / 姓名搜索用户"
+                labelMap={usernameMap}
+                placeholder="按用户名搜索用户"
               />
             )}
             {!isEdit && (

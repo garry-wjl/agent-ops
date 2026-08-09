@@ -3,6 +3,8 @@ package ink.garry.rd.agent.ws.client.agent;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
+import java.util.Map;
+
 /**
  * 对外创建会话（open）请求参数（秘钥 Bearer 认证）。
  * <p>
@@ -23,4 +25,7 @@ public class OpenSessionCreateParam {
 
     /** 调用方操作人标识，可空（为空记 system） */
     private String operatorId;
+
+    /** 会话默认调用上下文（可空），落库供后续 invoke 变量替换继承 */
+    private Map<String, Object> context;
 }

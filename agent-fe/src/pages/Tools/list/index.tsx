@@ -50,6 +50,7 @@ import {
 import ToolDetailDrawer from "./ToolDetailDrawer";
 import MountedAgentsModal from "./MountedAgentsModal";
 import PermissionGate from "@/components/PermissionGate";
+import UserName from "@/components/UserName";
 
 const { Title, Text } = Typography;
 
@@ -268,11 +269,12 @@ export default function ToolListPage() {
         title: "创建人",
         dataIndex: "createNo",
         key: "createNo",
-        width: 100,
+        width: 120,
         render: (no: string) => (
-          <Text style={{ color: COLOR.textSecondary, whiteSpace: "nowrap" }}>
-            {no || "—"}
-          </Text>
+          <UserName
+            userNum={no}
+            style={{ color: COLOR.textSecondary, whiteSpace: "nowrap" }}
+          />
         ),
       },
       {

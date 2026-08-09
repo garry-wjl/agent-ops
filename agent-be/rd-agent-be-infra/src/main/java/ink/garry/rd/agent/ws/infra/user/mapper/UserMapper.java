@@ -58,6 +58,12 @@ public interface UserMapper extends BaseMapper<UserEntity> {
     List<UserEntity> listByUsernames(@Param("usernames") Collection<String> usernames);
 
     /**
+     * 全量未删用户的编号与用户名（供前端审计字段回显，不含敏感信息）。
+     */
+    @Select("SELECT num, username FROM sys_user WHERE deleted = 0 ORDER BY username ASC")
+    List<UserEntity> listAllNumAndUsername();
+
+    /**
      * 统计启用态且持有平台管理员角色的用户数（可排除某 num）。
      */
     @Select("<script>"

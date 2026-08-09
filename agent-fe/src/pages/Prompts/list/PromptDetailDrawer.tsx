@@ -6,6 +6,7 @@
  */
 import { Descriptions, Drawer, Space, Spin, Tag, Typography } from "antd";
 import { usePromptDetailQuery } from "@/services/prompt";
+import UserName from "@/components/UserName";
 
 const { Text, Paragraph } = Typography;
 
@@ -88,13 +89,13 @@ export default function PromptDetailDrawer({
             </Paragraph>
           </Descriptions.Item>
           <Descriptions.Item label="创建人">
-            {prompt.createNo}
+            <UserName userNum={prompt.createNo} />
           </Descriptions.Item>
           <Descriptions.Item label="创建时间">
             {prompt.createTime}
           </Descriptions.Item>
           <Descriptions.Item label="更新人">
-            {prompt.updateNo}
+            <UserName userNum={prompt.updateNo} />
           </Descriptions.Item>
           <Descriptions.Item label="更新时间">
             {prompt.updateTime}
