@@ -235,7 +235,9 @@ public class ToolRunnerFactory {
      * 不抛异常）；MCP 但形态/配置非法时抛业务异常，由调用方决定是否跳过。
      *
      * @param tool           工具 DTO（由调用层经 {@code ToolQueryService.findByNum} 加载后传入）
-     * @param inboundHeaders 入站请求透传头（请求线程抓取后传入；仅 REMOTE 生效；可空）
+     * @param inboundHeaders 入站请求透传头（请求线程抓取后传入；仅 REMOTE 生效；可空。
+     *                       Agent 运行时由 {@code AgentRunnerFactory} 传入 API/调试台入站头；
+     *                       「测试连接」传空 Map，避免管理端 Cookie 等污染握手）
      * @return MCP 客户端（未初始化，由 registerMcpClient 时初始化）；非 MCP 工具返回 {@code null}
      * @throws BusinessException MCP 形态暂不支持，或 mcpConfig 配置非法时
      */

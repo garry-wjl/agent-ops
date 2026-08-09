@@ -219,17 +219,15 @@ public class AgentRunnerFactory {
             } else {
                 // 在请求线程抓取入站请求头随工具链传入：工具实际在 boundedElastic 异步线程执行，
                 // 届时 RequestContextHolder 已取不到当前请求上下文，故必须此处先取好。
+                // FC 与 MCP REMOTE 共用同一批入站头；下游各自按黑名单过滤后注入出站请求。
                 Map<String, String> inboundHeaders = HttpHeaderUtil.getHeaderMap();
-                // MCP 远程连接不默认透传入站管理端请求头（Cookie/Content-Type 等易破坏握手）；
-                // 仅保留工具自身 mcpConfig.headers / proxyHeaders，与「测试连接」行为对齐。
-                Map<String, String> mcpInboundHeaders = Map.of();
                 for (String toolNum : toolNums) {
                     // 读查询统一在此完成：一次按 num 加载工具 DTO，供 FC / MCP 两条构建路径复用
                     ToolDTO toolDTO = toolQueryService.findByNum(toolNum);
                     if (isMcpServerConnection(toolDTO)) {
                         // MCP server 连接：外部 server 不可用不应拖垮整个 Agent 装配，故兜底跳过
                         try {
-                            McpClientWrapper mcpClient = toolRunnerFactory.buildMcpClient(toolDTO, mcpInboundHeaders);
+                            McpClientWrapper mcpClient = toolRunnerFactory.buildMcpClient(toolDTO, inboundHeaders);
                             if (mcpClient == null) {
                                 log.error("buildMcpClient 返回 null，MCP 工具未注册 toolNum={} creationMode={} packageMode={}",
                                         toolNum, toolDTO.getCreationMode(), toolDTO.getPackageMode());
