@@ -3,6 +3,7 @@ package ink.garry.rd.agent.ws.application.workspace;
 import cn.hutool.core.lang.Assert;
 import cn.hutool.core.util.StrUtil;
 import ink.garry.rd.agent.ws.application.auth.command.AuthzCommandService;
+import ink.garry.rd.agent.ws.application.user.UserQueryService;
 import ink.garry.rd.agent.ws.client.auth.constant.AuthzConstants;
 import ink.garry.rd.agent.ws.client.common.BizCode;
 import ink.garry.rd.agent.ws.client.workspace.constant.WorkspaceConstants;
@@ -68,6 +69,8 @@ public class WorkspaceCommandService {
      */
     @Resource
     private AuthzCommandService authzCommandService;
+    @Resource
+    private UserQueryService userQueryService;
 
     // ============================================================
     // createWorkspace
@@ -265,9 +268,11 @@ public class WorkspaceCommandService {
     // helpers
     // ============================================================
 
-    /** 校验调用者为空间管理员，否则抛 403。 */
-    private static void assertAdmin(Workspace workspace, String operatorId) {
-        boolean isAdmin = workspace.getAdminList() != null && workspace.getAdminList().contains(operatorId);
+    /** 校验调用者为空间管理员，否则抛 403（兼容历史 username 成员 ID）。 */
+    private void assertAdmin(Workspace workspace, String operatorId) {
+        List<String> admins = workspace.getAdminList();
+        boolean isAdmin = admins != null && (admins.contains(operatorId)
+                || admins.contains(userQueryService.findUsernameByNum(operatorId)));
         if (!isAdmin) {
             throw new BusinessException(BizCode.FORBIDDEN.getCode(), "仅管理员可执行该操作");
         }

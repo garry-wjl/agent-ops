@@ -37,6 +37,8 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/api/v1/models/**")
                 .excludePathPatterns(
                         "/api/v1/workspace/list",
-                        "/api/v1/workspace/create");
+                        "/api/v1/workspace/create",
+                        "/api/v1/auth/login",
+                        "/api/v1/auth/logout");
     }
 }

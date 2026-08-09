@@ -63,15 +63,22 @@ const instance: AxiosInstance = axios.create({
 /**
  * 注入当前活动工作空间请求头 `X-Workspace-Num`。
  * - 从 localStorage 读取（与 stores/workspace.ts 同 key），避免在拦截器里依赖 React 状态
- * - 空间管理 / 通用接口（/api/v1/workspace、/api/v1/common）无需该头
+ * - 空间管理 / 通用 / 登录登出接口无需该头
+ * - 登录页上的 /auth/me 也不带（避免旧空间头干扰身份回显）
  * 详见技术方案 §7.6。
  */
 instance.interceptors.request.use(config => {
   const url = config.url ?? '';
+  const onLoginPage =
+    typeof window !== 'undefined' && window.location.pathname === '/login';
   const skip =
     url.includes('/api/v1/workspace') ||
     url.includes('/api/v1/common') ||
-    url.includes('/api/v1/platform-roles');
+    url.includes('/api/v1/platform-roles') ||
+    url.includes('/api/v1/auth/login') ||
+    url.includes('/api/v1/auth/logout') ||
+    url.includes('/api/v1/users') ||
+    (onLoginPage && url.includes('/api/v1/auth/me'));
   if (!skip) {
     const ws = localStorage.getItem('currentWorkspaceNum');
     if (ws) {

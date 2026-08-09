@@ -141,4 +141,18 @@ public final class DomainEventConstant {
     public static final String USER_ROLE_BOUND = "USER_ROLE_BOUND";
     /** 单用户在某空间被解除全部 / 部分角色后触发（每变更用户一条）。 */
     public static final String USER_ROLE_UNBOUND = "USER_ROLE_UNBOUND";
+
+    // ---- User 域（用户管理） ----
+    /** 用户主表保存成功后触发（首次创建或整聚合覆盖落库，统一发该事件）。 */
+    public static final String USER_SAVED = "USER_SAVED";
+    /** 用户资料（用户名/邮箱/备注）更新后触发。 */
+    public static final String USER_PROFILE_UPDATED = "USER_PROFILE_UPDATED";
+    /** 用户启用后触发。 */
+    public static final String USER_ENABLED = "USER_ENABLED";
+    /** 用户禁用后触发。 */
+    public static final String USER_DISABLED = "USER_DISABLED";
+    /** 用户密码被管理员重置后触发（载荷不含密码）。 */
+    public static final String USER_PASSWORD_RESET = "USER_PASSWORD_RESET";
+    /** 用户软删除后触发。 */
+    public static final String USER_DELETED = "USER_DELETED";
 }

@@ -10,6 +10,7 @@ export { toolApi, toolQueryKeys } from './tool';
 export { promptApi, promptQueryKeys } from './prompt';
 export { modelApi, modelQueryKeys } from './model';
 export { authzApi, authzQueryKeys } from './authz';
+export { userApi, userQueryKeys } from './user';
 
 // 向后兼容 — 旧代码用 `AgentApi` / `SkillApi` 等命名导入
 export { agentApi as AgentApi } from './agent';

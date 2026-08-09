@@ -20,10 +20,11 @@ import {
   SafetyCertificateOutlined,
   CrownOutlined,
   TeamOutlined,
+  UserOutlined,
   SettingOutlined,
   ApiOutlined,
 } from '@ant-design/icons';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/providers/AuthProvider';
 import { usePermissions } from '@/providers/AuthProvider';
 import { APP_BRAND, buildAvatarProps } from './avatar';
@@ -53,6 +54,16 @@ const USER_ROLE_CODES = [
   'user_role:remove',
 ] as const;
 
+/** user_manage 域：用户管理 */
+const USER_MANAGE_CODES = [
+  'user_manage:read',
+  'user_manage:create',
+  'user_manage:update',
+  'user_manage:enable',
+  'user_manage:disable',
+  'user_manage:assign_role',
+] as const;
+
 function buildRoute(
   hasAny: (...codes: string[]) => boolean,
 ) {
@@ -65,16 +76,25 @@ function buildRoute(
   const showModelManage = hasAny(...SYSTEM_MODEL_CODES);
   const showRoleManage  = hasAny(...ROLE_MANAGE_CODES);
   const showUserRole    = hasAny(...USER_ROLE_CODES);
+  const showUserManage  = hasAny(...USER_MANAGE_CODES);
 
   // 父级分组：至少一个子项可见才展示
   const showSystem     = showModelManage;
   const showPermission = showRoleManage || showUserRole;
 
-  if (!showSystem && !showPermission) {
+  if (!showSystem && !showPermission && !showUserManage) {
     return { path: '/', routes: base };
   }
 
   const extra = [];
+
+  if (showUserManage) {
+    extra.push({
+      path: '/users',
+      name: '用户管理',
+      icon: <UserOutlined />,
+    });
+  }
 
   if (showSystem) {
     const systemChildren = [];
@@ -122,7 +142,6 @@ function buildRoute(
 
 export default function HomeLayout() {
   const location = useLocation();
-  const navigate = useNavigate();
   const { currentUser, logout } = useAuth();
   const { hasAny } = usePermissions();
 
@@ -146,10 +165,7 @@ export default function HomeLayout() {
       headerContentRender={() => null}
       breadcrumbRender={false}
       menuItemRender={(item, dom) => <Link to={item.path ?? '/'}>{dom}</Link>}
-      avatarProps={buildAvatarProps(currentUser, () => {
-        logout();
-        navigate('/login', { replace: true });
-      })}
+      avatarProps={buildAvatarProps(currentUser, logout)}
       footerRender={false}
     >
       <HomeRoutes />

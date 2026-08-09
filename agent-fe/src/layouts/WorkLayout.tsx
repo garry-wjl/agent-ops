@@ -161,10 +161,7 @@ export default function WorkLayout() {
         if (item.disabled) return dom;
         return <Link to={item.path ?? "/"}>{dom}</Link>;
       }}
-      avatarProps={buildAvatarProps(currentUser, () => {
-        logout();
-        navigate("/login", { replace: true });
-      })}
+      avatarProps={buildAvatarProps(currentUser, logout)}
       footerRender={false}
     >
       {/* 按当前空间编号 key，切换空间时整块重挂载，触发当前页重新拉数据 */}

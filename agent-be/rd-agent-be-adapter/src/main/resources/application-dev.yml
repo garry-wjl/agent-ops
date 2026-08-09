@@ -8,7 +8,7 @@
 #   - MySQL Docker 容器 mysql-test：127.0.0.1:3306，库 rd_agent，root / 123456
 #   - Redis（本机 docker redis-test）：127.0.0.1:6379
 #
-# SSO/GCAC 已移除；本地默认 disable-auth=true，身份可由 X-User-Id header 注入。
+# SSO/GCAC 已移除；本地默认 disable-auth=false（用户名密码登录）。免登可设 AUTH_DISABLED=true。
 
 server:
   port: 8081
@@ -22,10 +22,11 @@ spring:
 
 app:
   auth:
-    # SSO 已移除：本地默认关闭鉴权，便于联调；生产务必 false
-    disable-auth: ${AUTH_DISABLED:true}
-    # 无 X-User-Id 时的本地默认身份（建议是 platform-admins 之一）
+    # 默认关闭免登，走用户名密码 + JWT；需要本地免登时设 AUTH_DISABLED=true
+    disable-auth: ${AUTH_DISABLED:false}
+    # disable-auth=true 且无 X-User-Id 时的本地默认身份（建议是 platform-admins 之一）
     dev-user-id: ${AUTH_DEV_USER_ID:alice.zhang}
+    bootstrap-default-password: ${AUTH_BOOTSTRAP_DEFAULT_PASSWORD:ChangeMe@123456}
     jwt:
       # 仅本地用；生产必须替换为 环境变量 / K8s Secret 覆盖的强密钥
       secret: dev-only-secret-please-change-this-must-be-at-least-32-bytes-long

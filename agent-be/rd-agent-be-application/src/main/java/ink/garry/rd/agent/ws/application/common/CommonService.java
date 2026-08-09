@@ -1,14 +1,14 @@
 package ink.garry.rd.agent.ws.application.common;
 
-import cn.hutool.core.collection.CollectionUtil;
 import cn.hutool.core.util.StrUtil;
+import ink.garry.rd.agent.ws.application.user.UserQueryService;
 import ink.garry.rd.agent.ws.client.common.employee.EmployeeProfileDTO;
 import ink.garry.rd.agent.ws.client.common.employee.EmployeeSearchParamDTO;
+import ink.garry.rd.agent.ws.client.user.dto.UserBriefDTO;
 import ink.garry.rd.agent.ws.client.workspace.constant.WorkspaceConstants;
-import ink.garry.rd.agent.ws.infra.common.client.cloudbus.CloudBusClient;
-import ink.garry.rd.agent.ws.infra.common.client.cloudbus.dto.EmployeeDTO;
 import ink.garry.rd.agent.ws.infra.common.client.oss.OssClient;
 import ink.garry.rd.agent.ws.infra.common.client.oss.dto.OssPresignResultDTO;
+import jakarta.annotation.Resource;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -33,7 +33,9 @@ import java.util.List;
 public class CommonService {
 
     private final OssClient ossClient;
-    private final CloudBusClient cloudBusClient;
+
+    @Resource
+    private UserQueryService userQueryService;
 
     /**
      * 请求 oss 签名凭证。
@@ -55,12 +57,11 @@ public class CommonService {
     }
 
     /**
-     * 通用员工搜索（工号 / 姓名）。
-     * <p>跨领域通用能力，挂在 Common 服务，任何模块可复用（如工作空间编辑时选成员）。
-     * CloudBus 已下线时返回空列表。
+     * 通用选人搜索：改为查启用态平台用户。
+     * <p>{@code empNo} 字段承载 {@code User.num}；{@code displayName} 为 username。
      *
-     * @param param 搜索入参（keyword ≥ 2 字符；limit 默认 20，最大 50）
-     * @return 员工档案列表；无命中返回空列表
+     * @param param 搜索入参（keyword；limit 默认 20，最大 50）
+     * @return 用户简要列表；无命中返回空列表
      */
     public List<EmployeeProfileDTO> searchEmployees(EmployeeSearchParamDTO param) {
         if (param == null || StrUtil.isBlank(param.getKeyword())) {
@@ -71,20 +72,14 @@ public class CommonService {
                 ? WorkspaceConstants.SEARCH_LIMIT_DEFAULT
                 : Math.min(param.getLimit(), WorkspaceConstants.SEARCH_LIMIT_MAX);
 
-        List<EmployeeDTO> employeeDTOList = cloudBusClient.searchEmployee(param.getKeyword(), limit);
-
-        if (CollectionUtil.isEmpty(employeeDTOList)) {
-            return new ArrayList<>();
-        }
-
+        List<UserBriefDTO> users = userQueryService.searchEnabledUsers(param.getKeyword().trim(), limit);
         List<EmployeeProfileDTO> result = new ArrayList<>();
-        for (EmployeeDTO employeeDTO : employeeDTOList) {
+        for (UserBriefDTO user : users) {
             result.add(EmployeeProfileDTO.builder()
-                    .empNo(employeeDTO.getAdName())
-                    .displayName(employeeDTO.getRealName())
+                    .empNo(user.getNum())
+                    .displayName(user.getUsername())
                     .build());
         }
-
         return result;
     }
 }

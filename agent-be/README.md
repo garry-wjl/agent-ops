@@ -45,7 +45,7 @@ mvn -pl rd-agent-be-adapter spring-boot:run
 SPRING_PROFILES_ACTIVE=test mvn -pl rd-agent-be-adapter spring-boot:run
 ```
 
-本地 `dev` 默认连本机 MySQL / Redis，并默认 `app.auth.disable-auth=true`（见 `application-dev.yml`）。生产敏感项用环境变量覆盖，例如 `JWT_SECRET`、`DB_PASSWORD`。
+本地 `dev` 默认连本机 MySQL / Redis，并默认 `app.auth.disable-auth=false`（用户名密码登录；见 `application-dev.yml`）。需要免登时设 `AUTH_DISABLED=true`。生产敏感项用环境变量覆盖，例如 `JWT_SECRET`、`DB_PASSWORD`。
 
 启动成功标志：日志出现 `Tomcat ... port 8081 (http)`。
 

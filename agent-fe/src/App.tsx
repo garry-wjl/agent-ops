@@ -1,7 +1,7 @@
 /**
  * 应用主壳 — 两级布局分发
  * - 全屏路径（登录 / 错误）→ 独立布局
- * - 一级门户（/spaces、/workbench、/system、/permission）→ HomeLayout（工作空间 + 工作台 + 平台级功能）
+ * - 一级门户（/spaces、/workbench、/system、/permission、/users）→ HomeLayout（工作空间 + 工作台 + 平台级功能）
  * - 其余业务路径 → WorkLayout（进入某工作空间后的工作区，含空间级业务页面）
  */
 import { lazy, Suspense } from 'react';
@@ -15,8 +15,8 @@ const ErrorPage = lazy(() => import('@/pages/Error'));
 /** 全屏路径（无侧栏 + 顶栏） */
 const FULLSCREEN_PATHS = ['/login', '/403', '/404', '/500'];
 
-/** 一级门户路径前缀（平台级：工作空间 / 工作台 / 系统设置 / 权限管理） */
-const LEVEL1_PREFIXES = ['/spaces', '/workbench', '/system', '/permission'];
+/** 一级门户路径前缀（平台级：工作空间 / 工作台 / 系统设置 / 权限管理 / 用户管理） */
+const LEVEL1_PREFIXES = ['/spaces', '/workbench', '/system', '/permission', '/users'];
 
 export default function App() {
   const location = useLocation();

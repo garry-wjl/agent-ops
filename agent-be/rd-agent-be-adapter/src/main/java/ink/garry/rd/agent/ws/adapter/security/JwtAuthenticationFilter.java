@@ -80,7 +80,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
-        String userId = claims.getAccount();
+        // uuid = User.num（业务身份）；account = username（展示）
+        String userId = (claims.getUuid() != null && !claims.getUuid().isBlank())
+                ? claims.getUuid() : claims.getAccount();
+        String userName = claims.getAccount() != null ? claims.getAccount() : userId;
         String workspaceNum = req.getHeader(WORKSPACE_HEADER);
 
         boolean isPlatformAdmin = false;
@@ -110,7 +113,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         UserContextHolder.set(UserContext.builder()
                 .userId(userId)
-                .userName(userId)
+                .userName(userName)
                 .roles(claims.getRoles() == null ? java.util.Collections.emptyList() : claims.getRoles())
                 .build());
         try {
@@ -156,6 +159,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
         if (path != null && (path.startsWith("/api/v1/system/")
                 || path.startsWith("/api/v1/platform-roles/")
+                || path.startsWith("/api/v1/users/")
                 || path.startsWith("/api/v1/workspace/"))) {
             return AuthzConstants.PLATFORM_WORKSPACE_NUM;
         }

@@ -13,6 +13,7 @@ const Workbench = lazy(() => import('@/pages/Home/Workbench'));
 const SystemModelList = lazy(() => import('@/pages/Models/system'));
 const PermissionRoles = lazy(() => import('@/pages/Permission/Roles'));
 const PermissionUserRoles = lazy(() => import('@/pages/Permission/UserRoles'));
+const UsersPage = lazy(() => import('@/pages/Users'));
 
 const Fallback = () => (
   <div style={{ padding: 24 }}>
@@ -39,6 +40,7 @@ export default function HomeRoutes() {
         />
         <Route path="/permission/roles" element={<PermissionRoles />} />
         <Route path="/permission/user-roles" element={<PermissionUserRoles />} />
+        <Route path="/users" element={<UsersPage />} />
         <Route path="*" element={<Navigate to="/spaces" replace />} />
       </Routes>
     </Suspense>

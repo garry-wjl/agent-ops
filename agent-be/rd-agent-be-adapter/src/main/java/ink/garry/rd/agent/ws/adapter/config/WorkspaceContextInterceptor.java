@@ -21,8 +21,8 @@ import org.springframework.web.servlet.HandlerInterceptor;
  * （经 {@link WorkspaceQueryService#getMyRole}），不在则抛 403（{@link BizCode#FORBIDDEN}），
  * 在则写入 {@link WorkspaceContextHolder}。afterCompletion：{@code clear()} 清理 ThreadLocal。
  * <p>
- * 仿 {@code UserContextFilter} 的上下文管理；调用者 id 由先于本拦截器执行的 UserContextFilter 注入。
- * 注册范围与 exclude 见 {@link WebMvcConfig}。
+ * 特例：{@code GET /api/v1/auth/me} 对「头有空间但用户不在其中」做软失败（不设上下文、不抛错），
+ * 避免登录页 / 身份回显被旧 localStorage 空间头打出「无权访问该空间」toast。
  */
 @Slf4j
 @Component
@@ -40,11 +40,21 @@ public class WorkspaceContextInterceptor implements HandlerInterceptor {
         }
         String empNo = UserContextHolder.currentUserId();
         if (empNo == null || empNo.isBlank()) {
+            // 登录 / 登出等未认证请求不应因残留空间头失败
+            if (isAuthIdentityPath(request)) {
+                return true;
+            }
             throw new BusinessException(BizCode.UNAUTHORIZED.getCode(), "未登录");
         }
         // 校验调用者是否在该空间内（管理员或成员）
         String role = workspaceQueryService.getMyRole(workspaceNum, empNo);
         if (role == null) {
+            // /auth/me：软失败，忽略无效空间头，仍返回平台级身份
+            if (isAuthMe(request)) {
+                log.debug("[WorkspaceContext] ignore invalid workspace on /auth/me user={} ws={}",
+                        empNo, workspaceNum);
+                return true;
+            }
             throw new BusinessException(BizCode.FORBIDDEN.getCode(), "无权访问该空间");
         }
         WorkspaceContextHolder.set(WorkspaceContext.builder()
@@ -59,5 +69,20 @@ public class WorkspaceContextInterceptor implements HandlerInterceptor {
     public void afterCompletion(HttpServletRequest request, HttpServletResponse response,
                                 Object handler, Exception ex) {
         WorkspaceContextHolder.clear();
+    }
+
+    private static boolean isAuthMe(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        return uri != null && uri.endsWith("/api/v1/auth/me");
+    }
+
+    private static boolean isAuthIdentityPath(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        if (uri == null) {
+            return false;
+        }
+        return uri.endsWith("/api/v1/auth/login")
+                || uri.endsWith("/api/v1/auth/logout")
+                || uri.endsWith("/api/v1/auth/me");
     }
 }
