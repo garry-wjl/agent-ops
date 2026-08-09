@@ -1,7 +1,6 @@
 package ink.garry.rd.agent.ws.application.agent;
 
 import ink.garry.rd.agent.ws.application.agentrunner.AgentRunnerService;
-import ink.garry.rd.agent.ws.application.debugconsole.AgentInvokeService;
 import ink.garry.rd.agent.ws.application.session.SessionCommandService;
 import ink.garry.rd.agent.ws.application.session.SessionQueryService;
 import ink.garry.rd.agent.ws.client.session.SessionDetailVO;
@@ -15,12 +14,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
-import jakarta.annotation.Resource;
+import java.util.Map;
 
 /**
  * 对外调用（open）编排服务：仅做"对外入口编排 + operator 解析"，不复制业务逻辑。
  * <p>
- * invoke 委托既有 {@link AgentInvokeService}，会话三方法委托既有
+ * invoke 委托 {@link AgentRunnerService}，会话方法委托
  * {@link SessionCommandService} / {@link SessionQueryService}；秘钥认证链路无登录用户，
  * 故 {@code operatorId} 为空时统一记 {@link #SYSTEM_OPERATOR}。
  */
@@ -46,7 +45,15 @@ public class OpenAgentInvokeService {
      * @return Event 流（adapter 接到 SSE）
      */
     public Flux<Event> invoke(String agentNum, String input, String sessionNum, String operatorId) {
-        return agentRunnerService.runAgent(agentNum, input, sessionNum, resolveOperator(operatorId));
+        return invoke(agentNum, input, sessionNum, operatorId, null);
+    }
+
+    /**
+     * 对外流式调用 Agent（带调用上下文）。
+     */
+    public Flux<Event> invoke(String agentNum, String input, String sessionNum, String operatorId,
+                              Map<String, Object> context) {
+        return agentRunnerService.runAgent(agentNum, input, sessionNum, resolveOperator(operatorId), context);
     }
 
     /**
@@ -59,7 +66,16 @@ public class OpenAgentInvokeService {
      * @return 新建会话 DTO
      */
     public SessionDTO createSession(String agentNum, String skillHint, String title, String operatorId) {
-        return sessionCommandService.createSession(agentNum, skillHint, title, resolveOperator(operatorId), "API");
+        return createSession(agentNum, skillHint, title, operatorId, null);
+    }
+
+    /**
+     * 对外创建会话（带默认调用上下文）。
+     */
+    public SessionDTO createSession(String agentNum, String skillHint, String title, String operatorId,
+                                    Map<String, Object> context) {
+        return sessionCommandService.createSession(
+                agentNum, skillHint, title, resolveOperator(operatorId), "API", context);
     }
 
     /**

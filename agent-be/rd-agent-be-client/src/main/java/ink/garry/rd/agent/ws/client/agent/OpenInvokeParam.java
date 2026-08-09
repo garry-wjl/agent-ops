@@ -3,6 +3,8 @@ package ink.garry.rd.agent.ws.client.agent;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
+import java.util.Map;
+
 /**
  * 对外调用 Agent（open）请求参数（秘钥 Bearer 认证）。
  * <p>
@@ -28,4 +30,10 @@ public class OpenInvokeParam {
 
     /** 调用方操作人标识，可空（为空记 system） */
     private String operatorId;
+
+    /**
+     * 调用上下文（可空）：扁平键值，用于进入 Agent 前替换系统提示词占位符 {@code {{key}}}，
+     * 并浅合并写入会话默认上下文。
+     */
+    private Map<String, Object> context;
 }

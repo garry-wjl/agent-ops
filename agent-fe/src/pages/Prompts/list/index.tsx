@@ -26,6 +26,7 @@ import type { PromptPageQueryParam, PromptVo } from "@/types";
 import PromptDetailDrawer from "./PromptDetailDrawer";
 import PromptEditorDrawer from "./PromptEditorDrawer";
 import PermissionGate from "@/components/PermissionGate";
+import UserName from "@/components/UserName";
 
 const { Title, Text } = Typography;
 
@@ -193,11 +194,12 @@ export default function PromptListPage() {
         title: "创建人",
         dataIndex: "createNo",
         key: "createNo",
-        width: 100,
+        width: 120,
         render: (no: string) => (
-          <Text style={{ color: COLOR.textSecondary, whiteSpace: "nowrap" }}>
-            {no || "—"}
-          </Text>
+          <UserName
+            userNum={no}
+            style={{ color: COLOR.textSecondary, whiteSpace: "nowrap" }}
+          />
         ),
       },
       {

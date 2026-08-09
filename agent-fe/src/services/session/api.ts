@@ -12,8 +12,12 @@ import type {
 } from '@/types';
 
 export const sessionApi = {
-  create: (param: { agentNum: string; skillHint?: string; title?: string }) =>
-    post<SessionVO>('/api/v1/session/command/create', param),
+  create: (param: {
+    agentNum: string;
+    skillHint?: string;
+    title?: string;
+    context?: Record<string, string | number | boolean>;
+  }) => post<SessionVO>('/api/v1/session/command/create', param),
   rename: (num: string, newTitle: string) =>
     post<void>('/api/v1/session/command/rename', { num, newTitle }),
   delete: (num: string) => post<void>('/api/v1/session/command/delete', { num }),

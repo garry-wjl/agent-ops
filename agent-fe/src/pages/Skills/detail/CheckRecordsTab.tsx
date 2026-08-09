@@ -11,6 +11,7 @@ import type { SkillCheckRecordVO } from '@/types';
 import { formatTime } from '@/utils/format';
 import CheckResultView, { CheckResultBadge } from '../editor/CheckResultView';
 import { COLOR } from '../editor/constants';
+import UserName from '@/components/UserName';
 
 export default function CheckRecordsTab({ skillNum }: { skillNum: string }) {
   const { data, isLoading } = useSkillCheckRecordPageQuery({
@@ -90,7 +91,9 @@ function RecordRow(props: {
             {r.version}
           </span>
         </Td>
-        <Td>{r.createNo ?? '-'}</Td>
+        <Td>
+          <UserName userNum={r.createNo} />
+        </Td>
         <Td>
           <CheckResultBadge result={r.result} />
         </Td>

@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 
 /**
  * Session 会话 DTO — application 层 {@code SessionCommandService.createSession} 等命令出参。
@@ -55,6 +56,9 @@ public class SessionDTO {
 
     /** 会话来源：DEBUG_CONSOLE / API */
     private String origin;
+
+    /** 会话默认调用上下文（扁平 Map；无则 null） */
+    private Map<String, Object> invokeContext;
 
     /** 创建人 userId */
     private String createNo;

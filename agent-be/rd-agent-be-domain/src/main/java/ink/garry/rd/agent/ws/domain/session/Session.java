@@ -52,6 +52,12 @@ public class Session extends DomainEntity implements ink.garry.rd.agent.ws.facad
     /** 会话来源：DEBUG_CONSOLE（调试台） / API（Open API）；创建时由入口自动写入。 */
     private String origin;
 
+    /**
+     * 会话默认调用上下文 JSON object 字符串（可空）。
+     * 供系统提示词变量替换继承；格式与大小由应用层校验后再写入。
+     */
+    private String invokeContextJson;
+
     /** 装配依赖：会话仓储，用于持久化与查询会话本体。 */
     private transient SessionRepository sessionRepository;
     /** 装配依赖：消息仓储，注入到下游 Message 实体用于持久化。 */
@@ -163,6 +169,20 @@ public class Session extends DomainEntity implements ink.garry.rd.agent.ws.facad
         Assert.isTrue(newTitle.length() <= 128, "会话标题不能超过 128 字");
         initialize(operatorId);
         title = newTitle;
+        validate();
+        sessionRepository.save(this);
+    }
+
+    /**
+     * 更新会话默认调用上下文，仅会话归属人可执行。
+     *
+     * @param json       JSON object 字符串；可空（清空）
+     * @param operatorId 操作人用户 ID，必须等于 creatorUserId
+     */
+    public void updateInvokeContext(String json, String operatorId) {
+        assertOwner(operatorId);
+        initialize(operatorId);
+        this.invokeContextJson = json;
         validate();
         sessionRepository.save(this);
     }

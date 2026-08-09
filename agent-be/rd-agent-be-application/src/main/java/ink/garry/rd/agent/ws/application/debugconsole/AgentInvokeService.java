@@ -72,7 +72,16 @@ public class AgentInvokeService {
     @Transactional
     public Flux<Event> invokeStream(String agentNum, String input, String sessionNum, String operatorId,
                                     String targetVersion) {
-        return agentRunnerService.runAgent(agentNum, input, sessionNum, operatorId, targetVersion);
+        return invokeStream(agentNum, input, sessionNum, operatorId, targetVersion, null);
+    }
+
+    /**
+     * 版本化调试（带调用上下文）。
+     */
+    @Transactional
+    public Flux<Event> invokeStream(String agentNum, String input, String sessionNum, String operatorId,
+                                    String targetVersion, java.util.Map<String, Object> context) {
+        return agentRunnerService.runAgent(agentNum, input, sessionNum, operatorId, targetVersion, context);
     }
 
 }

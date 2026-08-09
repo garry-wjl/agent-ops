@@ -3,6 +3,7 @@ package ink.garry.rd.agent.ws.client.session;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 
 /**
  * 会话视图 VO。
@@ -27,4 +28,6 @@ public class SessionVO {
     private LocalDateTime createTime;
     /** 会话来源：DEBUG_CONSOLE / API */
     private String origin;
+    /** 会话默认调用上下文；可空 */
+    private Map<String, Object> invokeContext;
 }

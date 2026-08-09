@@ -35,7 +35,8 @@ public class SessionCommandController extends BaseController {
     @PostMapping("/command/create")
     public Result<SessionVO> create(@Valid @RequestBody SessionCreateParam param) {
         SessionDTO dto = commandService.createSession(
-                param.getAgentNum(), param.getSkillHint(), param.getTitle(), getCurrentUserId(), "DEBUG_CONSOLE");
+                param.getAgentNum(), param.getSkillHint(), param.getTitle(),
+                getCurrentUserId(), "DEBUG_CONSOLE", param.getContext());
         return ok(SessionCommonAssembler.toSessionVO(dto));
     }
 

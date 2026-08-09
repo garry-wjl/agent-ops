@@ -11,6 +11,7 @@ import type { ModelDetailVO, ModelScope } from '@/types';
 import { useQuery } from '@tanstack/react-query';
 import { modelApi } from '@/services/model';
 import { MODEL_SCOPE_META, MODEL_STATUS_META } from '../constants';
+import UserName from '@/components/UserName';
 
 interface ModelDetailDrawerProps {
   /** 归属范围;默认 SPACE */
@@ -56,9 +57,13 @@ export default function ModelDetailDrawer({ scope = 'SPACE', num, open, onClose 
             <StatusPill status={model.status} />
           </Descriptions.Item>
           <Descriptions.Item label='备注'>{model.remark || '—'}</Descriptions.Item>
-          <Descriptions.Item label='创建人'>{model.createNo}</Descriptions.Item>
+          <Descriptions.Item label='创建人'>
+            <UserName userNum={model.createNo} />
+          </Descriptions.Item>
           <Descriptions.Item label='创建时间'>{model.createTime}</Descriptions.Item>
-          <Descriptions.Item label='更新人'>{model.updateNo}</Descriptions.Item>
+          <Descriptions.Item label='更新人'>
+            <UserName userNum={model.updateNo} />
+          </Descriptions.Item>
           <Descriptions.Item label='更新时间'>{model.updateTime}</Descriptions.Item>
         </Descriptions>
       )}

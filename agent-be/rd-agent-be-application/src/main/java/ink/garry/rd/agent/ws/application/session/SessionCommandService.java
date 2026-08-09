@@ -3,6 +3,7 @@ package ink.garry.rd.agent.ws.application.session;
 import cn.hutool.core.util.StrUtil;
 import com.alibaba.fastjson2.JSON;
 import ink.garry.rd.agent.ws.application.agent.AgentQueryService;
+import ink.garry.rd.agent.ws.application.common.prompt.SysPromptVariableSubstitutor;
 import ink.garry.rd.agent.ws.client.agent.dto.AgentDTO;
 import ink.garry.rd.agent.ws.client.common.BizCode;
 import ink.garry.rd.agent.ws.client.session.dto.MessageDTO;
@@ -20,7 +21,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Session 命令服务：负责会话创建 / 重命名 / 删除等写入用例编排。
@@ -64,6 +67,17 @@ public class SessionCommandService {
      */
     @Transactional
     public SessionDTO createSession(String agentNum, String skillHint, String title, String operatorId, String origin) {
+        return createSession(agentNum, skillHint, title, operatorId, origin, null);
+    }
+
+    /**
+     * 创建会话（可带默认调用上下文）。
+     *
+     * @param context 会话默认调用上下文，可空；写入前校验键/类型/大小
+     */
+    @Transactional
+    public SessionDTO createSession(String agentNum, String skillHint, String title, String operatorId,
+                                    String origin, Map<String, Object> context) {
         AgentDTO agent = agentQueryService.findAgentByNum(agentNum);
         if (!AgentStatus.PUBLISHED.name().equals(agent.getStatus())) {
             throw new BusinessException(BizCode.AGENT_OFFLINED.getCode(), "Agent 未发布或已下线");
@@ -71,10 +85,51 @@ public class SessionCommandService {
         if (StrUtil.isBlank(title)) {
             title = DEFAULT_TITLE;
         }
+        SysPromptVariableSubstitutor.validateContext(context);
         String sessionVersionNum = resolveSessionVersionNum(agent);
-        Session session = sessionFactory.createSession(agentNum, sessionVersionNum, skillHint, operatorId, title, origin);
+        Session session = sessionFactory.createSession(
+                agentNum, sessionVersionNum, skillHint, operatorId, title, origin,
+                SysPromptVariableSubstitutor.toJson(context));
         session.save(operatorId);
         return toDTO(session);
+    }
+
+    /**
+     * 浅合并本轮 context 到会话默认调用上下文并持久化。
+     * {@code patch} 为空则跳过。
+     *
+     * @return 合并后的会话默认上下文（不可变视图语义：新建 Map）
+     */
+    @Transactional
+    public Map<String, Object> mergeInvokeContext(String sessionNum, Map<String, Object> patch, String operatorId) {
+        if (patch == null || patch.isEmpty()) {
+            Session session = requireSession(sessionNum);
+            return new java.util.LinkedHashMap<>(
+                    SysPromptVariableSubstitutor.parseJson(session.getInvokeContextJson()));
+        }
+        SysPromptVariableSubstitutor.validateContext(patch);
+        Session session = requireSession(sessionNum);
+        Map<String, Object> merged = SysPromptVariableSubstitutor.shallowMergeObjects(
+                SysPromptVariableSubstitutor.parseJson(session.getInvokeContextJson()), patch);
+        SysPromptVariableSubstitutor.validateContext(merged);
+        session.updateInvokeContext(SysPromptVariableSubstitutor.toJson(merged), operatorId);
+        return merged;
+    }
+
+    /**
+     * 读取会话默认调用上下文（只读，不校验归属）。
+     */
+    public Map<String, Object> getInvokeContext(String sessionNum) {
+        Session session = requireSession(sessionNum);
+        Map<String, Object> ctx = SysPromptVariableSubstitutor.parseJson(session.getInvokeContextJson());
+        return ctx.isEmpty() ? Collections.emptyMap() : new java.util.LinkedHashMap<>(ctx);
+    }
+
+    /**
+     * 按编号加载会话 DTO（只读，不校验归属）。
+     */
+    public SessionDTO getSession(String sessionNum) {
+        return toDTO(requireSession(sessionNum));
     }
 
     /**
@@ -188,6 +243,7 @@ public class SessionCommandService {
 
     /** Session 聚合 → SessionDTO 字段拷贝（仅 application 层内部使用）。 */
     private SessionDTO toDTO(Session session) {
+        Map<String, Object> invokeContext = SysPromptVariableSubstitutor.parseJson(session.getInvokeContextJson());
         return SessionDTO.builder()
                 .id(session.getId())
                 .num(session.getNum())
@@ -198,6 +254,7 @@ public class SessionCommandService {
                 .title(session.getTitle())
                 .lastMessageAt(session.getLastMessageAt())
                 .origin(session.getOrigin())
+                .invokeContext(invokeContext.isEmpty() ? null : new java.util.LinkedHashMap<>(invokeContext))
                 .createNo(session.getCreateNo())
                 .updateNo(session.getUpdateNo())
                 .createTime(session.getCreateTime())

@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -79,5 +80,14 @@ public class CommonController extends BaseController {
                 .map(CommonAssembler::toEmployeeProfileVO)
                 .collect(Collectors.toList());
         return ok(vos);
+    }
+
+    /**
+     * 用户编号 → 用户名映射（创建人 / 更新人等审计字段回显）。
+     * <p>已登录即可访问；仅返回 num/username，不含邮箱等敏感字段。
+     */
+    @GetMapping("/users/display-map")
+    public Result<Map<String, String>> userDisplayMap() {
+        return ok(commonService.userDisplayNameMap());
     }
 }

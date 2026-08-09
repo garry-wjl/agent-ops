@@ -3,17 +3,13 @@ package ink.garry.rd.agent.ws.application.agentrunner;
 import cn.hutool.core.collection.CollectionUtil;
 import cn.hutool.core.lang.Assert;
 import cn.hutool.core.util.StrUtil;
-import ink.garry.rd.agent.ws.application.agent.AgentQueryService;
 import ink.garry.rd.agent.ws.application.agentrunner.factory.AgentRunnerFactory;
+import ink.garry.rd.agent.ws.application.common.prompt.SysPromptVariableSubstitutor;
 import ink.garry.rd.agent.ws.application.debugconsole.SegmentAccumulator;
 import ink.garry.rd.agent.ws.application.session.SessionCommandService;
-import ink.garry.rd.agent.ws.client.agent.dto.AgentDTO;
 import ink.garry.rd.agent.ws.client.session.dto.SessionDTO;
-import ink.garry.rd.agent.ws.domain.agent.valueobject.AgentStatus;
-import ink.garry.rd.agent.ws.domain.agent.valueobject.CreationMode;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.InputType;
-import ink.garry.rd.agent.ws.infra.agent.a2a.Http1JdkA2AHttpClient;
-import ink.garry.rd.agent.ws.infra.agent.a2a.LocalAgentCardResolver;
+import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContextHolder;
 import io.a2a.client.transport.jsonrpc.JSONRPCTransport;
 import io.a2a.client.transport.jsonrpc.JSONRPCTransportConfig;
 import io.agentscope.core.ReActAgent;
@@ -37,6 +33,7 @@ import jakarta.annotation.Resource;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
@@ -58,14 +55,17 @@ public class AgentRunnerService {
      * 运行 Agent（生产/默认入口：当前在线版本）。
      * <p>
      * 供对外（API 秘钥）调用，故自动新建会话时来源标记为 {@code API}。
-     *
-     * @param agentNum agentNum
-     * @param input
-     * @param sessionNum
-     * @return
      */
     public Flux<Event> runAgent(String agentNum, String input, String sessionNum, String operatorId) {
-        return runAgent(agentNum, input, sessionNum, operatorId, null, "API");
+        return runAgent(agentNum, input, sessionNum, operatorId, null, "API", null);
+    }
+
+    /**
+     * 运行 Agent（生产入口，带调用上下文）。
+     */
+    public Flux<Event> runAgent(String agentNum, String input, String sessionNum, String operatorId,
+                                Map<String, Object> context) {
+        return runAgent(agentNum, input, sessionNum, operatorId, null, "API", context);
     }
 
     /**
@@ -75,44 +75,67 @@ public class AgentRunnerService {
      * 生产调用传 null（当前在线，行为不变）；调试台按所选版本传入。
      * <p>
      * 本重载供 web 调试台调用，故自动新建会话时来源标记为 {@code DEBUG_CONSOLE}。
-     *
-     * @param agentNum      Agent 业务编号
-     * @param input         调用输入
-     * @param sessionNum    会话编号；为空自动新建会话（调试台切版本→新会话即靠此触发）
-     * @param operatorId    操作人 userId
-     * @param targetVersion 目标版本（空 / DRAFT / vX.Y.Z）
-     * @return Event 流
      */
     public Flux<Event> runAgent(String agentNum, String input, String sessionNum, String operatorId,
                                 String targetVersion) {
-        return runAgent(agentNum, input, sessionNum, operatorId, targetVersion, "DEBUG_CONSOLE");
+        return runAgent(agentNum, input, sessionNum, operatorId, targetVersion, "DEBUG_CONSOLE", null);
+    }
+
+    /**
+     * 运行 Agent（版本化调试入口，带调用上下文）。
+     */
+    public Flux<Event> runAgent(String agentNum, String input, String sessionNum, String operatorId,
+                                String targetVersion, Map<String, Object> context) {
+        return runAgent(agentNum, input, sessionNum, operatorId, targetVersion, "DEBUG_CONSOLE", context);
     }
 
     /**
      * 运行 Agent（最底层实现，显式指定自动建会话的来源）。
      * <p>
      * {@code origin} 仅在 {@code sessionNum} 为空、需自动新建会话时生效，决定会话来源标签
-     * （{@code API} / {@code DEBUG_CONSOLE}）——此前该分支硬编码为 {@code DEBUG_CONSOLE}，
-     * 导致 API 调用自动建的会话来源被误标为调试台。
-     *
-     * @param agentNum      Agent 业务编号
-     * @param input         调用输入
-     * @param sessionNum    会话编号；为空按 {@code origin} 自动新建会话
-     * @param operatorId    操作人 userId
-     * @param targetVersion 目标版本（空 / DRAFT / vX.Y.Z）
-     * @param origin        自动建会话时的来源：{@code API} / {@code DEBUG_CONSOLE}
-     * @return Event 流
+     * （{@code API} / {@code DEBUG_CONSOLE}）。
+     * <p>
+     * {@code context} 非空时：新建会话写入默认上下文，已有会话则浅合并后落库；
+     * 随后与内置变量合并，供系统提示词 {@code {{key}}} 替换。
      */
     public Flux<Event> runAgent(String agentNum, String input, String sessionNum, String operatorId,
                                 String targetVersion, String origin) {
+        return runAgent(agentNum, input, sessionNum, operatorId, targetVersion, origin, null);
+    }
+
+    /**
+     * 运行 Agent（最底层实现，显式指定自动建会话来源与调用上下文）。
+     */
+    public Flux<Event> runAgent(String agentNum, String input, String sessionNum, String operatorId,
+                                String targetVersion, String origin, Map<String, Object> context) {
         //1. 确定会话(沙箱工具按 sessionNum 绑定复用容器,故须先于 build 确定)
+        Map<String, Object> sessionContext;
         if (StrUtil.isBlank(sessionNum)) {
-            SessionDTO sessionDTO = sessionCommandService.createSession(agentNum, "", "", operatorId, origin);
+            SessionDTO sessionDTO = sessionCommandService.createSession(
+                    agentNum, "", "", operatorId, origin, context);
             sessionNum = sessionDTO.getNum();
+            sessionContext = sessionDTO.getInvokeContext() != null
+                    ? sessionDTO.getInvokeContext()
+                    : Map.of();
+        } else {
+            sessionContext = sessionCommandService.mergeInvokeContext(sessionNum, context, operatorId);
         }
 
+        // 合并变量：内置 → 会话默认（已含本轮浅合并）（后写覆盖）
+        SessionDTO sessionMeta = sessionCommandService.getSession(sessionNum);
+        String agentVersionNum = sessionMeta != null ? sessionMeta.getAgentVersionNum() : "";
+        // 调试指定 targetVersion 时，内置 AGENT_VERSION_NUM 优先展示目标版本语义
+        if (StrUtil.isNotBlank(targetVersion)) {
+            agentVersionNum = targetVersion;
+        }
+        String workspaceNum = WorkspaceContextHolder.currentWorkspaceNum();
+        Map<String, String> vars = SysPromptVariableSubstitutor.merge(
+                SysPromptVariableSubstitutor.builtinVars(
+                        sessionNum, agentNum, agentVersionNum, workspaceNum, operatorId),
+                sessionContext);
+
         //2. 创建 Agent(注入 sessionNum 以绑定会话级沙箱工具；按 targetVersion 装配目标版本快照)
-        AgentBase agent = agentRunnerFactory.build(agentNum, sessionNum, targetVersion);
+        AgentBase agent = agentRunnerFactory.build(agentNum, sessionNum, targetVersion, vars);
 
         //3. 添加用户消息
         sessionCommandService.appendUserMessage(sessionNum, input, InputType.TEXT, sessionNum, operatorId);

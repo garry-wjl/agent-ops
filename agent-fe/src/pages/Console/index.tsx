@@ -48,6 +48,11 @@ import type {
   SessionListVO,
 } from '@/types';
 import { copyToClipboard, relativeTime } from '@/utils/format';
+import InvokeContextPanel, {
+  loadContextRows,
+  tryBuildContext,
+  type ContextRow,
+} from './InvokeContextPanel';
 
 interface ChatMessage {
   id: string;
@@ -137,6 +142,9 @@ export default function ConsolePage() {
     num?: string;
     title?: string;
   }>({ open: false });
+  const [contextRows, setContextRows] = useState<ContextRow[]>([
+    { key: '', value: '' },
+  ]);
 
   const stream = useInvokeStream();
   const activeAgent = useMemo(
@@ -146,6 +154,11 @@ export default function ConsolePage() {
 
   /* ----- 版本化调试：当前 Agent 的可调试版本列表 ----- */
   const { data: debugVersions } = useAgentDebugVersionsQuery(agentNum ?? '');
+
+  // 切换 Agent 时加载该 Agent 的本地调用上下文
+  useEffect(() => {
+    setContextRows(loadContextRows(agentNum));
+  }, [agentNum]);
 
   // Agent 变更或版本列表就绪后，默认选中「在线发布版」；无在线版则回退到草稿态。
   useEffect(() => {
@@ -344,13 +357,23 @@ export default function ConsolePage() {
       antdMessage.warning('请先选择 Agent');
       return;
     }
+    const context = tryBuildContext(contextRows);
+    // tryBuildContext 在非法键时 toast 并返回 undefined；若有填写却非法则中止。
+    // 空表合法 → undefined；有非法键时 rowsToContext throw → tryBuild 返回 undefined 且 toast。
+    // 区分：有非空 key 却拿到 undefined 说明校验失败。
+    if (
+      context === undefined &&
+      contextRows.some((r) => r.key.trim() || r.value.trim())
+    ) {
+      return;
+    }
     // 复用当前会话；首次发送（无会话）先显式创建一个会话拿到 num，
     // 否则每次都传 session_num=undefined 会导致后端反复新建会话。
     let sessionNum = activeSession;
     const isNewSession = !sessionNum;
     if (isNewSession) {
       try {
-        const created = await SessionApi.create({ agentNum });
+        const created = await SessionApi.create({ agentNum, context });
         sessionNum = created.num;
       } catch {
         // 创建失败已由全局拦截器 toast
@@ -385,6 +408,7 @@ export default function ConsolePage() {
       input,
       input_type: inputType,
       target_version: selectedVersion,
+      context,
     });
     // 新会话：发送后再设为当前会话（避免历史加载覆盖本地消息）并刷新左侧列表
     if (isNewSession) {
@@ -822,6 +846,11 @@ export default function ConsolePage() {
             padding: '0 24px',
           }}
         >
+          <InvokeContextPanel
+            agentNum={agentNum}
+            rows={contextRows}
+            onChange={setContextRows}
+          />
           <DebugSender
             loading={stream.loading}
             disabled={!agentNum}

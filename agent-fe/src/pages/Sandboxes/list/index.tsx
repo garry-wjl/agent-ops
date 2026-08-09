@@ -47,6 +47,7 @@ import {
 import SandboxFormDrawer from "./SandboxFormDrawer";
 import SandboxDetailDrawer from "./SandboxDetailDrawer";
 import PermissionGate from "@/components/PermissionGate";
+import UserName from "@/components/UserName";
 
 const { Title, Text } = Typography;
 
@@ -242,9 +243,9 @@ export default function SandboxListPage() {
         title: "创建人",
         dataIndex: "createNo",
         key: "createNo",
-        width: 110,
+        width: 120,
         render: (no: string) => (
-          <Text style={{ color: COLOR.textSecondary }}>{no || "—"}</Text>
+          <UserName userNum={no} style={{ color: COLOR.textSecondary }} />
         ),
       },
       {

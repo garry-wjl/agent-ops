@@ -26,7 +26,8 @@ public class SessionFactoryImpl implements SessionFactory {
     private final DomainEventPublisher domainEventPublisher;
 
     @Override
-    public Session createSession(String agentNum, String agentVersionNum, String skillHint, String creatorUserId, String title, String origin) {
+    public Session createSession(String agentNum, String agentVersionNum, String skillHint, String creatorUserId,
+                                 String title, String origin, String invokeContextJson) {
         Session session = new Session();
         session.setAgentNum(agentNum);
         session.setAgentVersionNum(agentVersionNum);
@@ -34,6 +35,7 @@ public class SessionFactoryImpl implements SessionFactory {
         session.setCreatorUserId(creatorUserId);
         session.setTitle(title);
         session.setOrigin(origin);
+        session.setInvokeContextJson(invokeContextJson);
         return wire(session);
     }
 

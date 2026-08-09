@@ -141,6 +141,24 @@ public class UserQueryService {
     }
 
     /**
+     * 全量用户显示名映射（num → username，并附带 username → username 兼容键）。
+     * <p>供前端审计字段（创建人 / 更新人）回显；不含邮箱等敏感字段。
+     * 接口对已登录用户开放（挂在 common），不要求 user_manage:read。
+     */
+    public Map<String, String> listDisplayNameMap() {
+        Map<String, String> map = new HashMap<>();
+        List<UserEntity> rows = userMapper.listAllNumAndUsername();
+        for (UserEntity e : rows) {
+            if (e == null || StrUtil.isBlank(e.getNum()) || StrUtil.isBlank(e.getUsername())) {
+                continue;
+            }
+            map.put(e.getNum(), e.getUsername());
+            map.put(e.getUsername(), e.getUsername());
+        }
+        return map;
+    }
+
+    /**
      * 批量解析显示名：优先按 num，其次按 username（兼容旧成员 ID）。
      *
      * @param ids num 或 username 集合

@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Common 横切服务：把 infra 层 {@link OssClient} 的方法适配为面向前端的用例。
@@ -81,5 +82,12 @@ public class CommonService {
                     .build());
         }
         return result;
+    }
+
+    /**
+     * 用户编号 → 用户名映射（审计字段回显用）。
+     */
+    public Map<String, String> userDisplayNameMap() {
+        return userQueryService.listDisplayNameMap();
     }
 }

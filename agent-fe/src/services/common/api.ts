@@ -38,4 +38,11 @@ export const commonApi = {
       keyword,
       limit,
     }),
+
+  /**
+   * 用户编号 → 用户名映射（审计字段回显）。
+   * 已登录即可访问，不要求 user_manage:read。
+   */
+  userDisplayMap: () =>
+    get<Record<string, string>>('/api/v1/common/users/display-map'),
 };

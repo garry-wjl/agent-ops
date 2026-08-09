@@ -67,7 +67,8 @@ public class OpenAgentController {
     public Flux<ServerSentEvent<String>> invoke(@Valid @RequestBody OpenInvokeParam param, HttpServletRequest req) {
         assertAgentMatch(param.getAgentNum(), req);
         return openAgentInvokeService.invoke(
-                        param.getAgentNum(), param.getInput(), param.getSessionNum(), param.getOperatorId())
+                        param.getAgentNum(), param.getInput(), param.getSessionNum(),
+                        param.getOperatorId(), param.getContext())
                 .map(event -> {
                     try {
                         JsonNode root = objectMapper.valueToTree(event);
@@ -98,7 +99,8 @@ public class OpenAgentController {
                                             HttpServletRequest req) {
         assertAgentMatch(param.getAgentNum(), req);
         SessionDTO dto = openAgentInvokeService.createSession(
-                param.getAgentNum(), param.getSkillHint(), param.getTitle(), param.getOperatorId());
+                param.getAgentNum(), param.getSkillHint(), param.getTitle(),
+                param.getOperatorId(), param.getContext());
         return Result.ok(dto);
     }
 
