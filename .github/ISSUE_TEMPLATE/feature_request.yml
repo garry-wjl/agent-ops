@@ -1,0 +1,49 @@
+name: Feature request
+description: 提出功能增强或体验改进
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请说明动机与场景。越大的改动越需要先讨论架构边界（见 ARCHITECTURE.md）。
+  - type: dropdown
+    id: component
+    attributes:
+      label: 主要影响组件
+      options:
+        - agent-be
+        - agent-fe
+        - both / integration
+        - docs
+        - other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: 要解决什么问题？
+      description: 现状痛点 / 用户场景
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 期望方案
+      description: 可以是产品行为描述，不必已有实现细节
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 备选方案与非目标
+      description: 你考虑过但不想做的事；本次明确不做的事
+    validations:
+      required: false
+  - type: textarea
+    id: additional
+    attributes:
+      label: 补充信息
+      description: 原型链接、相关 Issue、兼容性约束等
+    validations:
+      required: false

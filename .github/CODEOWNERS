@@ -1,0 +1,14 @@
+# Default reviewers for this repository.
+# See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+*       @garry-wjl
+
+/.github/               @garry-wjl
+/CONTRIBUTING.md        @garry-wjl
+/SECURITY.md            @garry-wjl
+/CODE_OF_CONDUCT.md     @garry-wjl
+/LICENSE                @garry-wjl
+/NOTICE                 @garry-wjl
+
+/agent-be/              @garry-wjl
+/agent-fe/              @garry-wjl

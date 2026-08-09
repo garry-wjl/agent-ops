@@ -1,0 +1,25 @@
+name: Documentation
+description: 文档错误、缺失或改进建议
+title: "[Docs]: "
+labels: ["documentation", "needs-triage"]
+body:
+  - type: input
+    id: location
+    attributes:
+      label: 文档位置
+      description: 文件路径或 URL
+      placeholder: README.md / agent-be/AGENTS.md / …
+    validations:
+      required: true
+  - type: textarea
+    id: issue
+    attributes:
+      label: 问题或改进点
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: 建议改成什么
+    validations:
+      required: false

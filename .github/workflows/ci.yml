@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: agent-be
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agent-be
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Package (skip tests)
+        run: mvn -B -DskipTests clean package
+
+      - name: Test
+        run: mvn -B test
+
+  frontend:
+    name: agent-fe
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agent-fe
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: agent-fe/.nvmrc
+          cache: pnpm
+          cache-dependency-path: agent-fe/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test -- --run

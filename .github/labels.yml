@@ -1,0 +1,33 @@
+# Optional reference for repository labels.
+# Apply manually in GitHub UI, or with a labels sync action if you add one later.
+
+- name: bug
+  color: d73a4a
+  description: Something isn't working
+- name: enhancement
+  color: a2eeef
+  description: New feature or request
+- name: documentation
+  color: 0075ca
+  description: Improvements or additions to documentation
+- name: needs-triage
+  color: fbca04
+  description: Needs maintainer triage
+- name: good first issue
+  color: 7057ff
+  description: Good for newcomers
+- name: help wanted
+  color: 008672
+  description: Extra attention is needed
+- name: dependencies
+  color: 0366d6
+  description: Dependency updates
+- name: java
+  color: b07219
+  description: Backend / Maven
+- name: javascript
+  color: f1e05a
+  description: Frontend / npm
+- name: github-actions
+  color: 000000
+  description: GitHub Actions

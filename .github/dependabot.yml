@@ -1,0 +1,35 @@
+# Keep GitHub Actions and package ecosystems lightly fresh.
+# Docs: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+
+  - package-ecosystem: "maven"
+    directory: "/agent-be"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "java"
+
+  - package-ecosystem: "npm"
+    directory: "/agent-fe"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "javascript"
+    # Ignore noisy major bumps by default; maintainers can upgrade intentionally.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
