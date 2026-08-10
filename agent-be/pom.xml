@@ -30,7 +30,7 @@
         <mysql.version>8.3.0</mysql.version>
         <lombok.version>1.18.46</lombok.version>
         <hutool.version>5.8.27</hutool.version>
-        <fastjson2.version>2.0.49</fastjson2.version>
+        <fastjson2.version>2.0.64</fastjson2.version>
         <reactor.version>3.6.5</reactor.version>
         <redisson.version>3.27.2</redisson.version>
         <jjwt.version>0.12.6</jjwt.version>
