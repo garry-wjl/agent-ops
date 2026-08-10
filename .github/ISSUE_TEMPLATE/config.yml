@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/garry-wjl/agent-ops/security/advisories/new
+    about: 请勿公开披露安全问题。请使用 GitHub Security Advisories 私密报告。
+  - name: Support / usage questions
+    url: https://github.com/garry-wjl/agent-ops/blob/main/SUPPORT.md
+    about: 先阅读 SUPPORT.md，再选择合适渠道提问。
+  - name: Contributing guide
+    url: https://github.com/garry-wjl/agent-ops/blob/main/CONTRIBUTING.md
+    about: 想贡献代码或文档？从 CONTRIBUTING.md 开始。

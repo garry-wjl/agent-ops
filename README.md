@@ -1,8 +1,16 @@
 # agent-ops
 
-> Agent Sphere / AgentOps 本地工作区 — Control Plane 管理后台前后端合集。
+[![CI](https://github.com/garry-wjl/agent-ops/actions/workflows/ci.yml/badge.svg)](https://github.com/garry-wjl/agent-ops/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Issues](https://img.shields.io/github/issues/garry-wjl/agent-ops)](https://github.com/garry-wjl/agent-ops/issues)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
+> Agent Sphere / AgentOps — 企业级 Agent 运行管理平台的 **Control Plane**（管理后台前后端合集）。
 
 **组成:** `agent-be`（rd-agent-be）+ `agent-fe`（rd-agent-fe）
+
+统一管理 Agent / Skill / Prompt / 工具 / 模型 / 沙箱 / 评测 / 权限，并提供调试台。  
+**本仓库不负责真正执行 Agent**——执行面在外部 Data Plane；前端只调用 `agent-be`。
 
 ---
 
@@ -64,13 +72,32 @@ cd agent-fe && pnpm typecheck && pnpm test
 | [AGENTS.md](AGENTS.md) | Agent 工作区入口（Lookup Table） |
 | [CLAUDE.md](CLAUDE.md) | → AGENTS.md |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 工作区架构边界 |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 贡献指南 |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 行为准则 |
+| [SECURITY.md](SECURITY.md) | 安全漏洞披露 |
+| [SUPPORT.md](SUPPORT.md) | 获取帮助的渠道 |
+| [MAINTAINERS.md](MAINTAINERS.md) | 维护者 |
+| [LICENSE](LICENSE) / [NOTICE](NOTICE) | Apache-2.0 |
 | [agent-be/](agent-be/) | Control Plane 后端 |
 | [agent-fe/](agent-fe/) | 管理后台前端 |
 
-## 贡献
+## 社区与贡献
 
-- 写代码前先输出实现方案（除非明确「直接写」）
-- 只改一侧时遵守该侧 `AGENTS.md`；跨 fe/be 契约两边同步验证
-- 架构决策落到对应子工程 `docs/design-docs/`
-- 复杂任务在对应子工程 `docs/exec-plans/active/` 留计划
-- 禁止直接在 `master` / `test` / `stag` / `prod` 上改代码
+欢迎 Issue、Discussion 与 Pull Request。
+
+- 贡献流程与分支约定 → [CONTRIBUTING.md](CONTRIBUTING.md)
+- Bug / 功能 / 文档模板 → [New Issue](https://github.com/garry-wjl/agent-ops/issues/new/choose)
+- 安全问题（请勿公开）→ [SECURITY.md](SECURITY.md)
+- 行为准则 → [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+- 维护者 → [MAINTAINERS.md](MAINTAINERS.md)
+
+核心约定（摘要）：
+
+- 从最新 `main` 拉 `feature-*` / `hotfix-*` / `docs-*` 分支，禁止直接改环境分支
+- 业务代码变更必须同步测试；跨 fe/be 契约两边同步验证
+- 遵守 Control Plane / Data Plane 边界与后端六层依赖方向
+
+## License
+
+本项目采用 [Apache License 2.0](LICENSE)。  
+版权与第三方组件声明见 [NOTICE](NOTICE)。
