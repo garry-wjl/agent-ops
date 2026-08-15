@@ -28,7 +28,9 @@ import java.util.Map;
  *   <li>{@link Sandbox#close()} 仅释放该句柄的 HTTP 客户端，<b>不会销毁远程容器</b>——
  *       故 {@link #create()} 拿到 id 后即可安全关闭句柄，容器按 TTL 存活待复用；</li>
  *   <li>{@link #create()} 调用 {@code manualCleanup()} 关闭 SDK 自动清理，防止本进程
- *       退出 / pod 重启时误杀仍被其它副本复用的在用容器。</li>
+ *       退出 / pod 重启时误杀仍被其它副本复用的在用容器；</li>
+ *   <li>{@link #create} / {@link #assertReady} 使用 {@code skipHealthCheck(false)}，
+ *       按 OpenSandbox 语义等待 Running + execd ping；运行时 {@link #connect} 可 skip 以省往返。</li>
  * </ul>
  */
 @Slf4j
@@ -84,6 +86,9 @@ public class SandboxClient {
                 .env(env)
                 .timeout(ttl())
                 .manualCleanup()
+                // 显式不跳过：build() 内等待 Running + execd 默认 ping
+                .skipHealthCheck(false)
+                .readyTimeout(readyTimeout())
                 .connectionConfig(connectionConfig)
                 .build()) {
             String sandboxId = sandbox.getId();
@@ -117,6 +122,9 @@ public class SandboxClient {
                 .resource(Map.of("cpu", cpuMillis, "memory", memory))
                 .timeout(Duration.ofMinutes(aliveMinutes))
                 .manualCleanup()
+                // 显式不跳过：build() 内等待 Running + execd 默认 ping
+                .skipHealthCheck(false)
+                .readyTimeout(readyTimeout())
                 .connectionConfig(connectionConfig)
                 .build()) {
             String sandboxId = sandbox.getId();
@@ -129,7 +137,8 @@ public class SandboxClient {
     /**
      * 连接到一个已存在的沙箱容器，返回可执行命令 / 读写文件的句柄。
      * <p>
-     * 跳过健康检查以省一次往返；句柄用完后由调用方 {@link Sandbox#close()} 释放。
+     * 跳过就绪检查以省一次往返（供运行时复用已 ONLINE 的实例）；句柄用完后由调用方
+     * {@link Sandbox#close()} 释放。供给后的就绪判定请用 {@link #assertReady(String)}。
      *
      * @param sandboxId 目标容器 id
      * @return 指向该容器的句柄
@@ -140,6 +149,30 @@ public class SandboxClient {
                 .connectionConfig(connectionConfig)
                 .skipHealthCheck(true)
                 .connect();
+    }
+
+    /**
+     * 断言沙箱已就绪：按 OpenSandbox 默认就绪语义等待生命周期 Running，并对 execd 做 ping。
+     * <p>
+     * 与 {@link #connect(String)} 不同：本方法 <b>不</b>跳过健康检查；失败抛异常（含
+     * {@code SandboxReadyTimeoutException} / {@code SandboxUnhealthyException}），由供给流程标 FAILED。
+     * 句柄在方法返回前关闭，仅释放 HTTP 客户端，不销毁远程容器。
+     *
+     * @param sandboxId 目标容器 id
+     */
+    public void assertReady(String sandboxId) {
+        try (Sandbox sandbox = Sandbox.connector()
+                .sandboxId(sandboxId)
+                .connectionConfig(connectionConfig)
+                .skipHealthCheck(false)
+                .connectTimeout(readyTimeout())
+                .connect()) {
+            // connect(skip=false) 已 wait ready；再显式 ping 兜底，避免假阳性
+            if (!sandbox.ping()) {
+                throw new IllegalStateException("sandbox execd ping failed, id=" + sandboxId);
+            }
+            log.info("sandbox assertReady ok, id={}", sandboxId);
+        }
     }
 
     /**
@@ -184,5 +217,10 @@ public class SandboxClient {
     /** 配置的容器存活窗口。 */
     private Duration ttl() {
         return Duration.ofMinutes(properties.getTtlMinutes());
+    }
+
+    /** 就绪等待上限：复用 SDK 请求超时配置。 */
+    private Duration readyTimeout() {
+        return Duration.ofSeconds(properties.getRequestTimeoutSeconds());
     }
 }

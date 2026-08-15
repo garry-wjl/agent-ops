@@ -113,9 +113,9 @@ public class SandboxRunner {
 
         String instanceId = null;
         try {
-            // 1. 按规格建容器
+            // 1. 按规格建容器（create 内已 skipHealthCheck=false，等待 Running + execd ping）
             instanceId = sandboxClient.create(payload.getCpu(), payload.getMemoryMb(), payload.getAliveMinutes());
-            // 2. 健康检查（connect 探活，用完即关；关闭仅释放 HTTP 句柄不销毁容器）
+            // 2. 再次按 OpenSandbox 就绪语义探活（不 skip；与运行时 connect 区分）
             probeReady(instanceId);
             // 3. 供给成功：回写上线
             sandboxCommandService.onlineSandbox(num, instanceId, operatorId);
@@ -253,15 +253,14 @@ public class SandboxRunner {
     }
 
     /**
-     * 健康检查：连接容器探活，用完即关。
-     * <p>{@link SandboxClient#connect(String)} 句柄 close 仅释放 HTTP 客户端，不销毁远程容器；
-     * 连接失败抛异常由调用方转入供给失败分支。
+     * 健康检查：按 OpenSandbox 就绪语义（Running + execd ping）断言容器可用。
+     * <p>
+     * 委托 {@link SandboxClient#assertReady(String)}；失败抛异常由调用方转入供给失败分支。
+     * 勿使用 {@link SandboxClient#connect(String)}——其 skipHealthCheck=true，不能证明 execd 可用。
      */
     private void probeReady(String instanceId) {
-        try (Sandbox sandbox = sandboxClient.connect(instanceId)) {
-            // 能成功建立连接句柄即视为容器就绪
-            log.debug("[sandbox-provision] probe ready ok, instanceId={}", sandbox.getId());
-        }
+        sandboxClient.assertReady(instanceId);
+        log.debug("[sandbox-provision] probe ready ok, instanceId={}", instanceId);
     }
 
     /** kill 容器，失败仅 WARN（TTL 兜底回收），不上抛。 */
