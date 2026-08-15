@@ -65,10 +65,15 @@ public interface UserMapper extends BaseMapper<UserEntity> {
 
     /**
      * 统计启用态且持有平台管理员角色的用户数（可排除某 num）。
+     * <p>
+     * JOIN 显式统一 collation，避免历史表 utf8mb4_0900_ai_ci 与 sys_user
+     * utf8mb4_unicode_ci 混用导致 Illegal mix of collations（禁用用户校验会踩中）。
      */
     @Select("<script>"
             + "SELECT COUNT(*) FROM sys_user u "
-            + "INNER JOIN user_workspace_role b ON b.user_id = u.num AND b.deleted = 0 "
+            + "INNER JOIN user_workspace_role b "
+            + "ON b.user_id COLLATE utf8mb4_unicode_ci = u.num COLLATE utf8mb4_unicode_ci "
+            + "AND b.deleted = 0 "
             + "AND b.workspace_num = 'SYSTEM' "
             + "AND JSON_CONTAINS(b.role_nums, JSON_QUOTE('RL-PLATFORM-ADMIN')) "
             + "WHERE u.deleted = 0 AND u.status = 'ENABLED' "
