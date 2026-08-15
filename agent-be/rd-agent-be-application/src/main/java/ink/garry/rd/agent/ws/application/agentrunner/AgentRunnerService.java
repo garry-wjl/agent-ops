@@ -151,6 +151,9 @@ public class AgentRunnerService {
         // tool_result 按到达顺序收成 AssistantSegment 列表,最终随 assistant message 一并持久化。
         // 这样历史消息 FE 直接渲染,与本轮流式视觉一致(见技术方案 2026-05-28)。
         SegmentAccumulator acc = new SegmentAccumulator();
+        // 汇总本轮 Token：累加各 REASONING 末帧 usage，并在 AGENT_RESULT 上回填，
+        // 供开放 Event SSE / A2UI / 调试台统一读取 message.usage。
+        TokenUsageAccumulator usageAcc = new TokenUsageAccumulator();
 
         // 跨 Event 状态标记：当前是否处于 <mm:think>...</mm:think>（MiniMax）类型标签内。
         // AgentScope 2.0 SDK 的 formatter 只认标准 reasoning_content 字段来输出 ThinkingBlock，
@@ -164,6 +167,8 @@ public class AgentRunnerService {
         return agent.stream(msg)
                 .map(event -> transformEvent(event, inThinkTag))
                 .doOnNext(acc::accept)
+                .doOnNext(usageAcc::accept)
+                .map(usageAcc::ensureOnAgentResult)
                 .flatMap(event -> {
                     //如果是最后一条消息，则先追加到数据库，再推送
                     if (event.isLast() && EventType.AGENT_RESULT.equals(event.getType())) {

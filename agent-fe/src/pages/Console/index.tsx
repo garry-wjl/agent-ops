@@ -25,10 +25,7 @@ import {
   FolderOpenOutlined,
   MoreOutlined,
   PlusOutlined,
-  ReloadOutlined,
   RobotOutlined,
-  SaveOutlined,
-  ShareAltOutlined,
   ThunderboltFilled,
   UserOutlined,
 } from '@ant-design/icons';
@@ -79,6 +76,8 @@ interface ChatMessage {
   runId?: string;
   /** 总耗时秒（取自 totalLatencyMs） */
   durationLabel?: string;
+  /** Token 用量文案，如 `820 tokens (in 700 / out 120)` */
+  usageLabel?: string;
 }
 
 const COLOR = {
@@ -111,6 +110,28 @@ function formatTime(ts?: string | number): string {
 function formatRunId(traceId?: string): string {
   if (!traceId) return '';
   return `run_${traceId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toLowerCase()}`;
+}
+
+/** 将 ChatUsage 格式化为消息头 meta 文案。 */
+function formatUsageLabel(usage?: {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+}): string | undefined {
+  if (!usage) return undefined;
+  const total =
+    typeof usage.totalTokens === 'number'
+      ? usage.totalTokens
+      : typeof usage.inputTokens === 'number' && typeof usage.outputTokens === 'number'
+        ? usage.inputTokens + usage.outputTokens
+        : undefined;
+  if (typeof total !== 'number') return undefined;
+  const inTok = usage.inputTokens;
+  const outTok = usage.outputTokens;
+  if (typeof inTok === 'number' && typeof outTok === 'number') {
+    return `${total} tokens (in ${inTok} / out ${outTok})`;
+  }
+  return `${total} tokens`;
 }
 
 /** 版本选择器 option 的 value：DRAFT 用 'DRAFT' 令牌，其余用版本号。 */
@@ -328,6 +349,9 @@ export default function ConsolePage() {
             typeof stream.totalLatencyMs === 'number'
               ? `${(stream.totalLatencyMs / 1000).toFixed(1)}s`
               : undefined,
+          usageLabel: stream.loading
+            ? undefined
+            : formatUsageLabel(stream.usage),
         };
       }
       return next;
@@ -338,6 +362,7 @@ export default function ConsolePage() {
     stream.traceId,
     stream.loading,
     stream.totalLatencyMs,
+    stream.usage,
   ]);
 
   useEffect(() => {
@@ -1034,8 +1059,8 @@ function AssistantMessage({ msg }: { msg: ChatMessage }) {
     );
 
   const meta =
-    msg.runId || msg.durationLabel
-      ? [msg.runId, msg.durationLabel].filter(Boolean).join(' · ')
+    msg.runId || msg.durationLabel || msg.usageLabel
+      ? [msg.runId, msg.durationLabel, msg.usageLabel].filter(Boolean).join(' · ')
       : '';
 
   return (
@@ -1103,17 +1128,6 @@ function AssistantMessage({ msg }: { msg: ChatMessage }) {
               label="复制"
               onClick={async () => {
                 const ok = await copyToClipboard(msg.content);
-                antdMessage[ok ? 'success' : 'error'](ok ? '已复制' : '复制失败');
-              }}
-            />
-            <ActionButton icon={<ReloadOutlined />} label="重新生成" />
-            <ActionButton icon={<SaveOutlined />} label="保存为示例" />
-            <ActionButton
-              icon={<ShareAltOutlined />}
-              label="分享 run_id"
-              onClick={async () => {
-                if (!msg.runId) return;
-                const ok = await copyToClipboard(msg.runId);
                 antdMessage[ok ? 'success' : 'error'](ok ? '已复制' : '复制失败');
               }}
             />

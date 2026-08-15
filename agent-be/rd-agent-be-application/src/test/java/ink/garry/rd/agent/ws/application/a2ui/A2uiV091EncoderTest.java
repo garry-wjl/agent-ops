@@ -51,6 +51,12 @@ class A2uiV091EncoderTest {
                 .build(), true);
         Event result = new Event(EventType.AGENT_RESULT, Msg.builder()
                 .content(TextBlock.builder().text("你好").build())
+                .usage(io.agentscope.core.model.ChatUsage.builder()
+                        .inputTokens(12)
+                        .outputTokens(3)
+                        .cachedTokens(1)
+                        .time(0.4)
+                        .build())
                 .build(), true);
 
         List<Map<String, Object>> m1 = encoder.encode(chunk1);
@@ -62,7 +68,25 @@ class A2uiV091EncoderTest {
         assertEquals("你", dataModelValue(m1.get(0)));
         assertEquals("你好", dataModelValue(m2.get(0)));
         assertEquals("你好", dataModelValue(m3.get(0)));
-        assertTrue(m4.isEmpty(), "AGENT_RESULT should not duplicate UI text");
+        assertEquals(1, m4.size(), "AGENT_RESULT should emit token usage");
+        assertEquals(A2uiProtocol.TOKEN_USAGE_PATH, dataModelPath(m4.get(0)));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> usage = (Map<String, Object>) dataModelValue(m4.get(0));
+        assertEquals(12, usage.get("inputTokens"));
+        assertEquals(3, usage.get("outputTokens"));
+        assertEquals(1, usage.get("cachedTokens"));
+        assertEquals(0.4, ((Number) usage.get("time")).doubleValue(), 1e-9);
+        assertEquals(15, usage.get("totalTokens"));
+    }
+
+    @Test
+    void encode_agentResultWithoutUsage_shouldEmitNothing() {
+        A2uiV091Encoder encoder = new A2uiV091Encoder("s1", null, true);
+        encoder.bootstrap();
+        Event result = new Event(EventType.AGENT_RESULT, Msg.builder()
+                .content(TextBlock.builder().text("你好").build())
+                .build(), true);
+        assertTrue(encoder.encode(result).isEmpty());
     }
 
     @Test
@@ -90,5 +114,11 @@ class A2uiV091EncoderTest {
     private static Object dataModelValue(Map<String, Object> envelope) {
         Map<String, Object> body = (Map<String, Object>) envelope.get("updateDataModel");
         return body.get("value");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Object dataModelPath(Map<String, Object> envelope) {
+        Map<String, Object> body = (Map<String, Object>) envelope.get("updateDataModel");
+        return body.get("path");
     }
 }

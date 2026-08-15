@@ -16,6 +16,7 @@ import {
   appendBlock,
   applyToolResult,
   flattenToolOutput,
+  normalizeChatUsage,
   trackReasoningChunkSnapshot,
 } from '../useInvokeStream';
 import type { AgentContentBlock, AgentScopeEvent, AssistantSegment } from '@/types';
@@ -298,5 +299,23 @@ describe('trackReasoningChunkSnapshot — PostReasoning 完整快照去重', () 
     const before = new Set(ids);
     trackReasoningChunkSnapshot(snapshot('m1', 'x'), ids);
     expect(ids).toEqual(before);
+  });
+});
+
+describe('normalizeChatUsage', () => {
+  it('补全 totalTokens', () => {
+    expect(
+      normalizeChatUsage({ inputTokens: 10, outputTokens: 5, cachedTokens: 1 }),
+    ).toEqual({
+      inputTokens: 10,
+      outputTokens: 5,
+      cachedTokens: 1,
+      totalTokens: 15,
+    });
+  });
+
+  it('空值返回 undefined', () => {
+    expect(normalizeChatUsage(undefined)).toBeUndefined();
+    expect(normalizeChatUsage(null)).toBeUndefined();
   });
 });

@@ -8,6 +8,7 @@ import io.agentscope.core.agent.EventType;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.model.ChatUsage;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -82,8 +83,12 @@ public class A2uiV091Encoder {
         if (event == null) {
             return out;
         }
-        // AGENT_RESULT 与末帧 REASONING 文案重复，UI 只消费 REASONING。
+        // AGENT_RESULT 文案与末帧 REASONING 重复；此处只下发本轮 Token 用量（若有）。
         if (event.getType() == EventType.AGENT_RESULT) {
+            ChatUsage usage = event.getMessage() != null ? event.getMessage().getChatUsage() : null;
+            if (usage != null) {
+                out.add(updateTokenUsageMessage(usage));
+            }
             return out;
         }
         if (event.getType() == EventType.REASONING) {
@@ -141,6 +146,21 @@ public class A2uiV091Encoder {
         body.put("surfaceId", surfaceId);
         body.put("path", A2uiProtocol.ASSISTANT_TEXT_PATH);
         body.put("value", value == null ? "" : value);
+        return envelope("updateDataModel", body);
+    }
+
+    private Map<String, Object> updateTokenUsageMessage(ChatUsage usage) {
+        Map<String, Object> value = new LinkedHashMap<>();
+        value.put("inputTokens", usage.getInputTokens());
+        value.put("outputTokens", usage.getOutputTokens());
+        value.put("cachedTokens", usage.getCachedTokens());
+        value.put("time", usage.getTime());
+        value.put("totalTokens", usage.getTotalTokens());
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("surfaceId", surfaceId);
+        body.put("path", A2uiProtocol.TOKEN_USAGE_PATH);
+        body.put("value", value);
         return envelope("updateDataModel", body);
     }
 

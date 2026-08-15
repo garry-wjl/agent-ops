@@ -11,9 +11,11 @@
  * - 正确处理 tool_use 的 fragment 协议（name === '__fragment__' 帧按 toolCallId 拼 content）
  *
  * 事件处理：
- * - REASONING：遍历 message.content blocks，逐块走 appendBlock 合入 segments
+ * - REASONING：遍历 message.content blocks，逐块走 appendBlock 合入 segments；
+ *   若为 isLast 且带 usage，先记入 pendingMeta（被 chunk 去重跳过内容时仍保留 usage）
  * - TOOL_RESULT：遍历 message.content blocks，逐块走 applyToolResult 按 id 回填
- * - HINT / AGENT_RESULT / SUMMARY：本期不展示，仅 console.debug
+ * - AGENT_RESULT：读取 message.usage（本轮汇总），写入 totalTokens / usage；内容不展示
+ * - HINT / SUMMARY：本期不展示，仅 console.debug
  *
  * 出字速率：跟随 SSE 到达速率，rAF 合并到下一帧 setState。
  */
@@ -23,6 +25,7 @@ import type {
   AgentContentBlock,
   AgentScopeEvent,
   AssistantSegment,
+  ChatUsage,
   DebugInvokeRequest,
   SsePlatformEvent,
 } from '@/types';
@@ -31,10 +34,12 @@ export interface UseInvokeStreamState {
   loading: boolean;
   /** 按到达顺序的分段列表；UI 直接 map 渲染即可 */
   segments: AssistantSegment[];
-  /** 以下字段 BE 当前未发出，保留待 final 事件落地后启用 */
   sessionNum?: string;
   traceId?: string;
+  /** 本轮汇总 Token（优先 AGENT_RESULT.message.usage） */
   totalTokens?: number;
+  /** 本轮完整 usage；UI 可展示 in/out */
+  usage?: ChatUsage;
   totalLatencyMs?: number;
   error?: string;
 }
@@ -55,6 +60,30 @@ export function flattenToolOutput(output: AgentContentBlock[] | undefined): unkn
     .map((b) => b.text);
   if (texts.length === output.length) return texts.join('\n');
   return output;
+}
+
+/**
+ * 规范化 message.usage；缺字段时补 totalTokens = input + output。
+ */
+export function normalizeChatUsage(raw: ChatUsage | undefined | null): ChatUsage | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const inputTokens = Number(raw.inputTokens);
+  const outputTokens = Number(raw.outputTokens);
+  if (!Number.isFinite(inputTokens) && !Number.isFinite(outputTokens)) return undefined;
+  const inTok = Number.isFinite(inputTokens) ? inputTokens : 0;
+  const outTok = Number.isFinite(outputTokens) ? outputTokens : 0;
+  const cached =
+    raw.cachedTokens == null ? undefined : Number(raw.cachedTokens);
+  const time = raw.time == null ? undefined : Number(raw.time);
+  const totalFromRaw =
+    raw.totalTokens == null ? undefined : Number(raw.totalTokens);
+  return {
+    inputTokens: inTok,
+    outputTokens: outTok,
+    ...(Number.isFinite(cached) ? { cachedTokens: cached } : {}),
+    ...(Number.isFinite(time) ? { time } : {}),
+    totalTokens: Number.isFinite(totalFromRaw) ? totalFromRaw : inTok + outTok,
+  };
 }
 
 /**
@@ -267,6 +296,19 @@ export function useInvokeStream() {
   /** REASONING：遍历 content blocks 逐块合入 segments */
   const handleReasoning = useCallback(
     (evt: AgentScopeEvent) => {
+      // 末帧 usage：即使内容因 PostReasoning 快照被 skip，也要记入（多轮 ReAct 中间帧）
+      if (evt.isLast) {
+        const usage = normalizeChatUsage(evt.message?.usage);
+        if (usage) {
+          pendingMetaRef.current = {
+            ...pendingMetaRef.current,
+            usage,
+            totalTokens: usage.totalTokens,
+          };
+          ensureTick();
+        }
+      }
+
       const blocks = evt.message.content ?? [];
       if (blocks.length === 0) return;
 
@@ -303,6 +345,26 @@ export function useInvokeStream() {
           { segmentCount: nextSegs.length },
         );
       }
+    },
+    [ensureTick],
+  );
+
+  /** AGENT_RESULT：本轮汇总 usage（BE 已在 AgentRunnerService 回填） */
+  const handleAgentResult = useCallback(
+    (evt: AgentScopeEvent) => {
+      const usage = normalizeChatUsage(evt.message?.usage);
+      if (!usage) {
+        if (import.meta.env.DEV) {
+          console.debug('[useInvokeStream] AGENT_RESULT 无 usage', evt);
+        }
+        return;
+      }
+      pendingMetaRef.current = {
+        ...pendingMetaRef.current,
+        usage,
+        totalTokens: usage.totalTokens,
+      };
+      ensureTick();
     },
     [ensureTick],
   );
@@ -370,8 +432,10 @@ export function useInvokeStream() {
               case 'TOOL_RESULT':
                 handleToolResult(evt);
                 break;
-              case 'HINT':
               case 'AGENT_RESULT':
+                handleAgentResult(evt);
+                break;
+              case 'HINT':
               case 'SUMMARY':
                 if (import.meta.env.DEV) {
                   console.debug(`[useInvokeStream] ${evt.type} 暂不展示`, evt);
@@ -394,7 +458,7 @@ export function useInvokeStream() {
         },
       );
     },
-    [ensureTick, flushFinal, handleReasoning, handleToolResult],
+    [ensureTick, flushFinal, handleAgentResult, handleReasoning, handleToolResult],
   );
 
   return { ...state, start, abort, reset };

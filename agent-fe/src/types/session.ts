@@ -152,6 +152,19 @@ export interface AgentMsg {
   role: 'USER' | 'ASSISTANT' | 'TOOL' | 'SYSTEM';
   content: AgentContentBlock[];
   name?: string;
+  /** Token 用量；常见于 REASONING isLast / AGENT_RESULT */
+  usage?: ChatUsage;
+}
+
+/** AgentScope ChatUsage（message.usage） */
+export interface ChatUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cachedTokens?: number;
+  /** 秒 */
+  time?: number;
+  /** inputTokens + outputTokens；序列化时可能出现 */
+  totalTokens?: number;
 }
 
 /** BE 在 SSE 流里发出的单条事件 — 与 Java Event 类一一对应 */

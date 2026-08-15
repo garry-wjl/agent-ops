@@ -447,7 +447,10 @@ function buildSpecs(agentNum: string): ApiSpec[] {
   }'`,
       responseExample: `data:{"type":"REASONING","message":{"id":"...","name":"agent","role":"ASSISTANT","content":[{"type":"text","text":"正在查询…"}],"metadata":{},"timestamp":"2026-08-15 15:00:00"},"isLast":false,"messageId":"..."}
 
-data:{"type":"AGENT_RESULT","message":{"id":"...","name":"agent","role":"ASSISTANT","content":[{"type":"text","text":"预计 3 个工作日内发货。"}],"timestamp":"2026-08-15 15:00:01","usage":{"inputTokens":100,"outputTokens":20,"cachedTokens":0,"time":1.2}},"isLast":true,"messageId":"..."}
+data:{"type":"AGENT_RESULT","message":{"id":"...","name":"agent","role":"ASSISTANT","content":[{"type":"text","text":"预计 3 个工作日内发货。"}],"timestamp":"2026-08-15 15:00:01","usage":{"inputTokens":100,"outputTokens":20,"cachedTokens":0,"time":1.2,"totalTokens":120}},"isLast":true,"messageId":"..."}
+
+# 说明：AGENT_RESULT.message.usage 为本轮汇总（多轮 ReAct 会累加各次 LLM 调用）；
+# 调试台与开放 Event SSE 同源。
 
 # 非 SSE 错误示例
 # {"code":2017,"message":"缺少有效秘钥","data":null,"traceId":"..."}`,
@@ -457,7 +460,7 @@ data:{"type":"AGENT_RESULT","message":{"id":"...","name":"agent","role":"ASSISTA
       path: '/api/v1/open/agents/command/a2ui/invoke',
       title: 'A2UI Invoke（v0.9.1 SSE）',
       description:
-        '按 A2UI v0.9.1 协议流式返回 UI 消息。与上方 Invoke 并存，不替换原 Event SSE。可选 surfaceId / catalogId；sendDataModel 默认 true。',
+        '按 A2UI v0.9.1 协议流式返回 UI 消息。与上方 Invoke 并存，不替换原 Event SSE。可选 surfaceId / catalogId；sendDataModel 默认 true。流结束时若有 Token 用量，会额外下发 updateDataModel path=/tokenUsage。',
       requestContentType: 'application/json',
       responseContentType: 'text/event-stream',
       headers: [...AUTH_HEADERS, JSON_CONTENT_HEADER, SSE_ACCEPT_HEADER],
@@ -540,14 +543,16 @@ data:{"type":"AGENT_RESULT","message":{"id":"...","name":"agent","role":"ASSISTA
 
 data:{"version":"v0.9.1","updateComponents":{"surfaceId":"main","components":[{"id":"root","component":"Column","children":["assistant_text"]},{"id":"assistant_text","component":"Text","text":{"path":"/assistantText"},"variant":"body"}]}}
 
-data:{"version":"v0.9.1","updateDataModel":{"surfaceId":"main","path":"/assistantText","value":"好的，我来帮你…"}}`,
+data:{"version":"v0.9.1","updateDataModel":{"surfaceId":"main","path":"/assistantText","value":"好的，我来帮你…"}}
+
+data:{"version":"v0.9.1","updateDataModel":{"surfaceId":"main","path":"/tokenUsage","value":{"inputTokens":100,"outputTokens":20,"cachedTokens":0,"time":1.2,"totalTokens":120}}}`,
     },
     {
       method: 'POST',
       path: '/api/v1/open/agents/command/a2ui/action',
       title: 'A2UI Action（客户端回传 → v0.9.1 SSE）',
       description:
-        '客户端交互回传（协议 action）。服务端转为 Agent 输入后，继续以 A2UI v0.9.1 SSE 返回 UI 更新。建议携带 sessionNum。',
+        '客户端交互回传（协议 action）。服务端转为 Agent 输入后，继续以 A2UI v0.9.1 SSE 返回 UI 更新。建议携带 sessionNum。结束帧同样可能下发 /tokenUsage。',
       requestContentType: 'application/json',
       responseContentType: 'text/event-stream',
       headers: [...AUTH_HEADERS, JSON_CONTENT_HEADER, SSE_ACCEPT_HEADER],
@@ -661,7 +666,9 @@ data:{"version":"v0.9.1","updateDataModel":{"surfaceId":"main","path":"/assistan
   }'`,
       responseExample: `data:{"version":"v0.9.1","createSurface":{"surfaceId":"main","catalogId":"https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json","sendDataModel":true}}
 
-data:{"version":"v0.9.1","updateDataModel":{"surfaceId":"main","path":"/assistantText","value":"已收到提交，正在处理…"}}`,
+data:{"version":"v0.9.1","updateDataModel":{"surfaceId":"main","path":"/assistantText","value":"已收到提交，正在处理…"}}
+
+data:{"version":"v0.9.1","updateDataModel":{"surfaceId":"main","path":"/tokenUsage","value":{"inputTokens":80,"outputTokens":15,"cachedTokens":0,"time":0.9,"totalTokens":95}}}`,
     },
     {
       method: 'POST',
