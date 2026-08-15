@@ -31,4 +31,11 @@ public final class A2uiProtocol {
 
     /** 助手文本在 data model 中的 JSON Pointer。 */
     public static final String ASSISTANT_TEXT_PATH = "/assistantText";
+
+    /**
+     * 本轮 Token 用量在 data model 中的 JSON Pointer。
+     * <p>
+     * value 为对象：{@code inputTokens}/{@code outputTokens}/{@code cachedTokens}/{@code time}/{@code totalTokens}。
+     */
+    public static final String TOKEN_USAGE_PATH = "/tokenUsage";
 }
