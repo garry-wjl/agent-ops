@@ -204,7 +204,9 @@ public class AgentRunnerService {
                                 .then(Mono.just(event));                             // 存完后发射原始 item
                     }
                     return Flux.just(event);
-                });
+                })
+                // AGENT_RESULT 后主动 complete，避免上游 agent.stream 挂起导致 SSE 半关闭、前端 loading 卡死
+                .takeUntil(event -> event.isLast() && EventType.AGENT_RESULT.equals(event.getType()));
     }
 
     private static NormalizedInvokeContent textOnly(String input) {
