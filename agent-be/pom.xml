@@ -38,7 +38,7 @@
         <alibabacloud-oss-v2.version>0.4.0</alibabacloud-oss-v2.version>
         <sandbox.version>1.0.11</sandbox.version>
         <mockito.version>5.15.2</mockito.version>
-        <jacoco.version>0.8.12</jacoco.version>
+        <jacoco.version>0.8.15</jacoco.version>
 
         <!-- ============================================================
              Docker / Jib 镜像构建（基础镜像）
