@@ -8,5 +8,7 @@ public enum InputType {
     /** 纯文本输入 */
     TEXT,
     /** JSON 结构化输入 */
-    JSON
+    JSON,
+    /** 多模态输入（文本 + 附件引用，content 存 JSON） */
+    MULTIMODAL
 }

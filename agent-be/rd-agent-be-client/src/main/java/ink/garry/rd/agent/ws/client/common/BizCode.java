@@ -62,6 +62,15 @@ public enum BizCode {
     LLM_QUOTA_EXCEEDED(4002, "LLM 配额不足"),
     SSE_INTERRUPTED(4003, "SSE 中断"),
 
+    // ---- Attachment（41xx）----
+    ATTACHMENT_INVALID(4101, "附件参数非法"),
+    ATTACHMENT_NOT_FOUND(4102, "附件不存在"),
+    ATTACHMENT_FORBIDDEN(4103, "无权访问该附件"),
+    ATTACHMENT_TYPE_UNSUPPORTED(4104, "不支持的附件类型"),
+    ATTACHMENT_TOO_LARGE(4105, "附件过大"),
+    ATTACHMENT_COUNT_EXCEEDED(4106, "附件数量超限"),
+    ATTACHMENT_DELETE_FORBIDDEN(4107, "附件不可删除"),
+
     // ---- Evaluation ----
     EVAL_RUNNING(5001, "评测进行中"),
     EVAL_CASE_GEN_FAILED(5002, "用例生成失败"),

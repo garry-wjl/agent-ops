@@ -66,12 +66,20 @@ public class OssClient {
     private Boolean isReplaceBucketName;
 
     /**
+     * 是否使用 Path-style（{@code endpoint/bucket/key}）。
+     * <p>公司反代域名场景通常为 {@code true}；直连阿里云官方 endpoint 须为 {@code false}
+     *（虚拟主机风格 {@code bucket.endpoint/key}），否则会报 SecondLevelDomainForbidden。
+     */
+    @Value("${oss.use-path-style:true}")
+    private Boolean usePathStyle;
+
+    /**
      * Spring 注入完毕后打印实际生效的 OSS 配置 — 排查"代码改了没生效"问题。
      */
     @jakarta.annotation.PostConstruct
     public void logEffectiveConfig() {
-        log.info("[OssClient] effective config: endpoint={}, region={}, bucket={}, baseDir={}, usePathStyle=true",
-                endpoint, region, bucketName, baseDir);
+        log.info("[OssClient] effective config: endpoint={}, region={}, bucket={}, baseDir={}, usePathStyle={}",
+                endpoint, region, bucketName, baseDir, usePathStyle);
     }
 
     /**
@@ -140,7 +148,7 @@ public class OssClient {
         try (OSSClient client = OSSClient.newBuilder()
                 .region(region)
                 .endpoint(endpoint)
-                .usePathStyle(true)
+                .usePathStyle(Boolean.TRUE.equals(usePathStyle))
                 .credentialsProvider(credentialsProvider)
                 .build()) {
 
@@ -220,7 +228,7 @@ public class OssClient {
         try (OSSClient client = OSSClient.newBuilder()
                 .region(region)
                 .endpoint(endpoint)
-                .usePathStyle(true)
+                .usePathStyle(Boolean.TRUE.equals(usePathStyle))
                 .credentialsProvider(credentialsProvider)
                 .build()) {
 
@@ -250,6 +258,34 @@ public class OssClient {
         }
     }
 
-
-
+    /**
+     * 下载对象字节（服务端直读，供文档解析 Tool 使用）。
+     *
+     * @param fileId OSS 对象 ID
+     * @return 文件字节
+     */
+    public byte[] downloadBytes(String fileId) {
+        var credentialsProvider = new StaticCredentialsProvider(accessKey, secretKey);
+        try (OSSClient client = OSSClient.newBuilder()
+                .region(region)
+                .endpoint(endpoint)
+                .usePathStyle(Boolean.TRUE.equals(usePathStyle))
+                .credentialsProvider(credentialsProvider)
+                .build();
+             var result = client.getObject(GetObjectRequest.newBuilder()
+                     .bucket(bucketName)
+                     .key(fileId)
+                     .build());
+             java.io.InputStream in = result.body()) {
+            if (in == null) {
+                throw new OssFileException("oss_download", 0, "oss object body is null: " + fileId, null);
+            }
+            return in.readAllBytes();
+        } catch (OssFileException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("downloadBytes error: {}", e.getMessage(), e);
+            throw new OssFileException("oss_download", 0, "oss_download failed: " + e.getMessage(), null);
+        }
+    }
 }

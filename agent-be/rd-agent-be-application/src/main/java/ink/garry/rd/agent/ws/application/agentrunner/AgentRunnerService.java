@@ -4,11 +4,11 @@ import cn.hutool.core.collection.CollectionUtil;
 import cn.hutool.core.lang.Assert;
 import cn.hutool.core.util.StrUtil;
 import ink.garry.rd.agent.ws.application.agentrunner.factory.AgentRunnerFactory;
+import ink.garry.rd.agent.ws.application.attachment.command.AttachmentCommandService;
 import ink.garry.rd.agent.ws.application.common.prompt.SysPromptVariableSubstitutor;
 import ink.garry.rd.agent.ws.application.debugconsole.SegmentAccumulator;
 import ink.garry.rd.agent.ws.application.session.SessionCommandService;
 import ink.garry.rd.agent.ws.client.session.dto.SessionDTO;
-import ink.garry.rd.agent.ws.domain.agent.valueobject.InputType;
 import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContextHolder;
 import io.a2a.client.transport.jsonrpc.JSONRPCTransport;
 import io.a2a.client.transport.jsonrpc.JSONRPCTransportConfig;
@@ -50,6 +50,11 @@ public class AgentRunnerService {
     @Resource
     private io.agentscope.core.state.AgentStateStore agentStateStore;
 
+    @Resource
+    private AgentMsgFactory agentMsgFactory;
+
+    @Resource
+    private AttachmentCommandService attachmentCommandService;
 
     /**
      * 运行 Agent（生产/默认入口：当前在线版本）。
@@ -57,7 +62,7 @@ public class AgentRunnerService {
      * 供对外（API 秘钥）调用，故自动新建会话时来源标记为 {@code API}。
      */
     public Flux<Event> runAgent(String agentNum, String input, String sessionNum, String operatorId) {
-        return runAgent(agentNum, input, sessionNum, operatorId, null, "API", null);
+        return runAgent(agentNum, textOnly(input), sessionNum, operatorId, null, "API", null);
     }
 
     /**
@@ -65,7 +70,7 @@ public class AgentRunnerService {
      */
     public Flux<Event> runAgent(String agentNum, String input, String sessionNum, String operatorId,
                                 Map<String, Object> context) {
-        return runAgent(agentNum, input, sessionNum, operatorId, null, "API", context);
+        return runAgent(agentNum, textOnly(input), sessionNum, operatorId, null, "API", context);
     }
 
     /**
@@ -78,7 +83,7 @@ public class AgentRunnerService {
      */
     public Flux<Event> runAgent(String agentNum, String input, String sessionNum, String operatorId,
                                 String targetVersion) {
-        return runAgent(agentNum, input, sessionNum, operatorId, targetVersion, "DEBUG_CONSOLE", null);
+        return runAgent(agentNum, textOnly(input), sessionNum, operatorId, targetVersion, "DEBUG_CONSOLE", null);
     }
 
     /**
@@ -86,7 +91,7 @@ public class AgentRunnerService {
      */
     public Flux<Event> runAgent(String agentNum, String input, String sessionNum, String operatorId,
                                 String targetVersion, Map<String, Object> context) {
-        return runAgent(agentNum, input, sessionNum, operatorId, targetVersion, "DEBUG_CONSOLE", context);
+        return runAgent(agentNum, textOnly(input), sessionNum, operatorId, targetVersion, "DEBUG_CONSOLE", context);
     }
 
     /**
@@ -100,14 +105,24 @@ public class AgentRunnerService {
      */
     public Flux<Event> runAgent(String agentNum, String input, String sessionNum, String operatorId,
                                 String targetVersion, String origin) {
-        return runAgent(agentNum, input, sessionNum, operatorId, targetVersion, origin, null);
+        return runAgent(agentNum, textOnly(input), sessionNum, operatorId, targetVersion, origin, null);
     }
 
     /**
-     * 运行 Agent（最底层实现，显式指定自动建会话来源与调用上下文）。
+     * 运行 Agent（纯文本兼容入口，带上下文）。
      */
     public Flux<Event> runAgent(String agentNum, String input, String sessionNum, String operatorId,
                                 String targetVersion, String origin, Map<String, Object> context) {
+        return runAgent(agentNum, textOnly(input), sessionNum, operatorId, targetVersion, origin, context);
+    }
+
+    /**
+     * 运行 Agent（多模态 / 附件入口）。
+     */
+    public Flux<Event> runAgent(String agentNum, NormalizedInvokeContent content, String sessionNum,
+                                String operatorId, String targetVersion, String origin,
+                                Map<String, Object> context) {
+        Assert.notNull(content, "invoke content 不能为空");
         //1. 确定会话(沙箱工具按 sessionNum 绑定复用容器,故须先于 build 确定)
         Map<String, Object> sessionContext;
         if (StrUtil.isBlank(sessionNum)) {
@@ -129,23 +144,27 @@ public class AgentRunnerService {
             agentVersionNum = targetVersion;
         }
         String workspaceNum = WorkspaceContextHolder.currentWorkspaceNum();
+        // 调试台：common 上传未登记；Open：uploadAttachment 已登记。此处统一 ensure。
+        if (content.hasAttachments()) {
+            attachmentCommandService.ensureRegisteredForInvoke(
+                    workspaceNum, agentNum, content, operatorId);
+        }
         Map<String, String> vars = SysPromptVariableSubstitutor.merge(
                 SysPromptVariableSubstitutor.builtinVars(
                         sessionNum, agentNum, agentVersionNum, workspaceNum, operatorId),
                 sessionContext);
 
-        //2. 创建 Agent(注入 sessionNum 以绑定会话级沙箱工具；按 targetVersion 装配目标版本快照)
-        AgentBase agent = agentRunnerFactory.build(agentNum, sessionNum, targetVersion, vars);
+        //2. 创建 Agent(注入 sessionNum 以绑定会话级沙箱工具；按 targetVersion 装配目标版本快照；有附件时注册 read_attachment)
+        AgentBase agent = agentRunnerFactory.build(
+                agentNum, sessionNum, targetVersion, vars, content.hasAttachments());
 
-        //3. 添加用户消息
-        sessionCommandService.appendUserMessage(sessionNum, input, InputType.TEXT, sessionNum, operatorId);
-
-        // Agent 2.0.0 完全无状态，无需显式 loadIfExists / saveTo，stateStore 自动管理
+        //3. 添加用户消息（MULTIMODAL 存 JSON；纯文本保持 TEXT）
+        AgentMsgFactory.PersistPayload persist = agentMsgFactory.toPersistPayload(content);
+        sessionCommandService.appendUserMessage(
+                sessionNum, persist.contentText(), persist.inputType(), sessionNum, operatorId);
 
         //4. 调用
-        Msg msg = Msg.builder()
-                .textContent(input)
-                .build();
+        Msg msg = agentMsgFactory.build(content, workspaceNum);
         String finalSessionNum = sessionNum;
         // 累积器:订阅 PostReasoning / PostActing 的 isLast=true 帧,把 thinking / text / tool_use /
         // tool_result 按到达顺序收成 AssistantSegment 列表,最终随 assistant message 一并持久化。
@@ -186,6 +205,13 @@ public class AgentRunnerService {
                     }
                     return Flux.just(event);
                 });
+    }
+
+    private static NormalizedInvokeContent textOnly(String input) {
+        return NormalizedInvokeContent.builder()
+                .text(input)
+                .attachments(List.of())
+                .build();
     }
 
     /**

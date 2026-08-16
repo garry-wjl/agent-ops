@@ -1,8 +1,11 @@
 package ink.garry.rd.agent.ws.client.agent;
 
+import ink.garry.rd.agent.ws.client.attachment.AttachmentRefParam;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -10,6 +13,8 @@ import java.util.Map;
  * <p>
  * {@code agentNum} 同时由秘钥隐含（key→agentNum），过滤器校验其与 key.agentNum 一致；
  * {@code operatorId} 调用方可选传，为空记 {@code system}。
+ * <p>
+ * {@code input} 与 {@code attachments} 至少一个有内容（允许纯附件）；由 Controller / Normalizer 校验。
  */
 @Data
 public class OpenInvokeParam {
@@ -18,11 +23,10 @@ public class OpenInvokeParam {
     @NotBlank(message = "agentNum 不能为空")
     private String agentNum;
 
-    /** 用户输入文本，必填 */
-    @NotBlank(message = "input 不能为空")
+    /** 用户输入文本；可空（纯附件时） */
     private String input;
 
-    /** 输入类型，默认 text（预留多模态扩展） */
+    /** 输入类型，默认 text；多模态为 multimodal */
     private String inputType;
 
     /** 会话业务编号；为空表示新会话由下游创建 */
@@ -36,4 +40,8 @@ public class OpenInvokeParam {
      * 并浅合并写入会话默认上下文。
      */
     private Map<String, Object> context;
+
+    /** 本轮附件引用列表；可空 */
+    @Valid
+    private List<AttachmentRefParam> attachments;
 }

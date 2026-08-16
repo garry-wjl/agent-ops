@@ -379,10 +379,84 @@ function buildSpecs(agentNum: string): ApiSpec[] {
   return [
     {
       method: 'POST',
+      path: '/api/v1/open/agents/command/uploadAttachment',
+      title: '上传附件（预签名）',
+      description:
+        '开放侧上传聊天附件：返回 OSS 预签名后客户端 PUT 文件字节。成功后服务端登记 chat_attachment（永不删除）。随后在 invoke 的 attachments[] 中引用 fileId。',
+      requestContentType: 'application/json',
+      responseContentType: 'application/json',
+      headers: [...AUTH_HEADERS, JSON_CONTENT_HEADER],
+      requestParams: [
+        {
+          name: 'agentNum',
+          location: 'body',
+          type: 'string',
+          required: true,
+          description: `目标 Agent 编号，须与秘钥归属一致（当前：${agentNum}）`,
+        },
+        {
+          name: 'fileName',
+          location: 'body',
+          type: 'string',
+          required: true,
+          description: '原始文件名',
+        },
+        {
+          name: 'contentType',
+          location: 'body',
+          type: 'string',
+          required: true,
+          description: 'MIME，须在白名单内（图片/pdf/docx/xlsx/txt/md）',
+        },
+        {
+          name: 'size',
+          location: 'body',
+          type: 'number',
+          required: true,
+          description: '文件字节大小（正数，默认上限 10MB）',
+        },
+      ],
+      responseSummary:
+        'Result.data 含 fileId、url、method、expiration、signedHeaders；客户端按 method 直传 OSS。',
+      responseGroups: [
+        {
+          title: 'OssPresignResultVO',
+          fields: [
+            { name: 'fileId', type: 'string', required: true, description: '业务文件标识，invoke attachments 引用' },
+            { name: 'url', type: 'string', required: true, description: '预签名 PUT URL' },
+            { name: 'method', type: 'string', required: true, description: 'HTTP 方法，通常 PUT' },
+            { name: 'expiration', type: 'string', required: true, description: '签名过期时间' },
+            { name: 'signedHeaders', type: 'object', required: false, description: '需附带的签名头，可为空对象' },
+          ],
+        },
+      ],
+      curl: `curl -X POST '${base}/api/v1/open/agents/command/uploadAttachment' \\
+  -H 'Authorization: Bearer ak-xxxxxxxx' \\
+  -H 'Content-Type: application/json' \\
+  -d '{
+    "agentNum": "${agentNum}",
+    "fileName": "合同.docx",
+    "contentType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "size": 512000
+  }'`,
+      responseExample: `{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "fileId": "filexxxx",
+    "url": "https://oss.example.com/...?x-oss-signature=...",
+    "method": "PUT",
+    "expiration": "2026-08-16T12:00:00Z",
+    "signedHeaders": {}
+  }
+}`,
+    },
+    {
+      method: 'POST',
       path: '/api/v1/open/agents/command/invoke',
       title: 'Invoke（SSE 流式调用）',
       description:
-        '对外触发 Agent 推理，响应为 AgentScope Event SSE。operatorId 可选，留空记为 system。可选 context 用于系统提示词 {{key}} 替换并合并进会话默认上下文。',
+        '对外触发 Agent 推理，响应为 AgentScope Event SSE。operatorId 可选，留空记为 system。可选 context 用于系统提示词 {{key}} 替换并合并进会话默认上下文。input 与 attachments 至少一个有内容；图片走 Vision，文档由模型按需调用平台内置 read_attachment。校验失败在 SSE 前返回 4xx。',
       requestContentType: 'application/json',
       responseContentType: 'text/event-stream',
       headers: [...AUTH_HEADERS, JSON_CONTENT_HEADER, SSE_ACCEPT_HEADER],
@@ -398,15 +472,23 @@ function buildSpecs(agentNum: string): ApiSpec[] {
           name: 'input',
           location: 'body',
           type: 'string',
-          required: true,
-          description: '用户输入文本',
+          required: false,
+          description: '用户输入文本；可与 attachments 二选一或并存（纯附件合法）',
         },
         {
           name: 'inputType',
           location: 'body',
           type: 'string',
           required: false,
-          description: '输入类型，默认 text（预留多模态）',
+          description: '输入类型：text / multimodal（有附件时建议 multimodal）',
+        },
+        {
+          name: 'attachments',
+          location: 'body',
+          type: 'array',
+          required: false,
+          description:
+            '已上传登记的附件引用数组：[{ fileId, name?, mimeType?, size?, kind? }]；须先调 uploadAttachment',
         },
         {
           name: 'sessionNum',
@@ -431,7 +513,7 @@ function buildSpecs(agentNum: string): ApiSpec[] {
         },
       ],
       responseSummary:
-        '成功时为 SSE：每条 data 为一个 Event JSON。流正常结束关闭连接。非流式错误（如缺秘钥）返回 Result JSON。',
+        '成功时为 SSE：每条 data 为一个 Event JSON。流正常结束关闭连接。非流式错误（如缺秘钥、附件非法）返回 Result JSON。',
       responseGroups: EVENT_RESPONSE_GROUPS,
       curl: `curl -N -X POST '${base}/api/v1/open/agents/command/invoke' \\
   -H 'Authorization: Bearer ak-xxxxxxxx' \\
@@ -439,8 +521,12 @@ function buildSpecs(agentNum: string): ApiSpec[] {
   -H 'Accept: text/event-stream' \\
   -d '{
     "agentNum": "${agentNum}",
-    "input": "这个单什么时候发货？",
-    "inputType": "text",
+    "input": "总结附件并看图",
+    "inputType": "multimodal",
+    "attachments": [
+      { "fileId": "filexxxx", "name": "合同.docx", "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "size": 512000, "kind": "file" },
+      { "fileId": "fileyyyy", "name": "截图.png", "mimeType": "image/png", "size": 102400, "kind": "image" }
+    ],
     "sessionNum": null,
     "operatorId": null,
     "context": { "orderId": "ORD-123", "page": "order_detail" }

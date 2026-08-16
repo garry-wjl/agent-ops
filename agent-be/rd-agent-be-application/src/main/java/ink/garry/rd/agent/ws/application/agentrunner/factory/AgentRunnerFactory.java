@@ -5,13 +5,16 @@ import cn.hutool.core.lang.Assert;
 import cn.hutool.core.util.StrUtil;
 import ink.garry.rd.agent.ws.application.agent.AgentQueryService;
 import ink.garry.rd.agent.ws.application.agentrunner.tool.JsonFormatTool;
+import ink.garry.rd.agent.ws.application.agentrunner.tool.ReadAttachmentTool;
 import ink.garry.rd.agent.ws.application.agentrunner.tool.SandboxTool;
+import ink.garry.rd.agent.ws.application.attachment.query.AttachmentQueryService;
 import ink.garry.rd.agent.ws.application.common.prompt.SysPromptVariableSubstitutor;
 import ink.garry.rd.agent.ws.application.sandbox.SandboxQueryService;
 import ink.garry.rd.agent.ws.application.sandbox.runner.SandboxRunner;
 import ink.garry.rd.agent.ws.application.sandbox.runner.SandboxSession;
 import ink.garry.rd.agent.ws.application.tool.ToolQueryService;
 import ink.garry.rd.agent.ws.application.tool.factory.ToolRunnerFactory;
+import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContextHolder;
 import ink.garry.rd.agent.ws.client.agent.dto.AgentDTO;
 import ink.garry.rd.agent.ws.client.sandbox.dto.SandboxDetailDTO;
 import ink.garry.rd.agent.ws.client.tool.dto.ToolDTO;
@@ -95,6 +98,10 @@ public class AgentRunnerFactory {
     @Resource
     private AgentStateStore agentStateStore;
 
+    /** 有附件时注入平台内置 read_attachment */
+    @Resource
+    private AttachmentQueryService attachmentQueryService;
+
     /**
      * 创建 AgentRunner（生产/默认入口：当前在线版本）。
      *
@@ -103,7 +110,7 @@ public class AgentRunnerFactory {
      * @return AgentRunner
      */
     public AgentBase build(String agentNum, String sessionNum) {
-        return build(agentNum, sessionNum, null, null);
+        return build(agentNum, sessionNum, null, null, false);
     }
 
     /**
@@ -125,7 +132,7 @@ public class AgentRunnerFactory {
      * @return AgentRunner
      */
     public AgentBase build(String agentNum, String sessionNum, String targetVersion) {
-        return build(agentNum, sessionNum, targetVersion, null);
+        return build(agentNum, sessionNum, targetVersion, null, false);
     }
 
     /**
@@ -138,6 +145,16 @@ public class AgentRunnerFactory {
      */
     public AgentBase build(String agentNum, String sessionNum, String targetVersion,
                            java.util.Map<String, String> vars) {
+        return build(agentNum, sessionNum, targetVersion, vars, false);
+    }
+
+    /**
+     * 创建 AgentRunner（可选注册 read_attachment）。
+     *
+     * @param registerReadAttachment 本轮含附件时为 true，注入平台内置 Tool
+     */
+    public AgentBase build(String agentNum, String sessionNum, String targetVersion,
+                           java.util.Map<String, String> vars, boolean registerReadAttachment) {
         Assert.notBlank(agentNum, "Agent编号不能为空");
         //1. 获取Agent信息（按目标版本解析快照；空→当前在线镜像）
         AgentDTO agent = agentQueryService.loadAgentForDebug(agentNum, targetVersion);
@@ -213,6 +230,12 @@ public class AgentRunnerFactory {
             //3.1.1 注册内置工具：JSON 解析工具（无状态单例，所有 Agent 共享）
             JsonFormatTool jsonFormatTool = new JsonFormatTool();
             toolkit.registerTool(jsonFormatTool);
+
+            //3.1.2 本轮有附件时注册平台内置 read_attachment（按工作空间 ACL）
+            if (registerReadAttachment) {
+                String ws = WorkspaceContextHolder.currentWorkspaceNum();
+                toolkit.registerTool(new ReadAttachmentTool(attachmentQueryService, ws));
+            }
 
             //3.2 注册技能：优先按快照钉住版本解析，旧 skillNums 兜底取当前发布版本。
             registerSkills(agent.getConfigSnapshot(), skillBox);
