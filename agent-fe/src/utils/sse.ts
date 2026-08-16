@@ -85,9 +85,21 @@ export async function invokeStream(
         if (parsed) handlers.onEvent(parsed);
       }
     }
+    // 连接结束时刷掉尾部未以空行收尾的最后一帧（半关闭场景常见）
+    const trailing = buffer.trim();
+    if (trailing) {
+      const parsed = parseSseBlock(trailing);
+      if (parsed) handlers.onEvent(parsed);
+    }
     handlers.onDone?.();
   } catch (e) {
     if ((e as any)?.name === 'AbortError') {
+      handlers.onDone?.();
+      return;
+    }
+    // 对端半关闭 chunked（curl 18 / undici terminated）时，视为流结束而非业务失败
+    const msg = String((e as Error)?.message ?? e);
+    if (/terminated|network|Failed to fetch|other side closed/i.test(msg)) {
       handlers.onDone?.();
       return;
     }

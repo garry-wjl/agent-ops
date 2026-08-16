@@ -14,7 +14,8 @@
  * - REASONING：遍历 message.content blocks，逐块走 appendBlock 合入 segments；
  *   若为 isLast 且带 usage，先记入 pendingMeta（被 chunk 去重跳过内容时仍保留 usage）
  * - TOOL_RESULT：遍历 message.content blocks，逐块走 applyToolResult 按 id 回填
- * - AGENT_RESULT：读取 message.usage（本轮汇总），写入 totalTokens / usage；内容不展示
+ * - AGENT_RESULT：读取 message.usage（本轮汇总），写入 totalTokens / usage；内容不展示；
+ *   并以业务终态结束 loading（不单依赖 HTTP 连接关闭，避免半关闭 chunked 导致前端卡在「处理中」）
  * - HINT / SUMMARY：本期不展示，仅 console.debug
  *
  * 出字速率：跟随 SSE 到达速率，rAF 合并到下一帧 setState。
@@ -218,6 +219,12 @@ export function trackReasoningChunkSnapshot(
 export function useInvokeStream() {
   const [state, setState] = useState<UseInvokeStreamState>(initial);
   const abortRef = useRef<AbortController | null>(null);
+  /**
+   * 业务终态已到达（AGENT_RESULT）。
+   * 服务端常在 AGENT_RESULT 后以不完整 chunked 关连接：浏览器 fetch ReadableStream
+   * 可能永不 done、也不抛错，导致仅依赖 onDone 时 loading 卡死在 true。
+   */
+  const finishedRef = useRef(false);
 
   // 流内容累积：收到即写 ref，rAF 合并刷到 state
   const pendingSegmentsRef = useRef<AssistantSegment[]>([]);
@@ -270,6 +277,15 @@ export function useInvokeStream() {
     }));
   }, []);
 
+  /** AGENT_RESULT 到达后结束 loading，并中止底层 fetch，避免连接半关闭挂起。 */
+  const finishStream = useCallback(() => {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    flushFinal({ loading: false });
+    abortRef.current?.abort();
+    abortRef.current = null;
+  }, [flushFinal]);
+
   const reset = useCallback(() => {
     if (tickIdRef.current != null) cancelAnimationFrame(tickIdRef.current);
     tickIdRef.current = null;
@@ -277,10 +293,12 @@ export function useInvokeStream() {
     pendingMetaRef.current = {};
     stepStartTimesRef.current = new Map();
     chunkedReasoningMsgIdsRef.current = new Set();
+    finishedRef.current = false;
     setState(initial);
   }, []);
 
   const abort = useCallback(() => {
+    finishedRef.current = true;
     abortRef.current?.abort();
     abortRef.current = null;
     flushFinal({ loading: false });
@@ -405,6 +423,7 @@ export function useInvokeStream() {
       pendingMetaRef.current = {};
       stepStartTimesRef.current = new Map();
       chunkedReasoningMsgIdsRef.current = new Set();
+      finishedRef.current = false;
       setState({ ...initial, loading: true });
 
       await invokeStream(
@@ -415,12 +434,16 @@ export function useInvokeStream() {
         },
         {
           onEvent: (parsed: SsePlatformEvent) => {
+            if (finishedRef.current) return;
             if (parsed.event === 'error') {
               pendingMetaRef.current = {
                 ...pendingMetaRef.current,
                 error: parsed.data?.message ?? '调用失败',
               };
-              ensureTick();
+              finishedRef.current = true;
+              flushFinal({ loading: false, error: parsed.data?.message ?? '调用失败' });
+              abortRef.current?.abort();
+              abortRef.current = null;
               return;
             }
             // parsed.event === 'message'：BE 不设 event 名，全部走这一路
@@ -434,6 +457,8 @@ export function useInvokeStream() {
                 break;
               case 'AGENT_RESULT':
                 handleAgentResult(evt);
+                // 以业务终态结束，不依赖 HTTP 连接是否干净关闭
+                finishStream();
                 break;
               case 'HINT':
               case 'SUMMARY':
@@ -450,15 +475,27 @@ export function useInvokeStream() {
             }
           },
           onDone: () => {
+            if (finishedRef.current) return;
+            finishedRef.current = true;
             flushFinal({ loading: false });
           },
           onError: (err) => {
+            // 终态后主动 abort / 半关闭连接产生的异常忽略，避免覆盖已完成状态
+            if (finishedRef.current) return;
+            finishedRef.current = true;
             flushFinal({ loading: false, error: err.message });
           },
         },
       );
     },
-    [ensureTick, flushFinal, handleAgentResult, handleReasoning, handleToolResult],
+    [
+      ensureTick,
+      finishStream,
+      flushFinal,
+      handleAgentResult,
+      handleReasoning,
+      handleToolResult,
+    ],
   );
 
   return { ...state, start, abort, reset };
