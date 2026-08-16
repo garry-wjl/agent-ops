@@ -33,7 +33,7 @@
         <fastjson2.version>2.0.49</fastjson2.version>
         <reactor.version>3.6.5</reactor.version>
         <redisson.version>3.27.2</redisson.version>
-        <jjwt.version>0.12.6</jjwt.version>
+        <jjwt.version>0.13.0</jjwt.version>
         <agentscope.version>2.0.0</agentscope.version>
         <alibabacloud-oss-v2.version>0.4.0</alibabacloud-oss-v2.version>
         <sandbox.version>1.0.11</sandbox.version>
