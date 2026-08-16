@@ -14,6 +14,12 @@
 export interface OssStsInitParam {
   /** 含路径的目标文件名,如 `skills/{xxx}/SKILL.zip` */
   fileName: string;
+  /** MIME；聊天附件上传时与 sizeBytes 一起传，触发 chat_attachment 登记 */
+  mimeType?: string;
+  /** 文件字节大小；聊天附件登记用 */
+  sizeBytes?: number;
+  /** 关联 Agent；聊天附件可传 */
+  agentNum?: string;
   /** 资源桶名;可空,留空走后端默认桶 */
   bucketName?: string;
   /** 文件 md5;内网上传时 Terra 会校验内容一致性 */

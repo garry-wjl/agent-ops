@@ -1,18 +1,21 @@
 package ink.garry.rd.agent.ws.client.debugconsole;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import ink.garry.rd.agent.ws.client.attachment.AttachmentRefParam;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
+import java.util.List;
 import java.util.Map;
 
 /**
  * 调试控制台 invoke 请求体。
  * <p>
- * 与生产 Agent invoke 共享数据契约，但走调试专用入口（不写消息历史、不计费、可指定任意 Skill）。
- * sessionNum / inputType / skillHint 走 JSON snake_case 命名（{@link JsonProperty}），
- * 兼容前端调试台 / 第三方调试工具的命名习惯。
+ * 与生产 Agent invoke 共享数据契约，但走调试专用入口。
+ * sessionNum / inputType / skillHint 走 JSON snake_case 命名（{@link JsonProperty}）。
+ * <p>
+ * {@code input} 与 {@code attachments} 至少一个有内容。
  */
 @Data
 public class DebugInvokeRequest {
@@ -22,12 +25,10 @@ public class DebugInvokeRequest {
     /** 会话编号；可空表示一次性调试调用（不绑定会话） */
     @JsonProperty("session_num")
     private String sessionNum;
-    /** Agent 输入；类型由 inputType 决定（string 或 object） */
-    @NotNull(message = "input 不能为空")
+    /** Agent 输入；可空（纯附件时）；类型由 inputType 决定 */
     private Object input;
-    /** 输入类型（如 text / json / multimodal），决定 input 的实际结构 */
+    /** 输入类型（如 text / json / multimodal）；可空，有附件时默认 multimodal */
     @JsonProperty("input_type")
-    @NotBlank(message = "input_type 不能为空")
     private String inputType;
     /** Skill 路由提示，强制走指定 Skill；可空则按 Agent 默认路由 */
     @JsonProperty("skill_hint")
@@ -47,4 +48,8 @@ public class DebugInvokeRequest {
      * 调用上下文（可空）：扁平键值，用于系统提示词变量替换并合并进会话默认上下文。
      */
     private Map<String, Object> context;
+
+    /** 本轮附件引用列表；可空 */
+    @Valid
+    private List<AttachmentRefParam> attachments;
 }

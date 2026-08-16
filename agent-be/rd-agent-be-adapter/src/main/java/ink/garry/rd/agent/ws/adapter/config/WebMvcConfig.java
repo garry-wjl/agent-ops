@@ -11,9 +11,13 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * 拦截范围：
  * <ul>
  *   <li>{@code /api/v1/workspace/**}（排除 list / create —— 不依赖 X-Workspace-Num）：update / detail / delete 做跨空间访问校验；</li>
- *   <li>{@code /api/v1/agents/**}、{@code /api/v1/skill/**}、{@code /api/v1/sandbox/**}、{@code /api/v1/tool/**}、{@code /api/v1/prompt/**}、{@code /api/v1/model/**}：资产侧请求据 X-Workspace-Num 写入空间上下文，
- *       供 QueryService / ReadGateway 按当前空间过滤（请求头缺失时不设上下文，不做过滤）。</li>
+ *   <li>{@code /api/v1/agents/**}、{@code /api/v1/skill/**}、{@code /api/v1/sandbox/**}、{@code /api/v1/tool/**}、{@code /api/v1/prompt/**}、{@code /api/v1/model/**}、
+ *       {@code /api/v1/debug-console/**}：资产 / 调试台请求据 X-Workspace-Num 写入空间上下文
+ *       （请求头缺失时不设上下文，不做过滤）。</li>
  * </ul>
+ * <p>
+ * {@code /api/v1/common/**} 为系统通用横切接口，不挂本拦截器；聊天附件登记等若需要空间归属，
+ * 由 Controller 显式读取 {@code X-Workspace-Num} 请求头传入 application。
  */
 @Configuration
 public class WebMvcConfig implements WebMvcConfigurer {
@@ -34,7 +38,8 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/api/v1/tool/**",
                         "/api/v1/prompt/**",
                         "/api/v1/model/**",
-                        "/api/v1/models/**")
+                        "/api/v1/models/**",
+                        "/api/v1/debug-console/**")
                 .excludePathPatterns(
                         "/api/v1/workspace/list",
                         "/api/v1/workspace/create",

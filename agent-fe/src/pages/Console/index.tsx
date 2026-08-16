@@ -29,6 +29,7 @@ import {
   ThunderboltFilled,
   UserOutlined,
 } from '@ant-design/icons';
+import AttachmentCards from '@/components/AttachmentCards';
 import DebugSender from '@/components/DebugSender';
 import MarkdownContent from '@/components/MarkdownContent';
 import StepChainView from '@/components/StepChainView';
@@ -41,10 +42,12 @@ import type {
   AgentDebugVersionVO,
   AgentVO,
   AssistantSegment,
+  AttachmentRef,
   MessageVO,
   SessionListVO,
 } from '@/types';
 import { copyToClipboard, relativeTime } from '@/utils/format';
+import { parseMultimodalContent } from '@/utils/multimodalContent';
 import InvokeContextPanel, {
   loadContextRows,
   tryBuildContext,
@@ -57,7 +60,9 @@ interface ChatMessage {
   content: string;
   /** 深度思考内容（历史回放降级用；实时流走 segments） */
   thinking?: string;
-  inputType?: 'TEXT' | 'JSON';
+  inputType?: 'TEXT' | 'JSON' | 'MULTIMODAL';
+  /** MULTIMODAL 附件列表（历史 / 本轮本地） */
+  attachments?: AttachmentRef[];
   /** 历史回放的 stepChain（实时流走 segments） */
   stepChain?: { steps: any[] };
   /**
@@ -376,7 +381,8 @@ export default function ConsolePage() {
   /* ----- handlers ----- */
   const handleSend = async (
     input: string | Record<string, any>,
-    inputType: 'text' | 'json',
+    inputType: 'text' | 'json' | 'multimodal',
+    attachments?: AttachmentRef[],
   ) => {
     if (!agentNum) {
       antdMessage.warning('请先选择 Agent');
@@ -405,12 +411,19 @@ export default function ConsolePage() {
         return;
       }
     }
+    const textContent =
+      inputType === 'json' ? JSON.stringify(input, null, 2) : String(input ?? '');
     const userMsg: ChatMessage = {
       id: `local-${Date.now()}`,
       role: 'user',
-      content:
-        inputType === 'text' ? String(input) : JSON.stringify(input, null, 2),
-      inputType: inputType === 'text' ? 'TEXT' : 'JSON',
+      content: textContent,
+      inputType:
+        inputType === 'multimodal'
+          ? 'MULTIMODAL'
+          : inputType === 'text'
+            ? 'TEXT'
+            : 'JSON',
+      attachments: attachments?.length ? attachments : undefined,
       authorName: 'me',
       timeLabel: formatTime(Date.now()),
     };
@@ -427,11 +440,16 @@ export default function ConsolePage() {
     // 标记本轮发送时间，给「定位到我刚发的消息」effect 用
     lastSentAtRef.current = Date.now();
     userScrolledAwayRef.current = false;
+    const invokeInput =
+      inputType === 'json'
+        ? input
+        : textContent || undefined;
     stream.start({
       agentNum,
       session_num: sessionNum,
-      input,
+      input: invokeInput,
       input_type: inputType,
+      attachments: attachments?.length ? attachments : undefined,
       target_version: selectedVersion,
       context,
     });
@@ -879,6 +897,7 @@ export default function ConsolePage() {
           <DebugSender
             loading={stream.loading}
             disabled={!agentNum}
+            agentNum={agentNum}
             mode={mode}
             onSubmit={handleSend}
             onCancel={() => stream.abort()}
@@ -974,6 +993,22 @@ function MessageHeader(props: {
 }
 
 function UserMessage({ msg }: { msg: ChatMessage }) {
+  const multimodal =
+    msg.inputType === 'MULTIMODAL'
+      ? parseMultimodalContent(msg.content) ?? {
+          text: msg.content,
+          attachments: msg.attachments ?? [],
+        }
+      : null;
+  const text =
+    multimodal != null
+      ? (multimodal.text ?? '')
+      : msg.content;
+  const atts =
+    multimodal?.attachments?.length
+      ? multimodal.attachments
+      : msg.attachments;
+
   return (
     <div style={{ display: 'flex', gap: 12 }}>
       <Avatar
@@ -1005,9 +1040,10 @@ function UserMessage({ msg }: { msg: ChatMessage }) {
             >
               {msg.content}
             </pre>
-          ) : (
-            <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>
-          )}
+          ) : text ? (
+            <span style={{ whiteSpace: 'pre-wrap' }}>{text}</span>
+          ) : null}
+          {atts?.length ? <AttachmentCards attachments={atts} /> : null}
         </div>
       </div>
     </div>
@@ -1210,14 +1246,19 @@ function normalizeContent(c: unknown): string {
 }
 
 function toChatMessage(m: MessageVO): ChatMessage {
+  const multimodal =
+    m.inputType === 'MULTIMODAL' ? parseMultimodalContent(m.content) : null;
   return {
     id: m.num,
     role: m.role === 'USER' ? 'user' : 'assistant',
-    content: normalizeContent(m.content),
+    content: multimodal
+      ? (multimodal.text ?? '')
+      : normalizeContent(m.content),
     inputType: m.inputType ?? undefined,
+    attachments: multimodal?.attachments,
     stepChain: m.stepChain ?? undefined,
     // BE v3.x:历史助手消息也带 segments,FE 与本轮流式共用 AssistantSegmentList 渲染。
-    // 旧消息或非 assistant 消息为 null/undefined,渲染时自动降级到 content + stepChain。
+    // 旧消息或非 assistant 消息为 null/undefined,展示时自动降级到 content + stepChain。
     segments: m.segments ?? undefined,
     traceId: m.traceId,
     authorName: m.role === 'USER' ? 'me' : 'agent',

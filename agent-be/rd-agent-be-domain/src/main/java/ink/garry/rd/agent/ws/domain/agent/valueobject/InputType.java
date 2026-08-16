@@ -9,5 +9,7 @@ public enum InputType {
     /** 文本输入（input 为 String） */
     TEXT,
     /** 结构化 JSON 输入（input 为 Map / 对象） */
-    JSON
+    JSON,
+    /** 多模态输入（文本 + 附件引用；message.content 为 JSON 字符串） */
+    MULTIMODAL
 }

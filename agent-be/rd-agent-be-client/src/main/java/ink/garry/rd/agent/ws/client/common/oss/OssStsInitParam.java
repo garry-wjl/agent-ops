@@ -20,4 +20,13 @@ public class OssStsInitParam {
     /** 含路径的目标文件名，如 {@code skills/{skillId}/manifest.json}。必填。 */
     @NotBlank(message = "fileName 不能为空")
     private String fileName;
+
+    /** MIME 类型；聊天附件上传时必填，用于登记 chat_attachment */
+    private String mimeType;
+
+    /** 文件字节大小；聊天附件上传时必填，用于登记 */
+    private Long sizeBytes;
+
+    /** 关联 Agent 业务编号，可空 */
+    private String agentNum;
 }

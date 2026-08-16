@@ -2,8 +2,10 @@
  * 调试台 / 会话领域类型 — 对齐 rd-agent-be SessionController 实际响应（v2.4）
  */
 
+import type { AttachmentRef } from './attachment';
+
 export type MessageRole = 'USER' | 'ASSISTANT' | 'TOOL';
-export type InputType = 'TEXT' | 'JSON';
+export type InputType = 'TEXT' | 'JSON' | 'MULTIMODAL';
 export type InvocationStatus = 'SUCCESS' | 'FAILED' | 'TRUNCATED';
 
 export interface StepNodeVO {
@@ -85,15 +87,19 @@ export interface SessionDetailVO {
 
 /**
  * SSE invoke 请求 — 匹配后端 DebugInvokeRequest 的 @JsonProperty 字段命名（snake_case）。
- * agentNum 后端无 @JsonProperty，保持 camelCase；input_type 后端 @NotBlank 必填。
+ * agentNum 后端无 @JsonProperty，保持 camelCase。
+ * input 与 attachments 至少一个有内容（纯附件合法）。
  */
 export interface DebugInvokeRequest {
   agentNum: string;
   /** 复用会话 num；空则后端按 traceId 新建会话 */
   session_num?: string;
-  input: string | Record<string, any>;
-  /** 输入类型；目前仅 text 实际生效，json 已在请求体支持但 BE 透传时会 String.valueOf */
-  input_type: 'text' | 'json';
+  /** 用户输入；可与 attachments 二选一或并存 */
+  input?: string | Record<string, any>;
+  /** 输入类型；有附件时用 multimodal */
+  input_type: 'text' | 'json' | 'multimodal';
+  /** 已上传登记的附件引用 */
+  attachments?: AttachmentRef[];
   skill_hint?: string;
   /**
    * 2026-07-28 版本化调试：目标 Agent 版本。

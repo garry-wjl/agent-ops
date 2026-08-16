@@ -1,5 +1,6 @@
 export * from './common';
 export * from './oss';
+export * from './attachment';
 export * from './agent';
 export * from './skill';
 export * from './session';

@@ -14,18 +14,21 @@ import {
   ThunderboltFilled,
   UserOutlined,
 } from '@ant-design/icons';
+import AttachmentCards from '@/components/AttachmentCards';
 import MarkdownContent from '@/components/MarkdownContent';
 import StepChainView from '@/components/StepChainView';
 import ThinkingPanel from '@/components/ThinkingPanel';
 import AssistantSegmentList from '@/components/AssistantSegmentList';
-import type { AssistantSegment, MessageVO } from '@/types';
+import type { AssistantSegment, AttachmentRef, MessageVO } from '@/types';
+import { parseMultimodalContent } from '@/utils/multimodalContent';
 
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   thinking?: string;
-  inputType?: 'TEXT' | 'JSON';
+  inputType?: 'TEXT' | 'JSON' | 'MULTIMODAL';
+  attachments?: AttachmentRef[];
   stepChain?: { steps: any[] };
   segments?: AssistantSegment[];
   traceId?: string;
@@ -37,14 +40,20 @@ export interface ChatMessage {
 }
 
 export function toChatMessage(vo: MessageVO): ChatMessage {
-  const content =
-    typeof vo.content === 'object' ? JSON.stringify(vo.content, null, 2) : vo.content;
+  const multimodal =
+    vo.inputType === 'MULTIMODAL' ? parseMultimodalContent(vo.content) : null;
+  const content = multimodal
+    ? (multimodal.text ?? '')
+    : typeof vo.content === 'object'
+      ? JSON.stringify(vo.content, null, 2)
+      : vo.content;
   return {
     id: vo.num,
     role: vo.role === 'USER' ? 'user' : 'assistant',
     content,
     thinking: (vo as any).thinking,
     inputType: vo.inputType ?? undefined,
+    attachments: multimodal?.attachments,
     segments: vo.segments ?? undefined,
     stepChain: vo.stepChain ?? undefined,
     traceId: vo.traceId,
@@ -152,6 +161,7 @@ function MessageHeader(props: {
 }
 
 function UserMessage({ msg }: { msg: ChatMessage }) {
+  const atts = msg.attachments;
   return (
     <div style={{ display: 'flex', gap: 12 }}>
       <Avatar
@@ -187,9 +197,10 @@ function UserMessage({ msg }: { msg: ChatMessage }) {
             >
               {msg.content}
             </pre>
-          ) : (
+          ) : msg.content ? (
             <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>
-          )}
+          ) : null}
+          {atts?.length ? <AttachmentCards attachments={atts} /> : null}
         </div>
       </div>
     </div>

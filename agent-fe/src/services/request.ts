@@ -63,7 +63,7 @@ const instance: AxiosInstance = axios.create({
 /**
  * 注入当前活动工作空间请求头 `X-Workspace-Num`。
  * - 从 localStorage 读取（与 stores/workspace.ts 同 key），避免在拦截器里依赖 React 状态
- * - 空间管理 / 通用 / 登录登出接口无需该头
+ * - 空间管理 / 通用 / 登录登出接口无需该头（common 为系统横切，不感知空间）
  * - 登录页上的 /auth/me 也不带（避免旧空间头干扰身份回显）
  * 详见技术方案 §7.6。
  */

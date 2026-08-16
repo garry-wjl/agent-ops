@@ -61,6 +61,8 @@ oss:
   base-dir: ${OSS_BASE_DIR:rd-agent-be}
   region: ${OSS_REGION:cn-shenzhen}
   is-replace-bucket-name: ${OSS_IS_REPLACE_BUCKET_NAME:true}
+  # 直连阿里云官方 endpoint 须 false；公司反代域名场景保持 true
+  use-path-style: ${OSS_USE_PATH_STYLE:true}
   upload-presign-expiration-minutes: ${OSS_UPLOAD_EXPIRATION_MINUTES:10}
   donload-presign-expiration-minutes: ${OSS_PRESIGN_EXPIRATION_MINUTES:10}
 

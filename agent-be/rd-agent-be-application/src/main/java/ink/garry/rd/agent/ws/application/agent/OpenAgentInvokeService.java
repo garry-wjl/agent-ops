@@ -1,19 +1,27 @@
 package ink.garry.rd.agent.ws.application.agent;
 
 import ink.garry.rd.agent.ws.application.agentrunner.AgentRunnerService;
+import ink.garry.rd.agent.ws.application.agentrunner.InvokeContentNormalizer;
+import ink.garry.rd.agent.ws.application.agentrunner.NormalizedInvokeContent;
+import ink.garry.rd.agent.ws.application.attachment.command.AttachmentCommandService;
 import ink.garry.rd.agent.ws.application.session.SessionCommandService;
 import ink.garry.rd.agent.ws.application.session.SessionQueryService;
+import ink.garry.rd.agent.ws.client.attachment.AttachmentRefParam;
+import ink.garry.rd.agent.ws.client.attachment.OpenUploadAttachmentParam;
+import ink.garry.rd.agent.ws.client.common.oss.OssPresignResultVO;
 import ink.garry.rd.agent.ws.client.session.SessionDetailVO;
 import ink.garry.rd.agent.ws.client.session.SessionListQuery;
 import ink.garry.rd.agent.ws.client.session.SessionListVO;
 import ink.garry.rd.agent.ws.client.session.dto.SessionDTO;
 import ink.garry.rd.agent.ws.facade.common.PageVO;
+import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContextHolder;
 import io.agentscope.core.agent.Event;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -34,6 +42,8 @@ public class OpenAgentInvokeService {
     private final SessionCommandService sessionCommandService;
     private final SessionQueryService sessionQueryService;
     private final AgentRunnerService agentRunnerService;
+    private final InvokeContentNormalizer invokeContentNormalizer;
+    private final AttachmentCommandService attachmentCommandService;
 
     /**
      * 对外流式调用 Agent；operatorId 为空记 system，委托既有 invokeStream。
@@ -45,7 +55,7 @@ public class OpenAgentInvokeService {
      * @return Event 流（adapter 接到 SSE）
      */
     public Flux<Event> invoke(String agentNum, String input, String sessionNum, String operatorId) {
-        return invoke(agentNum, input, sessionNum, operatorId, null);
+        return invoke(agentNum, input, null, sessionNum, operatorId, null);
     }
 
     /**
@@ -53,7 +63,40 @@ public class OpenAgentInvokeService {
      */
     public Flux<Event> invoke(String agentNum, String input, String sessionNum, String operatorId,
                               Map<String, Object> context) {
-        return agentRunnerService.runAgent(agentNum, input, sessionNum, resolveOperator(operatorId), context);
+        return invoke(agentNum, input, null, sessionNum, operatorId, context);
+    }
+
+    /**
+     * 对外流式调用 Agent（支持附件）。
+     *
+     * @param attachments 附件引用，可空
+     */
+    public Flux<Event> invoke(String agentNum, String input, List<AttachmentRefParam> attachments,
+                              String sessionNum, String operatorId, Map<String, Object> context) {
+        NormalizedInvokeContent content = invokeContentNormalizer.normalize(input, attachments);
+        return agentRunnerService.runAgent(
+                agentNum, content, sessionNum, resolveOperator(operatorId), null, "API", context);
+    }
+
+    /**
+     * 开放上传附件：预签名 + 登记。
+     *
+     * @param param        上传参数
+     * @param workspaceNum 秘钥归属工作空间
+     * @param operatorId   操作人
+     * @return 预签名结果
+     */
+    public OssPresignResultVO uploadAttachment(OpenUploadAttachmentParam param,
+                                               String workspaceNum,
+                                               String operatorId) {
+        String ws = workspaceNum != null ? workspaceNum : WorkspaceContextHolder.currentWorkspaceNum();
+        return attachmentCommandService.initUpload(
+                ws,
+                param.getAgentNum(),
+                param.getFileName(),
+                param.getContentType(),
+                param.getSize(),
+                resolveOperator(operatorId));
     }
 
     /**
