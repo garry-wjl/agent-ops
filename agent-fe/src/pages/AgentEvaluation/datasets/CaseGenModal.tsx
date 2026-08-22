@@ -33,7 +33,7 @@ import {
   caseGenStatusLabel,
 } from './caseGenUtils';
 
-const { Text, TextArea } = Input;
+const { TextArea } = Input;
 const { Text: TypoText } = Typography;
 
 function statusColor(status?: string): string {
