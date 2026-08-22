@@ -74,8 +74,18 @@ export const userApi = {
   savePlatformRoles: (num: string, roleNums: string[]) =>
     post<void>('/api/v1/users/save-platform-roles', { num, roleNums }),
 
-  login: (username: string, password: string) =>
-    post<LoginResultVO>('/api/v1/auth/login', { username, password }),
+  login: (
+    username: string,
+    password: string,
+    captcha?: { captchaId: string; slideX: number },
+  ) =>
+    post<LoginResultVO>('/api/v1/auth/login', {
+      username,
+      password,
+      ...(captcha
+        ? { captchaId: captcha.captchaId, slideX: captcha.slideX }
+        : {}),
+    }),
 
   logout: () => post<void>('/api/v1/auth/logout'),
 };

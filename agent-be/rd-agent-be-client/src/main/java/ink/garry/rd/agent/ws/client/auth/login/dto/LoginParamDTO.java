@@ -10,4 +10,8 @@ public class LoginParamDTO {
 
     private String username;
     private String password;
+    /** 客户端 IP（adapter 解析后注入） */
+    private String clientIp;
+    private String captchaId;
+    private Integer slideX;
 }

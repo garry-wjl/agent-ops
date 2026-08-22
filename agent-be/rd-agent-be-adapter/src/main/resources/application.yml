@@ -72,6 +72,11 @@ app:
     bootstrap-default-password: ${AUTH_BOOTSTRAP_DEFAULT_PASSWORD:ChangeMe@123456}
     # 鉴权总开关：本地 dev 可 true，注入由 X-User-Id header 走的兜底登录态；生产强制 false
     disable-auth: ${AUTH_DISABLED:false}
+    login-security:
+      fail-threshold: ${AUTH_LOGIN_FAIL_THRESHOLD:3}
+      fail-ttl-minutes: ${AUTH_LOGIN_FAIL_TTL_MINUTES:15}
+      captcha-ttl-seconds: ${AUTH_CAPTCHA_TTL_SECONDS:300}
+      captcha-tolerance-px: ${AUTH_CAPTCHA_TOLERANCE_PX:6}
     jwt:
       # HS256 密钥；生产用环境变量 / K8s Secret 覆盖
       secret: ${JWT_SECRET:please-set-jwt-secret-at-least-32-bytes-in-prod}

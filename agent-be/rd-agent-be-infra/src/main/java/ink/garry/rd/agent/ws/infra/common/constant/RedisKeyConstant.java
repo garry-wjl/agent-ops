@@ -34,6 +34,18 @@ public final class RedisKeyConstant {
      */
     public static final String AUTHZ_PERM_PREFIX = "authz:perm:";
 
+    /**
+     * 登录失败计数 key 前缀；拼接 {@code username + ":" + clientIp}，值为失败次数。
+     * <p>TTL 见 {@code LoginSecurityProperties.failTtlMinutes}。</p>
+     */
+    public static final String AUTH_LOGIN_FAIL_PREFIX = "auth:login:fail:";
+
+    /**
+     * 滑块验证码会话 key 前缀；拼接 captchaId，值为正确滑块 X 坐标。
+     * <p>TTL 见 {@code LoginSecurityProperties.captchaTtlSeconds}；校验成功后立即删除。</p>
+     */
+    public static final String AUTH_CAPTCHA_PREFIX = "auth:captcha:";
+
     private RedisKeyConstant() {
     }
 }

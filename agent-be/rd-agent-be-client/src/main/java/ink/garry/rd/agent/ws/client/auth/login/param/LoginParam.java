@@ -14,4 +14,10 @@ public class LoginParam {
 
     @NotBlank(message = "密码不能为空")
     private String password;
+
+    /** 滑块挑战 ID；失败达阈值后必填 */
+    private String captchaId;
+
+    /** 滑块拖动后的 X 偏移（像素）；失败达阈值后必填 */
+    private Integer slideX;
 }
