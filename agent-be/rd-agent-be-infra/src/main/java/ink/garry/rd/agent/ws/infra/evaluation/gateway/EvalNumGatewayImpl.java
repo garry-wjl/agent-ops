@@ -2,39 +2,52 @@ package ink.garry.rd.agent.ws.infra.evaluation.gateway;
 
 import ink.garry.rd.agent.ws.domain.evaluation.gateway.EvalNumGateway;
 import ink.garry.rd.agent.ws.infra.common.util.BizNumGenerator;
-import lombok.RequiredArgsConstructor;
+import jakarta.annotation.Resource;
 import org.springframework.stereotype.Component;
 
 /**
- * EvalNumGateway 实现：基于 BizNumGenerator + 类型前缀。
- * <p>
- * 前缀按总体方案 §10.3：Evaluation=EVL，EvaluationCase=EVC，EvalSeed=ESD。
+ * EvalNumGateway 实现：BizNumGenerator + 类型前缀。
  */
 @Component
-@RequiredArgsConstructor
 public class EvalNumGatewayImpl implements EvalNumGateway {
 
-    /** 评测任务业务编号前缀 */
-    private static final String EVAL_PREFIX = "EVL";
-    /** 评测用例业务编号前缀 */
-    private static final String CASE_PREFIX = "EVC";
-    /** 评测种子业务编号前缀 */
-    private static final String SEED_PREFIX = "ESD";
+    private static final String DATASET_PREFIX = "EDS";
+    private static final String ROW_PREFIX = "EDR";
+    private static final String GRADER_PREFIX = "EGR";
+    private static final String TASK_PREFIX = "ETK";
+    private static final String ITEM_PREFIX = "ETI";
+    private static final String CASE_GEN_PREFIX = "ECG";
 
-    private final BizNumGenerator bizNumGenerator;
+    @Resource
+    private BizNumGenerator bizNumGenerator;
 
     @Override
-    public String generateEvaluationNum() {
-        return bizNumGenerator.generate(EVAL_PREFIX);
+    public String generateDatasetNum() {
+        return bizNumGenerator.generate(DATASET_PREFIX);
     }
 
     @Override
-    public String generateEvaluationCaseNum() {
-        return bizNumGenerator.generate(CASE_PREFIX);
+    public String generateDatasetRowNum() {
+        return bizNumGenerator.generate(ROW_PREFIX);
     }
 
     @Override
-    public String generateEvalSeedNum() {
-        return bizNumGenerator.generate(SEED_PREFIX);
+    public String generateGraderNum() {
+        return bizNumGenerator.generate(GRADER_PREFIX);
+    }
+
+    @Override
+    public String generateTaskNum() {
+        return bizNumGenerator.generate(TASK_PREFIX);
+    }
+
+    @Override
+    public String generateTaskItemNum() {
+        return bizNumGenerator.generate(ITEM_PREFIX);
+    }
+
+    @Override
+    public String generateCaseGenJobNum() {
+        return bizNumGenerator.generate(CASE_GEN_PREFIX);
     }
 }

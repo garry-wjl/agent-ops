@@ -100,9 +100,31 @@ public final class DomainEventConstant {
     /** 一次 Agent/Skill 调用执行完成后触发。 */
     public static final String INVOCATION_FINISHED = "INVOCATION_FINISHED";
 
-    // ---- Evaluation 域（占位） ----
-    /** 评估任务执行完成（成功或失败终态）后触发。 */
-    public static final String EVALUATION_FINISHED = "EVALUATION_FINISHED";
+    // ---- Evaluation 域（Agent 应用评测） ----
+    /** 评测集发布成功后触发。 */
+    public static final String DATASET_PUBLISHED = "DATASET_PUBLISHED";
+    /** 评测集保存（创建/更新草稿）后触发。 */
+    public static final String DATASET_SAVED = "DATASET_SAVED";
+    /** 评测集删除后触发。 */
+    public static final String DATASET_DELETED = "DATASET_DELETED";
+    /** 评估器保存后触发。 */
+    public static final String GRADER_SAVED = "GRADER_SAVED";
+    /** 评估器删除后触发。 */
+    public static final String GRADER_DELETED = "GRADER_DELETED";
+    /** 评测任务保存后触发。 */
+    public static final String EVAL_TASK_SAVED = "EVAL_TASK_SAVED";
+    /** 评测任务进入 RUNNING 后触发。 */
+    public static final String EVAL_TASK_RUNNING = "EVAL_TASK_RUNNING";
+    /** 评测任务成功完成（FINISHED）后触发。 */
+    public static final String EVAL_TASK_FINISHED = "EVAL_TASK_FINISHED";
+    /** 评测任务失败（FAILED）后触发。 */
+    public static final String EVAL_TASK_FAILED = "EVAL_TASK_FAILED";
+    /** 评测任务取消后触发。 */
+    public static final String EVAL_TASK_CANCELLED = "EVAL_TASK_CANCELLED";
+    /** 评测任务删除后触发。 */
+    public static final String EVAL_TASK_DELETED = "EVAL_TASK_DELETED";
+    /** 评测任务用例保存后触发。 */
+    public static final String EVAL_TASK_ITEM_SAVED = "EVAL_TASK_ITEM_SAVED";
 
     // ---- Tool 域（工具管理 v1.0） ----
     /** 工具主表保存成功后触发（首次创建或字段编辑，统一发该事件，不区分 wasNew；审计映射 TOOL_CREATE）。 */

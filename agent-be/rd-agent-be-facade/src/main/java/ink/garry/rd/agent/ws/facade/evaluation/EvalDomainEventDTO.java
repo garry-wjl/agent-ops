@@ -8,24 +8,27 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 /**
- * Evaluation 领域事件载荷。
- * 作为 {@link ink.garry.rd.agent.ws.facade.domain.DomainEventDTO#getData()} 的具体业务数据，
- * 由 Evaluation 聚合在创建 / 运行 / 完成 / 失败等关键节点发布。
+ * 评测域事件载荷（任务完成/失败等）。
+ * <p>作为 DomainEventDTO#getData() 的业务数据；旧 Skill 评测字段已移除。
  */
 @Data
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
 public class EvalDomainEventDTO {
-    /** 评测业务编号 */
-    private String evaluationNum;
-    /** 被评测的 Agent 业务编号 */
-    private String agentNum;
-    /** 被评测的 Agent 版本编号 */
-    private String agentVersionNum;
-    /** 评测状态（如 PENDING / RUNNING / SUCCEEDED / FAILED） */
+    /** 评测任务业务编号 */
+    private String taskNum;
+    /** 工作空间业务编号 */
+    private String workspaceNum;
+    /** 任务状态（FINISHED / FAILED / CANCELLED 等） */
     private String status;
-    /** 操作人ID */
+    /** 用例总数 */
+    private Integer totalCount;
+    /** 综合通过数 */
+    private Integer passedCount;
+    /** 失败数 */
+    private Integer failedCount;
+    /** 操作人 ID */
     private String operatorId;
     /** 事件发生时间 */
     private LocalDateTime occurredAt;

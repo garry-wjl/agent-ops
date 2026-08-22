@@ -10,7 +10,7 @@ package ink.garry.rd.agent.ws.facade.domain;
  *     if (entity instanceof PublisherAware pa) pa.setDomainEventPublisher(publisher);
  * </pre>
  * 所有"会发领域事件"的聚合根(save/delete/状态流转)需 implements 本接口,
- * 不发事件的子聚合(EvalSeed / EvaluationCase 等)不必实现。
+ * 不发事件的子实体不必实现。
  */
 public interface PublisherAware {
 

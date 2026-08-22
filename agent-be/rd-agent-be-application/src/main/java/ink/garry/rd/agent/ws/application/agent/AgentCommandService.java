@@ -30,6 +30,7 @@ import ink.garry.rd.agent.ws.domain.tool.valueobject.ToolStatus;
 import ink.garry.rd.agent.ws.facade.exception.BusinessException;
 import ink.garry.rd.agent.ws.application.skill.SkillQueryService;
 import ink.garry.rd.agent.ws.application.tool.ToolQueryService;
+import ink.garry.rd.agent.ws.application.evaluation.task.EvalPublishGateService;
 import ink.garry.rd.agent.ws.infra.common.constant.LockKeyConstant;
 import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContextHolder;
 import jakarta.annotation.Resource;
@@ -111,6 +112,8 @@ public class AgentCommandService {
     private SkillQueryService skillQueryService;
     @Resource
     private ink.garry.rd.agent.ws.application.model.ModelQueryService modelQueryService;
+    @Resource
+    private EvalPublishGateService evalPublishGateService;
     @Resource
     private ink.garry.rd.agent.ws.application.agent.A2aSyncApplicationService a2aSyncApplicationService;
 
@@ -321,6 +324,8 @@ public class AgentCommandService {
             }
             ConfigSnapshot snapshot = normalizeSnapshot(draft.getConfigSnapshot(), resolveWorkspaceNum());
             draft.setConfigSnapshot(snapshot);
+
+            evalPublishGateService.checkAgentPublish(agentNum, draft.getVersionNum(), resolveWorkspaceNum());
 
             // 2. 翻转 current 标记（发布事务内的写操作，直接调网关）
             agentVersionGateway.switchCurrent(oldId, draft.getId());

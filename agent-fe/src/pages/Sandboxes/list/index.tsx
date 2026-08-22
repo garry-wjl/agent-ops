@@ -53,7 +53,7 @@ const { Title, Text } = Typography;
 
 const COLOR = {
   border: "#E2E8F0",
-  headerBg: "#F8FAFC",
+  headerBg: "#ffffff",
   textPrimary: "#0F172B",
   textSecondary: "#45556C",
   textMuted: "#90A1B9",

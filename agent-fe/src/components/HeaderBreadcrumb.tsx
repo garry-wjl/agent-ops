@@ -1,7 +1,7 @@
 /**
  * 顶栏面包屑
  * - 模块名：根据当前 pathname 在路由表中查最长前缀匹配，取对应路由的 name
- * - 二级片段：根据 pathname 段（editor / compare / detail）拼接，并允许页面通过
+ * - 二级片段：根据 pathname 段（editor / compare / detail / new）拼接，并允许页面通过
  *   useBreadcrumbName 注入实体名
  *
  * 数据来源：
@@ -24,12 +24,13 @@ interface ModuleRoute {
 const MODULE_ROUTES: ModuleRoute[] = [
   { path: '/agent/manage', name: 'Agent 管理' },
   { path: '/agent/debug', name: 'Agent 调试' },
+  { path: '/agent/evaluation', name: 'Agent 评测' },
   { path: '/sandbox/manage', name: 'Sandbox 沙箱' },
   { path: '/model/manage', name: '模型管理' },
   { path: '/tool/manage', name: '工具管理' },
   { path: '/skill/manage', name: 'Skill 管理' },
-  { path: '/skill/evaluation', name: 'Skill 评测' },
   { path: '/prompt/manage', name: 'Prompt 中心' },
+  { path: '/role/manage', name: '角色管理' },
   { path: '/workbench', name: '工作台' },
   { path: '/spaces', name: '工作空间' },
 ];
@@ -38,37 +39,45 @@ const MODULE_ROUTES: ModuleRoute[] = [
 const SUB_PAGE_NAMES: Record<string, string> = {
   editor: '新建',
   compare: '版本对比',
-  seeds: '种子集',
+  new: '新建',
 };
 
+type SubSegment = 'editor' | 'detail' | 'compare' | 'new';
+
 function matchModule(pathname: string): ModuleRoute | undefined {
-  return MODULE_ROUTES.filter(m => pathname.startsWith(m.path)).sort(
+  return MODULE_ROUTES.filter((m) => pathname.startsWith(m.path)).sort(
     (a, b) => b.path.length - a.path.length,
   )[0];
 }
 
-/** 从 pathname 提取子页面类型（基于 `/<editor|compare|detail|seeds>/...` 段） */
+/** 从 pathname 提取子页面类型 */
 function detectSubSegment(
   modulePath: string,
   pathname: string,
-): 'editor' | 'detail' | 'compare' | 'seeds' | undefined {
+): SubSegment | undefined {
   const tail = pathname.slice(modulePath.length).replace(/^\/+/, '');
   if (!tail) return undefined;
-  const first = tail.split('/')[0];
+  const parts = tail.split('/');
+  const first = parts[0];
+
+  if (first === 'editor') return 'editor';
+  if (first === 'detail') return 'detail';
+  if (first === 'compare') return 'compare';
+
+  // Agent 评测深页：datasets|graders|tasks / new|:num
   if (
-    first === 'editor' ||
-    first === 'detail' ||
-    first === 'compare' ||
-    first === 'seeds'
+    (first === 'datasets' || first === 'graders' || first === 'tasks') &&
+    parts[1]
   ) {
-    return first;
+    return parts[1] === 'new' ? 'new' : 'detail';
   }
+
   return undefined;
 }
 
 export default function HeaderBreadcrumb() {
   const location = useLocation();
-  const entityName = useBreadcrumbStore(s => s.entityName);
+  const entityName = useBreadcrumbStore((s) => s.entityName);
 
   const { module, sub } = useMemo(() => {
     const m = matchModule(location.pathname);
@@ -78,17 +87,13 @@ export default function HeaderBreadcrumb() {
 
   if (!module) return null;
 
-  // 末项节点：实体名优先；新建态用 SUB_PAGE_NAMES['editor']='新建';
-  // detail 无实体名时不展示末项；compare 类同
   let trailing: string | undefined;
-  if (sub === 'editor') {
-    trailing = entityName || SUB_PAGE_NAMES.editor;
+  if (sub === 'editor' || sub === 'new') {
+    trailing = entityName || SUB_PAGE_NAMES[sub];
   } else if (sub === 'compare') {
     trailing = entityName
       ? `${SUB_PAGE_NAMES.compare} · ${entityName}`
       : SUB_PAGE_NAMES.compare;
-  } else if (sub === 'seeds') {
-    trailing = SUB_PAGE_NAMES.seeds;
   } else if (sub === 'detail') {
     trailing = entityName;
   }

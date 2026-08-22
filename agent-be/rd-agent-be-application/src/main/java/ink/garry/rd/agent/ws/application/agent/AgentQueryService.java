@@ -599,10 +599,17 @@ public class AgentQueryService {
                         "草稿版本不存在 agentNum=" + agentNum);
             }
         } else {
+            // 兼容两种传参：语义版本号 vX.Y.Z，或版本实体业务编号 AVN…
             ve = agentVersionMapper.selectOne(new LambdaQueryWrapper<AgentVersionEntity>()
                     .eq(AgentVersionEntity::getAgentNum, agentNum)
                     .eq(AgentVersionEntity::getVersionNum, targetVersion)
                     .eq(AgentVersionEntity::getDeleted, 0));
+            if (ve == null) {
+                ve = agentVersionMapper.selectOne(new LambdaQueryWrapper<AgentVersionEntity>()
+                        .eq(AgentVersionEntity::getAgentNum, agentNum)
+                        .eq(AgentVersionEntity::getNum, targetVersion)
+                        .eq(AgentVersionEntity::getDeleted, 0));
+            }
             if (ve == null) {
                 throw new BusinessException(BizCode.NOT_FOUND.getCode(),
                         "版本不存在 agentNum=" + agentNum + " version=" + targetVersion);

@@ -33,5 +33,7 @@ public final class DomainEventConstant {
     /** 一次调用结束（成功 / 失败均计） */
     public static final String INVOCATION_FINISHED = "INVOCATION_FINISHED";
     /** 评测结束（成功 / 失败均计） */
-    public static final String EVALUATION_FINISHED = "EVALUATION_FINISHED";
+    public static final String DATASET_PUBLISHED = "DATASET_PUBLISHED";
+    public static final String EVAL_TASK_FINISHED = "EVAL_TASK_FINISHED";
+    public static final String EVAL_TASK_FAILED = "EVAL_TASK_FAILED";
 }

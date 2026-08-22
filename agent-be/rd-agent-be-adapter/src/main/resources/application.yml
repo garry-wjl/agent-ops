@@ -55,6 +55,20 @@ mybatis-plus:
 app:
   snowflake:
     worker-id: ${SNOWFLAKE_WORKER_ID:1}
+
+  evaluation:
+    task:
+      invoke-timeout-seconds: 60
+      concurrency: 1
+      continue-on-error: true
+    import:
+      max-rows: 500
+      max-file-mb: 20
+    publish-gate:
+      enabled: false
+      pass-rate-threshold: 0.8
+    llm:
+      timeout-ms: 30000
   redis:
     host: ${REDIS_HOST:127.0.0.1}
     port: ${REDIS_PORT:6379}
