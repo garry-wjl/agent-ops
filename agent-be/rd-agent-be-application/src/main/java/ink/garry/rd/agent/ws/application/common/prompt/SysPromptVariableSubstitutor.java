@@ -15,7 +15,7 @@ import java.util.regex.Pattern;
 /**
  * 系统提示词变量替换工具：校验调用上下文、浅合并多层变量、按 {@code {{key}}} 替换模板。
  * <p>
- * 纯函数工具，无 Spring 依赖；缺失变量保留原文，不递归替换。
+ * 纯函数工具，无 Spring 依赖；变量缺失或值为空时替换为空串，不递归替换。
  */
 public final class SysPromptVariableSubstitutor {
 
@@ -89,20 +89,21 @@ public final class SysPromptVariableSubstitutor {
     }
 
     /**
-     * 按 {@code {{key}}} 替换；未命中保留原文；不递归。
+     * 按 {@code {{key}}} 替换；变量缺失或值为空时替换为空串；不递归。
      */
     public static String substitute(String template, Map<String, String> vars) {
         if (template == null) {
             return null;
         }
-        if (StrUtil.isEmpty(template) || vars == null || vars.isEmpty()) {
+        if (StrUtil.isEmpty(template)) {
             return template;
         }
         Matcher m = PLACEHOLDER_PATTERN.matcher(template);
         StringBuilder sb = new StringBuilder();
         while (m.find()) {
             String key = m.group(1);
-            String replacement = vars.containsKey(key) ? vars.get(key) : m.group(0);
+            String raw = vars == null ? null : vars.get(key);
+            String replacement = StrUtil.isEmpty(raw) ? "" : raw;
             m.appendReplacement(sb, Matcher.quoteReplacement(replacement));
         }
         m.appendTail(sb);
