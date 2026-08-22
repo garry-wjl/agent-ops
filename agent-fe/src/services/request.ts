@@ -37,7 +37,13 @@ const CODE_UNAUTHORIZED = 1002;
  * 静默业务错误码 —— 命中后不弹全局 toast，由调用方读 {@link BizError.data} 自行渲染。
  * - 3006 = Skill 发布检测不通过（页面以错误清单展示，见 Skill 发布检测态）。
  */
-const SILENT_BIZ_CODES = new Set<number>([3006]);
+const SILENT_BIZ_CODES = new Set<number>([
+  3006,
+  // 登录页自行展示错误文案 / 拉起滑块，避免双重 toast
+  1103,
+  1106,
+  1107,
+]);
 
 /** 防止 401 风暴：30s 内只跳一次登录页。 */
 let lastLoginRedirectAt = 0;
@@ -77,6 +83,7 @@ instance.interceptors.request.use(config => {
     url.includes('/api/v1/platform-roles') ||
     url.includes('/api/v1/auth/login') ||
     url.includes('/api/v1/auth/logout') ||
+    url.includes('/api/v1/auth/captcha') ||
     url.includes('/api/v1/users') ||
     (onLoginPage && url.includes('/api/v1/auth/me'));
   if (!skip) {

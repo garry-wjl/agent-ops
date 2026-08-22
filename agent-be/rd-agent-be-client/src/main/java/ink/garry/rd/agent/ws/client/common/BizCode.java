@@ -101,6 +101,10 @@ public enum BizCode {
     USER_LOGIN_FAILED(1103, "用户名或密码错误"),
     USER_LAST_PLATFORM_ADMIN(1104, "不能禁用最后一名平台管理员"),
     USER_PASSWORD_INVALID(1105, "密码不符合要求"),
+    /** 登录失败达阈值，须先完成滑块人机校验 */
+    LOGIN_CAPTCHA_REQUIRED(1106, "请完成滑块验证"),
+    /** 滑块偏移校验失败或票据失效 */
+    LOGIN_CAPTCHA_INVALID(1107, "滑块验证失败，请重试"),
 
     // ---- 系统 ----
     SYSTEM_BUSY(9001, "系统繁忙"),
