@@ -17,11 +17,29 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SysPromptVariableSubstitutorTest {
 
     @Test
-    void substitute_shouldReplaceKnownAndKeepMissing() {
+    void substitute_shouldReplaceKnownAndClearMissing() {
         Map<String, String> vars = Map.of("orderId", "ORD-1", "SESSION_NUM", "SES-9");
         String out = SysPromptVariableSubstitutor.substitute(
                 "订单 {{orderId}} 会话 {{SESSION_NUM}} 缺 {{missing}}", vars);
-        assertEquals("订单 ORD-1 会话 SES-9 缺 {{missing}}", out);
+        assertEquals("订单 ORD-1 会话 SES-9 缺 ", out);
+    }
+
+    @Test
+    void substitute_shouldClearEmptyValue() {
+        Map<String, String> vars = new HashMap<>();
+        vars.put("orderId", "");
+        vars.put("note", null);
+        assertEquals("订单编号为： ", SysPromptVariableSubstitutor.substitute(
+                "订单编号为： {{orderId}}", vars));
+        assertEquals("备注：", SysPromptVariableSubstitutor.substitute("备注：{{note}}", vars));
+    }
+
+    @Test
+    void substitute_shouldClearAllWhenVarsEmpty() {
+        assertEquals("订单编号为： ", SysPromptVariableSubstitutor.substitute(
+                "订单编号为： {{orderId}}", Map.of()));
+        assertEquals("订单编号为： ", SysPromptVariableSubstitutor.substitute(
+                "订单编号为： {{orderId}}", null));
     }
 
     @Test
