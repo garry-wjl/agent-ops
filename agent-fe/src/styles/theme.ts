@@ -25,7 +25,7 @@ export const antdTheme: ThemeConfig = {
     // 背景色
     colorBgContainer: '#ffffff',
     colorBgElevated: '#ffffff',
-    colorBgLayout: '#f5f5f5',
+    colorBgLayout: '#ffffff',
     colorBgSpotlight: 'rgba(0, 0, 0, 0.85)',
     colorBgMask: 'rgba(0, 0, 0, 0.45)',
 

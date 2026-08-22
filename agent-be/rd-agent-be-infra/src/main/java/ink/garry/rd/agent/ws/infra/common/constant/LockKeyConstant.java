@@ -245,4 +245,23 @@ public final class LockKeyConstant {
 
     private LockKeyConstant() {
     }
+
+    // ---- Evaluation（Agent 应用评测）----
+    /** 评测集创建锁前缀；拼接 workspaceNum + ":" + name */
+    public static final String EVAL_DATASET_CREATE_LOCK_PREFIX = "eval:dataset:create:";
+    /** 评测集命令锁前缀；拼接 datasetNum */
+    public static final String EVAL_DATASET_COMMAND_LOCK_PREFIX = "eval:dataset:command:";
+    /** 评测集发布锁前缀；拼接 datasetNum */
+    public static final String EVAL_DATASET_PUBLISH_LOCK_PREFIX = "eval:dataset:publish:";
+    /** 评测集自动生成 Case 任务锁前缀；拼接 datasetNum */
+    public static final String EVAL_DATASET_CASE_GEN_LOCK_PREFIX = "eval:dataset:casegen:";
+    /** 评估器创建锁前缀；拼接 workspaceNum + ":" + name */
+    public static final String EVAL_GRADER_CREATE_LOCK_PREFIX = "eval:grader:create:";
+    /** 评估器命令锁前缀；拼接 graderNum */
+    public static final String EVAL_GRADER_COMMAND_LOCK_PREFIX = "eval:grader:command:";
+    /** 评测任务创建锁前缀；拼接 workspaceNum */
+    public static final String EVAL_TASK_CREATE_LOCK_PREFIX = "eval:task:create:";
+    /** 评测任务命令锁前缀；拼接 taskNum */
+    public static final String EVAL_TASK_COMMAND_LOCK_PREFIX = "eval:task:command:";
+
 }

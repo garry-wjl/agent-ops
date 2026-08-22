@@ -15,6 +15,7 @@ import {
   ToolOutlined,
   ApiOutlined,
   SafetyCertificateOutlined,
+  ExperimentOutlined,
 } from "@ant-design/icons";
 import {
   Link,
@@ -41,6 +42,7 @@ const NAV_PERMS = {
   skillManage:  ['skill:create','skill:read','skill:update','skill:delete','skill:publish','skill:sync'],
   promptManage: ['prompt:create','prompt:read','prompt:update','prompt:delete','prompt:publish'],
   debugConsole: ['debug_console:access'],
+  agentEvaluation: ['evaluation:dataset:read','evaluation:grader:read','evaluation:task:read'],
   roleManage:   ['role_manage:create','role_manage:edit','role_manage:delete'],
 } as const;
 
@@ -57,6 +59,7 @@ function buildRoute(hasAny: (...codes: string[]) => boolean) {
   const showSkill   = hasAny(...NAV_PERMS.skillManage);
   const showPrompt  = hasAny(...NAV_PERMS.promptManage);
   const showDebug   = hasAny(...NAV_PERMS.debugConsole);
+  const showEval    = hasAny(...NAV_PERMS.agentEvaluation);
   const showRole    = hasAny(...NAV_PERMS.roleManage);
 
   const routes = [];
@@ -76,9 +79,10 @@ function buildRoute(hasAny: (...codes: string[]) => boolean) {
   if (modelToolChildren.length) routes.push({ path: '/group-model-tool', name: '模型与工具', routes: modelToolChildren });
 
   // 分组：调试与评测
-  if (showDebug) routes.push({ path: '/group-debug-eval', name: '调试与评测', routes: [
-    { path: '/agent/debug', name: 'Agent 调试', icon: <BugOutlined /> },
-  ]});
+  const debugEvalChildren = [];
+  if (showDebug) debugEvalChildren.push({ path: '/agent/debug', name: 'Agent 调试', icon: <BugOutlined /> });
+  if (showEval)  debugEvalChildren.push({ path: '/agent/evaluation', name: 'Agent 评测', icon: <ExperimentOutlined /> });
+  if (debugEvalChildren.length) routes.push({ path: '/group-debug-eval', name: '调试与评测', routes: debugEvalChildren });
 
   // 分组：权限与设置
   const settingsChildren = [];

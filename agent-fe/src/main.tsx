@@ -39,6 +39,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           colorPrimary: '#2B52D9',
           colorInfo: '#2B52D9',
           colorTextBase: '#0F172B',
+          colorBgLayout: '#ffffff',
+          colorBgContainer: '#ffffff',
+          colorBgElevated: '#ffffff',
           borderRadius: 6,
           fontFamily:
             '"Noto Sans SC", -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif',
@@ -46,13 +49,14 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         components: {
           Layout: {
             headerBg: '#ffffff',
-            siderBg: '#FAFBFC',
+            siderBg: '#ffffff',
             bodyBg: '#ffffff',
+            lightSiderBg: '#ffffff',
             headerHeight: 56,
           },
           Menu: {
-            itemBg: '#FAFBFC',
-            subMenuItemBg: '#FAFBFC',
+            itemBg: '#ffffff',
+            subMenuItemBg: '#ffffff',
             itemColor: '#0F172B',
             itemHoverBg: 'rgba(43, 82, 217, 0.04)',
             itemHoverColor: '#2B52D9',
@@ -61,6 +65,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             groupTitleColor: '#94A3B8',
             iconSize: 16,
             itemHeight: 40,
+          },
+          Table: {
+            headerBg: '#ffffff',
           },
           Card: {
             colorBorderSecondary: 'transparent',

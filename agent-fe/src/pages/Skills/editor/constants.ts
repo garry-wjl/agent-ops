@@ -4,7 +4,7 @@
  */
 export const COLOR = {
   border: '#E2E8F0',
-  headerBg: '#F8FAFC',
+  headerBg: '#ffffff',
   textPrimary: '#0F172B',
   textBody: '#1D293D',
   textSecondary: '#45556C',

@@ -46,7 +46,7 @@ export default function LoginPage() {
   const narrow = useNarrowScreen();
   const [entering, setEntering] = useState(false);
   const [error, setError] = useState<string>();
-  const [failCount, setFailCount] = useState(0);
+  const [, setFailCount] = useState(0);
   const [captchaRequired, setCaptchaRequired] = useState(false);
   const [captcha, setCaptcha] = useState<SliderCaptchaValue | null>(null);
   const [captchaRefreshKey, setCaptchaRefreshKey] = useState(0);

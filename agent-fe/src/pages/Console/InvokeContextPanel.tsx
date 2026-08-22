@@ -79,7 +79,7 @@ export default function InvokeContextPanel({ agentNum, rows, onChange }: Props) 
         marginBottom: 12,
         border: '1px solid #E5E7EB',
         borderRadius: 8,
-        background: '#FAFBFC',
+        background: '#fff',
       }}
     >
       <button

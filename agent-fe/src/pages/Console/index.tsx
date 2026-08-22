@@ -20,6 +20,7 @@ import { Avatar, Button, Dropdown, Input, Modal, Select, Tag, Tooltip, message a
 import {
   BoldOutlined,
   CopyOutlined,
+  DatabaseOutlined,
   DownOutlined,
   ExperimentOutlined,
   FolderOpenOutlined,
@@ -37,6 +38,7 @@ import ThinkingPanel from '@/components/ThinkingPanel';
 import AssistantSegmentList from '@/components/AssistantSegmentList';
 import { useInvokeStream } from '@/hooks/useInvokeStream';
 import { AgentApi, SessionApi } from '@/services';
+import { evalApi } from '@/services/evaluation';
 import { useAgentDebugVersionsQuery } from '@/services/agent';
 import type {
   AgentDebugVersionVO,
@@ -53,6 +55,7 @@ import InvokeContextPanel, {
   tryBuildContext,
   type ContextRow,
 } from './InvokeContextPanel';
+import type { EvalDatasetVO } from '@/types';
 
 interface ChatMessage {
   id: string;
@@ -168,6 +171,16 @@ export default function ConsolePage() {
     num?: string;
     title?: string;
   }>({ open: false });
+  const [appendModal, setAppendModal] = useState<{
+    open: boolean;
+    input?: string;
+    output?: string;
+    context?: string;
+  }>({ open: false });
+  const [datasets, setDatasets] = useState<EvalDatasetVO[]>([]);
+  const [appendDatasetNum, setAppendDatasetNum] = useState<string>();
+  const [appendReference, setAppendReference] = useState('');
+  const [appending, setAppending] = useState(false);
   const [contextRows, setContextRows] = useState<ContextRow[]>([
     { key: '', value: '' },
   ]);
@@ -276,6 +289,51 @@ export default function ConsolePage() {
     reloadSessions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentNum]);
+
+  useEffect(() => {
+    if (!appendModal.open) return;
+    void evalApi
+      .pageDatasets({ pageNo: 1, pageSize: 100 })
+      .then((page) => setDatasets(page?.list ?? []))
+      .catch(() => setDatasets([]));
+  }, [appendModal.open]);
+
+  const openAppendModal = (input?: string, output?: string) => {
+    const ctx = tryBuildContext(contextRows);
+    setAppendDatasetNum(undefined);
+    setAppendReference('');
+    setAppendModal({
+      open: true,
+      input,
+      output,
+      context: ctx ? JSON.stringify(ctx) : undefined,
+    });
+  };
+
+  const handleAppendToDataset = async () => {
+    if (!appendDatasetNum) {
+      antdMessage.warning('请选择评测集');
+      return;
+    }
+    if (!appendModal.input?.trim()) {
+      antdMessage.warning('缺少用户输入');
+      return;
+    }
+    setAppending(true);
+    try {
+      await evalApi.appendFromDebug({
+        datasetNum: appendDatasetNum,
+        input: appendModal.input.trim(),
+        output: appendModal.output?.trim(),
+        reference: appendReference.trim() || undefined,
+        context: appendModal.context,
+      });
+      antdMessage.success('已写入评测集草稿');
+      setAppendModal({ open: false });
+    } finally {
+      setAppending(false);
+    }
+  };
 
   useEffect(() => {
     if (!activeSession) {
@@ -856,6 +914,10 @@ export default function ConsolePage() {
               // 倒数第二条且为 user → 本轮新发送的消息，挂 lastUserMsgRef
               const isLastUser =
                 m.role === 'user' && i === messages.length - 2;
+              const prevUser =
+                m.role === 'assistant'
+                  ? [...messages.slice(0, i)].reverse().find((x) => x.role === 'user')
+                  : undefined;
               return (
                 <div
                   key={m.id}
@@ -864,7 +926,15 @@ export default function ConsolePage() {
                   {m.role === 'user' ? (
                     <UserMessage msg={m} />
                   ) : (
-                    <AssistantMessage msg={m} />
+                    <AssistantMessage
+                      msg={m}
+                      userInput={prevUser?.content}
+                      onAppendToDataset={
+                        m.status === 'done' || m.status === 'error'
+                          ? () => openAppendModal(prevUser?.content, m.content)
+                          : undefined
+                      }
+                    />
                   )}
                 </div>
               );
@@ -904,6 +974,61 @@ export default function ConsolePage() {
           />
         </div>
       </footer>
+
+      <Modal
+        open={appendModal.open}
+        title="写入评测集"
+        okText="写入草稿"
+        confirmLoading={appending}
+        onOk={() => void handleAppendToDataset()}
+        onCancel={() => setAppendModal({ open: false })}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 12, color: COLOR.textMuted, marginBottom: 4 }}>
+              评测集
+            </div>
+            <Select
+              showSearch
+              optionFilterProp="label"
+              placeholder="选择评测集"
+              style={{ width: '100%' }}
+              value={appendDatasetNum}
+              onChange={setAppendDatasetNum}
+              options={datasets.map((d) => ({
+                value: d.num,
+                label: `${d.name} (${d.num})`,
+              }))}
+            />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: COLOR.textMuted, marginBottom: 4 }}>
+              reference（可选）
+            </div>
+            <Input
+              value={appendReference}
+              onChange={(e) => setAppendReference(e.target.value)}
+              placeholder="期望输出 / 参考答案"
+            />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: COLOR.textMuted, marginBottom: 4 }}>
+              将写入 input / output / context
+            </div>
+            <Input.TextArea
+              rows={4}
+              readOnly
+              value={[
+                appendModal.input ? `input: ${appendModal.input.slice(0, 120)}…` : '',
+                appendModal.output ? `output: ${appendModal.output.slice(0, 120)}…` : '',
+              ]
+                .filter(Boolean)
+                .join('\n')}
+              style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11 }}
+            />
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         open={renameModal.open}
@@ -1054,7 +1179,12 @@ function UserMessage({ msg }: { msg: ChatMessage }) {
  * 深度思考面板已抽到 src/components/ThinkingPanel.tsx，供历史降级渲染与 AssistantSegmentList 共用。
  */
 
-function AssistantMessage({ msg }: { msg: ChatMessage }) {
+function AssistantMessage(props: {
+  msg: ChatMessage;
+  userInput?: string;
+  onAppendToDataset?: () => void;
+}) {
+  const { msg, onAppendToDataset } = props;
   const statusChip =
     msg.status === 'streaming' ? (
       <span
@@ -1167,6 +1297,13 @@ function AssistantMessage({ msg }: { msg: ChatMessage }) {
                 antdMessage[ok ? 'success' : 'error'](ok ? '已复制' : '复制失败');
               }}
             />
+            {onAppendToDataset ? (
+              <ActionButton
+                icon={<DatabaseOutlined />}
+                label="写入评测集"
+                onClick={onAppendToDataset}
+              />
+            ) : null}
           </div>
         ) : null}
       </div>

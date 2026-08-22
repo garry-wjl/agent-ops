@@ -124,6 +124,17 @@ body,
   box-shadow: none !important;
 }
 
+/* ProLayout / Layout 内容区统一纯白底，避免露出默认灰底 */
+.ant-pro-layout,
+.ant-pro-layout .ant-layout,
+.ant-pro-layout .ant-pro-layout-content,
+.ant-pro-layout .ant-pro-layout-bg-list,
+.ant-pro-layout .ant-pro-layout-container,
+.ant-layout,
+.ant-layout-content {
+  background: #ffffff !important;
+}
+
 /* fixedHeader 模式下，ProLayout 给内容容器留出顶栏占位（默认 56/64），
  * 改成 48 才能与上方对齐，否则内容区上方会多出空白条。 */
 .ant-pro-layout.ant-pro-layout-fix-siders.ant-pro-layout-fix-header,

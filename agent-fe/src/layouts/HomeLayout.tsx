@@ -156,7 +156,7 @@ export default function HomeLayout() {
       fixedHeader
       fixSiderbar
       navTheme="light"
-      contentStyle={{ padding: 0, background: '#F5F7FA' }}
+      contentStyle={{ padding: 0, background: '#ffffff' }}
       route={route}
       location={{ pathname: location.pathname }}
       splitMenus={false}

@@ -1,13 +1,6 @@
 /**
- * 路由表 — 与 App.tsx 顶部菜单 1:1
- * 新菜单结构（3 顶级 × 2 二级，2026-05-12 决定）：
- *   智能体中心  → /agent/manage         智能体管理（列表/详情/版本对比）
- *               → /agent/debug          智能体调试（原 Console）
- *   Skill Hub  → /skill/manage         Skill 管理（列表/详情/编辑器/对比）
- *               → /skill/evaluation     Skill 评测（原 Evaluation）
- *   Prompt 中心 → /prompt/manage       Prompt 提示词资产管理（列表 + 新建/编辑抽屉）
- *
- * 旧路径 /console、/agent/list、/skill/list、/evaluation/* 一律 Navigate 重定向。
+ * 路由表 — 与 WorkLayout 侧栏 1:1
+ * 旧路径 /console、/agent/list、/skill/list、/skill/evaluation、/evaluation/* 一律 Navigate 重定向。
  */
 import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes, useParams } from "react-router-dom";
@@ -22,10 +15,31 @@ const SkillList = lazy(() => import("@/pages/Skills/list"));
 const SkillDetail = lazy(() => import("@/pages/Skills/detail"));
 const SkillEditor = lazy(() => import("@/pages/Skills/editor"));
 const SkillCompare = lazy(() => import("@/pages/Skills/compare"));
-const EvaluationList = lazy(() => import("@/pages/Evaluation/list"));
-const EvaluationDetail = lazy(() => import("@/pages/Evaluation/detail"));
-const EvaluationSeeds = lazy(() => import("@/pages/Evaluation/seeds"));
-const EvaluationCompare = lazy(() => import("@/pages/Evaluation/compare"));
+const EvaluationShell = lazy(
+  () => import("@/pages/AgentEvaluation/EvaluationShell"),
+);
+const DatasetList = lazy(
+  () => import("@/pages/AgentEvaluation/datasets/List"),
+);
+const DatasetCreate = lazy(
+  () => import("@/pages/AgentEvaluation/datasets/Create"),
+);
+const DatasetDetail = lazy(
+  () => import("@/pages/AgentEvaluation/datasets/Detail"),
+);
+const GraderList = lazy(() => import("@/pages/AgentEvaluation/graders/List"));
+const GraderCreate = lazy(
+  () => import("@/pages/AgentEvaluation/graders/Create"),
+);
+const GraderDetail = lazy(
+  () => import("@/pages/AgentEvaluation/graders/Detail"),
+);
+const TaskList = lazy(() => import("@/pages/AgentEvaluation/tasks/List"));
+const TaskCreate = lazy(() => import("@/pages/AgentEvaluation/tasks/Create"));
+const TaskDetail = lazy(() => import("@/pages/AgentEvaluation/tasks/Detail"));
+const TaskCompare = lazy(
+  () => import("@/pages/AgentEvaluation/tasks/Compare"),
+);
 const Prompt = lazy(() => import("@/pages/Prompts/list"));
 const SandboxList = lazy(() => import("@/pages/Sandboxes/list"));
 const ToolList = lazy(() => import("@/pages/Tools/list"));
@@ -64,6 +78,59 @@ export default function AppRoutes() {
         <Route path="/agent/manage/compare/:num" element={<AgentCompare />} />
         <Route path="/agent/debug" element={<Console />} />
 
+        {/* Agent 应用评测：Tab 壳 + 深页 */}
+        <Route path="/agent/evaluation" element={<EvaluationShell />}>
+          <Route index element={<Navigate to="tasks" replace />} />
+          <Route path="datasets" element={<DatasetList />} />
+          <Route path="graders" element={<GraderList />} />
+          <Route path="tasks" element={<TaskList />} />
+        </Route>
+        <Route
+          path="/agent/evaluation/datasets/new"
+          element={<DatasetCreate />}
+        />
+        <Route
+          path="/agent/evaluation/datasets/:num/edit"
+          element={<DatasetCreate />}
+        />
+        <Route
+          path="/agent/evaluation/datasets/:num"
+          element={<DatasetDetail />}
+        />
+        <Route
+          path="/agent/evaluation/graders/new"
+          element={<GraderCreate />}
+        />
+        <Route
+          path="/agent/evaluation/graders/new/builtin"
+          element={
+            <Navigate to="/agent/evaluation/graders/new?kind=builtin" replace />
+          }
+        />
+        <Route
+          path="/agent/evaluation/graders/new/llm"
+          element={
+            <Navigate to="/agent/evaluation/graders/new?kind=llm" replace />
+          }
+        />
+        <Route
+          path="/agent/evaluation/graders/new/code"
+          element={
+            <Navigate to="/agent/evaluation/graders/new?kind=code" replace />
+          }
+        />
+        <Route
+          path="/agent/evaluation/graders/:num/edit"
+          element={<GraderCreate />}
+        />
+        <Route
+          path="/agent/evaluation/graders/:num"
+          element={<GraderDetail />}
+        />
+        <Route path="/agent/evaluation/tasks/new" element={<TaskCreate />} />
+        <Route path="/agent/evaluation/tasks/:num" element={<TaskDetail />} />
+        <Route path="/agent/evaluation/compare" element={<TaskCompare />} />
+
         {/* Skill Hub */}
         <Route
           path="/skill"
@@ -74,38 +141,34 @@ export default function AppRoutes() {
         <Route path="/skill/manage/editor/:num" element={<SkillEditor />} />
         <Route path="/skill/manage/compare/:num" element={<SkillCompare />} />
 
-        <Route path="/skill/evaluation" element={<EvaluationList />} />
+        {/* 旧 Skill 评测 → Agent 评测 */}
         <Route
-          path="/skill/evaluation/detail/:num"
-          element={<EvaluationDetail />}
+          path="/skill/evaluation"
+          element={<Navigate to="/agent/evaluation" replace />}
         />
-        <Route path="/skill/evaluation/seeds" element={<EvaluationSeeds />} />
         <Route
-          path="/skill/evaluation/compare"
-          element={<EvaluationCompare />}
+          path="/skill/evaluation/*"
+          element={<Navigate to="/agent/evaluation" replace />}
         />
 
-        {/* 沙箱管理（工作空间资产，与 Agent / Skill 同列） */}
+        {/* 沙箱管理 */}
         <Route
           path="/sandbox"
           element={<Navigate to="/sandbox/manage" replace />}
         />
         <Route path="/sandbox/manage" element={<SandboxList />} />
 
-        {/* 工具管理（MCP / FunctionCall 工具资产，与 Agent / Skill 同列） */}
+        {/* 工具管理 */}
         <Route path="/tool" element={<Navigate to="/tool/manage" replace />} />
         <Route path="/tool/manage" element={<ToolList />} />
         <Route path="/tool/manage/editor/:num" element={<ToolEditor />} />
 
-        {/* 模型管理（LLM 模型接入资产，工作空间级三态生命周期） */}
+        {/* 模型管理 */}
         <Route
           path="/model"
           element={<Navigate to="/model/manage" replace />}
         />
         <Route path="/model/manage" element={<ModelList />} />
-
-        {/* 系统模型管理为平台级功能，已移至一级门户 home.tsx（走 /api/v1/system/model/*，不依赖工作空间）。
-            WorkLayout 仅在选中工作空间后渲染，不适合承载平台级页面。 */}
 
         {/* Prompt 中心 */}
         <Route
@@ -114,7 +177,7 @@ export default function AppRoutes() {
         />
         <Route path="/prompt/manage" element={<Prompt />} />
 
-        {/* 角色管理（权限管理 v1.0） */}
+        {/* 角色管理 */}
         <Route path="/role" element={<Navigate to="/role/manage" replace />} />
         <Route path="/role/manage" element={<RoleList />} />
 
@@ -144,23 +207,23 @@ export default function AppRoutes() {
         />
         <Route
           path="/evaluation"
-          element={<Navigate to="/skill/evaluation" replace />}
+          element={<Navigate to="/agent/evaluation" replace />}
         />
         <Route
           path="/evaluation/list"
-          element={<Navigate to="/skill/evaluation" replace />}
+          element={<Navigate to="/agent/evaluation" replace />}
         />
         <Route
           path="/evaluation/detail/:num"
-          element={<RedirectToEvalDetail />}
+          element={<Navigate to="/agent/evaluation" replace />}
         />
         <Route
           path="/evaluation/seeds"
-          element={<Navigate to="/skill/evaluation/seeds" replace />}
+          element={<Navigate to="/agent/evaluation" replace />}
         />
         <Route
           path="/evaluation/compare"
-          element={<Navigate to="/skill/evaluation/compare" replace />}
+          element={<Navigate to="/agent/evaluation/compare" replace />}
         />
 
         <Route path="*" element={<ErrorPage code="404" />} />
@@ -188,8 +251,4 @@ function RedirectToSkillEditor() {
 function RedirectToSkillCompare() {
   const { num } = useParams();
   return <Navigate to={`/skill/manage/compare/${num}`} replace />;
-}
-function RedirectToEvalDetail() {
-  const { num } = useParams();
-  return <Navigate to={`/skill/evaluation/detail/${num}`} replace />;
 }

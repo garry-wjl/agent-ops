@@ -12,8 +12,8 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * <ul>
  *   <li>{@code /api/v1/workspace/**}（排除 list / create —— 不依赖 X-Workspace-Num）：update / detail / delete 做跨空间访问校验；</li>
  *   <li>{@code /api/v1/agents/**}、{@code /api/v1/skill/**}、{@code /api/v1/sandbox/**}、{@code /api/v1/tool/**}、{@code /api/v1/prompt/**}、{@code /api/v1/model/**}、
- *       {@code /api/v1/debug-console/**}：资产 / 调试台请求据 X-Workspace-Num 写入空间上下文
- *       （请求头缺失时不设上下文，不做过滤）。</li>
+ *       {@code /api/v1/debug-console/**}、{@code /api/v1/evaluation/**}：资产 / 调试台 / 评测
+ *       请求据 X-Workspace-Num 写入空间上下文（请求头缺失时不设上下文，不做过滤）。</li>
  * </ul>
  * <p>
  * {@code /api/v1/common/**} 为系统通用横切接口，不挂本拦截器；聊天附件登记等若需要空间归属，
@@ -39,7 +39,8 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/api/v1/prompt/**",
                         "/api/v1/model/**",
                         "/api/v1/models/**",
-                        "/api/v1/debug-console/**")
+                        "/api/v1/debug-console/**",
+                        "/api/v1/evaluation/**")
                 .excludePathPatterns(
                         "/api/v1/workspace/list",
                         "/api/v1/workspace/create",

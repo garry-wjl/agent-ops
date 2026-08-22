@@ -1,0 +1,12 @@
+{"input": "我想从零跑通一次 Agent 评测，应该先做什么？", "reference": "先建并发布评测集，再准备评估器，最后创建评测任务绑定 Agent 版本。入口在侧栏「调试与评测」→「Agent 评测」。建议先做最小闭环：小评测集 + 1 个评估器 + 1 个任务。", "context": {"response": "", "reference": ""}}
+{"input": "评测集、评估器、评测任务分别是干什么的？", "reference": "评测集是结构化用例（Schema+行数据，发布后有版本）；评估器是可复用的判分尺子（内置/LLM/Code）；评测任务把「评测集某版本+（可选）Agent 版本+评估器」冻结后批量跑，产出通过率与明细。", "context": {"response": "", "reference": ""}}
+{"input": "创建评测任务时提示选不了评测集版本，可能是什么原因？", "reference": "评测集还是草稿、尚未「发布版本」。任务只能引用已发布版本；请先到评测集详情发布，再创建任务。", "context": {"response": "", "reference": ""}}
+{"input": "AGENT 类型评测集选 Agent 后 Schema 一般会有哪些字段？", "reference": "通常自动带出 input（用户输入/invoke 内容）、reference（参考答案，供评估器比对）、context（调用上下文 object，可含提示词变量等）。也可按业务扩展自定义列。", "context": {"response": "", "reference": ""}}
+{"input": "xlsx 导入后字段对不上，怎么排查？", "reference": "先下载当前评测集模板；表头应按 Schema 层级展开，例如 context.orderId、tags[0]、items[0].sku，不要把整段 context 塞进一列大 JSON（除非 Schema 把 context 定义成无子字段的自由 object）。", "context": {"response": "", "reference": ""}}
+{"input": "问答类 Agent 用精确匹配总是 Fail，怎么办？", "reference": "问答很少字面完全一致。可改用 CONTAINS、LLM 评估器，或放宽 EXACT_MATCH 的 ignoreCase/trim；同时把 reference 写得更合理，不要期望整段一字不差。", "context": {"response": "", "reference": ""}}
+{"input": "内置评估器的「配置 JSON」是干什么的？我要不要写成系统提示词？", "reference": "配置 JSON 只对内置评估器生效，用来配规则参数（如 CONTAINS 的 keywords、EXACT_MATCH 的 trim/ignoreCase），不是系统提示词，也不是评测集数据正文。", "context": {"response": "", "reference": ""}}
+{"input": "什么时候用内置/Code，什么时候用 LLM 评估器？", "reference": "格式、关键词、是否调工具优先内置或 Code（稳定、便宜、可解释）；语义质量、礼貌、是否答对意思用 LLM；复杂业务规则用 Code，也可多评估器组合挂到同一任务。", "context": {"response": "", "reference": ""}}
+{"input": "评测任务里 bindMode 选 NONE 和选 AGENT 有什么区别？", "reference": "AGENT 会按行 invoke 指定 Agent 版本，产出 actual_output 再打分；NONE 不调用 Agent，适合评测集里已有输出、只做离线标注或评分。", "context": {"response": "", "reference": ""}}
+{"input": "怎么做一次改版前后的回归对比？", "reference": "同一评测集（建议同一版本）下，换 Agent 版本再跑一次任务，用「对比」看通过率变化与逐条 uplift/regress。回归不是单独产品类型，而是同一套数据+同一套尺子换版本再跑。", "context": {"response": "", "reference": ""}}
+{"input": "能不能根据知识库自动生成一整套评测题？", "reference": "当前主线是人工/导入维护评测集，并支持从调试与会话回流；全自动出题不是当前主能力。建议先建小草稿集，人工审核后再发布。", "context": {"response": "", "reference": ""}}
+{"input": "我想做 Skill 评测和模型微调，你能直接帮我吗？", "reference": "Skill 评测、模型微调、知识库自动出题等不在当前 Agent 评测范围内；应说明边界，并引导回「评测集×评估器×评测任务」主线。", "context": {"response": "", "reference": ""}}
