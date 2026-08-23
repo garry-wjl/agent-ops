@@ -7,6 +7,9 @@ import ink.garry.rd.agent.ws.application.agentrunner.factory.AgentRunnerFactory;
 import ink.garry.rd.agent.ws.application.attachment.command.AttachmentCommandService;
 import ink.garry.rd.agent.ws.application.common.prompt.SysPromptVariableSubstitutor;
 import ink.garry.rd.agent.ws.application.debugconsole.SegmentAccumulator;
+import ink.garry.rd.agent.ws.application.agent.AgentQueryService;
+import ink.garry.rd.agent.ws.application.agentrunner.KbContextInjector;
+import ink.garry.rd.agent.ws.application.knowledgebase.KbBindingMapper;
 import ink.garry.rd.agent.ws.application.session.SessionCommandService;
 import ink.garry.rd.agent.ws.client.session.dto.SessionDTO;
 import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContextHolder;
@@ -55,6 +58,12 @@ public class AgentRunnerService {
 
     @Resource
     private AttachmentCommandService attachmentCommandService;
+
+    @Resource
+    private AgentQueryService agentQueryService;
+
+    @Resource
+    private KbContextInjector kbContextInjector;
 
     /**
      * 运行 Agent（生产/默认入口：当前在线版本）。
@@ -158,13 +167,28 @@ public class AgentRunnerService {
         AgentBase agent = agentRunnerFactory.build(
                 agentNum, sessionNum, targetVersion, vars, content.hasAttachments());
 
-        //3. 添加用户消息（MULTIMODAL 存 JSON；纯文本保持 TEXT）
-        AgentMsgFactory.PersistPayload persist = agentMsgFactory.toPersistPayload(content);
+        //3. AUTO/HYBRID 知识库：用户消息前注入检索上下文
+        NormalizedInvokeContent effectiveContent = content;
+        if (StrUtil.isNotBlank(content.getText())) {
+            var agentDto = agentQueryService.loadAgentForDebug(agentNum, targetVersion);
+            String injected = kbContextInjector.injectBindingsIfNeeded(
+                    KbBindingMapper.fromClientSnapshot(agentDto.getConfigSnapshot()),
+                    content.getText());
+            if (!StrUtil.equals(injected, content.getText())) {
+                effectiveContent = NormalizedInvokeContent.builder()
+                        .text(injected)
+                        .attachments(content.getAttachments())
+                        .build();
+            }
+        }
+
+        //4. 添加用户消息（MULTIMODAL 存 JSON；纯文本保持 TEXT）
+        AgentMsgFactory.PersistPayload persist = agentMsgFactory.toPersistPayload(effectiveContent);
         sessionCommandService.appendUserMessage(
                 sessionNum, persist.contentText(), persist.inputType(), sessionNum, operatorId);
 
-        //4. 调用
-        Msg msg = agentMsgFactory.build(content, workspaceNum);
+        //5. 调用
+        Msg msg = agentMsgFactory.build(effectiveContent, workspaceNum);
         String finalSessionNum = sessionNum;
         // 累积器:订阅 PostReasoning / PostActing 的 isLast=true 帧,把 thinking / text / tool_use /
         // tool_result 按到达顺序收成 AssistantSegment 列表,最终随 assistant message 一并持久化。

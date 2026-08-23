@@ -143,6 +143,17 @@
             <artifactId>pdfbox</artifactId>
             <version>3.0.2</version>
         </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-rag-simple</artifactId>
+            <version>${agentscope.version}</version>
+            <optional>true</optional>
+        </dependency>
     </dependencies>
 
     <build>

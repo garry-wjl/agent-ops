@@ -87,6 +87,9 @@ public class ConfigSnapshot {
     /** 记忆配置（v2.5 重构：策略枚举 + 短期窗口 N） */
     private MemoryConfig memoryConfig;
 
+    /** Agent 绑定的知识库列表 */
+    private List<KnowledgeBaseBinding> knowledgeBaseBindings;
+
     /** 每秒最大调用次数 */
     private Integer qps;
     /** 每日预算（次数 / token，按运营协议口径） */

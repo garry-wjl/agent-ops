@@ -126,6 +126,17 @@ app:
       - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
       - text/plain
       - text/markdown
+  knowledge-base:
+    default-embedding-model-id: ${KB_DEFAULT_EMBEDDING_MODEL:}
+    pgvector:
+      jdbc-url: jdbc:postgresql://localhost:5432/rd_agent_vector
+      username: ${PG_VECTOR_USER:postgres}
+      password: ${PG_VECTOR_PASSWORD:postgres}
+    indexing:
+      max-concurrent-tasks: 3
+      max-file-size-mb: 50
+    retrieval:
+      max-chunks-per-turn: 20
 
 # OpenSandbox 远程沙箱接入（会话级容器复用）
 sandbox:

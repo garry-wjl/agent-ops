@@ -16,6 +16,7 @@ import {
   ApiOutlined,
   SafetyCertificateOutlined,
   ExperimentOutlined,
+  DatabaseOutlined,
 } from "@ant-design/icons";
 import {
   Link,
@@ -39,6 +40,7 @@ const NAV_PERMS = {
   sandbox:      ['sandbox:create','sandbox:read','sandbox:update','sandbox:delete'],
   modelManage:  ['model:create','model:read','model:update','model:delete'],
   toolManage:   ['tool:create','tool:read','tool:update','tool:delete','tool:publish'],
+  kbManage:     ['knowledge_base:create','knowledge_base:read','knowledge_base:update','knowledge_base:delete'],
   skillManage:  ['skill:create','skill:read','skill:update','skill:delete','skill:publish','skill:sync'],
   promptManage: ['prompt:create','prompt:read','prompt:update','prompt:delete','prompt:publish'],
   debugConsole: ['debug_console:access'],
@@ -56,6 +58,7 @@ function buildRoute(hasAny: (...codes: string[]) => boolean) {
   const showSandbox = hasAny(...NAV_PERMS.sandbox);
   const showModel   = hasAny(...NAV_PERMS.modelManage);
   const showTool    = hasAny(...NAV_PERMS.toolManage);
+  const showKb      = hasAny(...NAV_PERMS.kbManage);
   const showSkill   = hasAny(...NAV_PERMS.skillManage);
   const showPrompt  = hasAny(...NAV_PERMS.promptManage);
   const showDebug   = hasAny(...NAV_PERMS.debugConsole);
@@ -74,6 +77,7 @@ function buildRoute(hasAny: (...codes: string[]) => boolean) {
   const modelToolChildren = [];
   if (showModel)  modelToolChildren.push({ path: '/model/manage',  name: '模型管理',   icon: <ApiOutlined /> });
   if (showTool)   modelToolChildren.push({ path: '/tool/manage',   name: '工具管理',   icon: <ToolOutlined /> });
+  if (showKb)     modelToolChildren.push({ path: '/kb/manage',     name: '知识库管理', icon: <DatabaseOutlined /> });
   if (showSkill)  modelToolChildren.push({ path: '/skill/manage',  name: 'Skill 管理', icon: <AppstoreOutlined /> });
   if (showPrompt) modelToolChildren.push({ path: '/prompt/manage', name: 'Prompt 中心', icon: <BulbOutlined /> });
   if (modelToolChildren.length) routes.push({ path: '/group-model-tool', name: '模型与工具', routes: modelToolChildren });
@@ -104,36 +108,40 @@ export default function WorkLayout() {
 
   const urlWs = searchParams.get("ws") || undefined;
 
-  // URL 的空间编号 ⇄ 当前空间 双向同步
+  // URL 中的 ws 必须在首屏请求前写入 store/localStorage，否则 axios 拦截器拿不到 X-Workspace-Num
+  if (urlWs && urlWs !== currentWorkspaceNum) {
+    setCurrentWorkspace(urlWs);
+  }
+
+  const activeWorkspaceNum =
+    useWorkspaceStore.getState().currentWorkspaceNum ?? urlWs;
+
+  // URL 的空间编号 ⇄ 当前空间：补全地址栏 ?ws=（在已具备 activeWorkspaceNum 后执行）
   useEffect(() => {
-    if (urlWs && urlWs !== currentWorkspaceNum) {
-      setCurrentWorkspace(urlWs);
-      return;
-    }
-    if (!urlWs && currentWorkspaceNum) {
+    if (!activeWorkspaceNum) return;
+    if (!urlWs) {
       const sp = new URLSearchParams(location.search);
-      sp.set("ws", currentWorkspaceNum);
+      sp.set("ws", activeWorkspaceNum);
       navigate(`${location.pathname}?${sp.toString()}`, { replace: true });
     }
   }, [
     urlWs,
-    currentWorkspaceNum,
+    activeWorkspaceNum,
     location.pathname,
     location.search,
     navigate,
-    setCurrentWorkspace,
   ]);
 
   // 空间切换后重新拉取 /api/v1/auth/me，获取该空间下的权限并集
   // （request.ts 已移除 /api/v1/auth 的跳过规则，/auth/me 会自动带上 X-Workspace-Num）
   useEffect(() => {
-    if (currentWorkspaceNum) {
+    if (activeWorkspaceNum) {
       refresh();
     }
-  }, [currentWorkspaceNum, refresh]);
+  }, [activeWorkspaceNum, refresh]);
 
   // 既没选空间、URL 也没带 → 回一级「工作空间」选择页
-  if (!currentWorkspaceNum && !urlWs) {
+  if (!activeWorkspaceNum) {
     return <Navigate to="/spaces" replace />;
   }
 
@@ -158,7 +166,7 @@ export default function WorkLayout() {
       menuHeaderRender={false}
       headerTitleRender={() => <HeaderLogo />}
       headerContentRender={() => (
-        <HeaderNav key={currentWorkspaceNum ?? urlWs ?? "ws"} />
+        <HeaderNav key={activeWorkspaceNum ?? "ws"} />
       )}
       breadcrumbRender={false}
       menuItemRender={(item, dom) => {
@@ -169,7 +177,7 @@ export default function WorkLayout() {
       footerRender={false}
     >
       {/* 按当前空间编号 key，切换空间时整块重挂载，触发当前页重新拉数据 */}
-      <AppRoutes key={currentWorkspaceNum} />
+      <AppRoutes key={activeWorkspaceNum} />
     </ProLayout>
   );
 }

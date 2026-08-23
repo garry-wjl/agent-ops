@@ -44,6 +44,7 @@ import { useBreadcrumbName } from '@/hooks/useBreadcrumbName';
 import { useModelSelectableQuery } from '@/services/model';
 import { useSkillPageQuery } from '@/services/skill';
 import { useToolMountableItemsQuery, useToolMountableQuery } from '@/services/tool';
+import { useKbMountableQuery } from '@/services/knowledgeBase';
 import { useSandboxPageQuery } from '@/services/sandbox';
 import type {
   AgentCreateParam,
@@ -106,6 +107,7 @@ function emptyDraft(): AgentDraft {
       toolNums: [],
       toolRefs: [],
       sandboxRef: undefined,
+      knowledgeBaseBindings: [],
       memoryConfig: {
         shortTermStrategy: 'RECENT_N',
         shortTermN: 10,
@@ -153,6 +155,7 @@ export default function AgentEditorPage() {
   });
   const { data: mountableGroups } = useToolMountableQuery();
   const { data: mountableItems } = useToolMountableItemsQuery();
+  const { data: mountableKbs } = useKbMountableQuery();
   const { data: sandboxPage } = useSandboxPageQuery({
     pageNo: 1,
     pageSize: 200,
@@ -267,6 +270,7 @@ export default function AgentEditorPage() {
                 ? snap.toolRefs
                 : (snap?.toolNums ?? []).map((n) => ({ toolNum: n })),
             sandboxRef: snap?.sandboxRef,
+            knowledgeBaseBindings: snap?.knowledgeBaseBindings ?? [],
             memoryConfig: {
               shortTermStrategy:
                 snap?.memoryConfig?.shortTermStrategy ?? 'RECENT_N',
@@ -318,6 +322,7 @@ export default function AgentEditorPage() {
     toolNums: draft.ctx.toolNums,
     toolRefs: draft.ctx.toolRefs,
     sandboxRef: draft.ctx.sandboxRef,
+    knowledgeBaseBindings: draft.ctx.knowledgeBaseBindings,
     memoryConfig: draft.ctx.memoryConfig,
     qps: draft.ctx.qps,
     dailyBudget: draft.ctx.dailyBudget,
@@ -338,6 +343,7 @@ export default function AgentEditorPage() {
     toolNums: draft.ctx.toolNums,
     toolRefs: draft.ctx.toolRefs,
     sandboxRef: draft.ctx.sandboxRef,
+    knowledgeBaseBindings: draft.ctx.knowledgeBaseBindings,
     memoryConfig: draft.ctx.memoryConfig,
     qps: draft.ctx.qps,
     dailyBudget: draft.ctx.dailyBudget,
@@ -725,6 +731,7 @@ export default function AgentEditorPage() {
                 toolRefByKey={toolRefByKey}
                 mountableItems={mountableItems}
                 sandboxOptions={sandboxOptions}
+                kbOptions={mountableKbs ?? []}
               />
             </div>
           </>

@@ -4,6 +4,11 @@ import cn.hutool.core.collection.CollectionUtil;
 import cn.hutool.core.lang.Assert;
 import cn.hutool.core.util.StrUtil;
 import ink.garry.rd.agent.ws.application.agent.AgentQueryService;
+import ink.garry.rd.agent.ws.application.agentrunner.KnowledgeBaseRetrieveService;
+import ink.garry.rd.agent.ws.application.agentrunner.tool.SearchKnowledgeTool;
+import ink.garry.rd.agent.ws.application.knowledgebase.KbBindingMapper;
+import ink.garry.rd.agent.ws.domain.agent.valueobject.KnowledgeBaseBinding;
+import ink.garry.rd.agent.ws.domain.knowledgebase.valueobject.RetrievalMode;
 import ink.garry.rd.agent.ws.application.agentrunner.tool.FunctionCallTool;
 import ink.garry.rd.agent.ws.application.agentrunner.tool.JsonFormatTool;
 import ink.garry.rd.agent.ws.application.agentrunner.tool.ReadAttachmentTool;
@@ -103,6 +108,9 @@ public class AgentRunnerFactory {
     /** 有附件时注入平台内置 read_attachment */
     @Resource
     private AttachmentQueryService attachmentQueryService;
+
+    @Resource
+    private KnowledgeBaseRetrieveService knowledgeBaseRetrieveService;
 
     /**
      * 创建 AgentRunner（生产/默认入口：当前在线版本）。
@@ -320,6 +328,17 @@ public class AgentRunnerFactory {
                         }
                     }
                 }
+            }
+
+            //3.4 知识库 ON_DEMAND / HYBRID：注册 search_knowledge 工具
+            List<KnowledgeBaseBinding> kbBindings =
+                    KbBindingMapper.fromClientSnapshot(agent.getConfigSnapshot());
+            boolean needSearchTool = kbBindings.stream()
+                    .anyMatch(b -> b != null && b.getRetrievalMode() != null
+                            && (b.getRetrievalMode() == RetrievalMode.ON_DEMAND
+                            || b.getRetrievalMode() == RetrievalMode.HYBRID));
+            if (needSearchTool) {
+                toolkit.registerTool(new SearchKnowledgeTool(knowledgeBaseRetrieveService, kbBindings));
             }
 
             //4. 构建计划模式

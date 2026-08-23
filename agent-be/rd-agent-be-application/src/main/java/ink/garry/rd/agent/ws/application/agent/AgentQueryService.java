@@ -1070,4 +1070,32 @@ public class AgentQueryService {
         }
         return JSON.parseObject(JSON.toJSONString(snapshot), LinkedHashMap.class);
     }
+
+    /**
+     * 统计绑定指定知识库的已发布 Agent 数量。
+     */
+    public int countAgentsByKbBinding(String kbNum) {
+        if (StrUtil.isBlank(kbNum)) {
+            return 0;
+        }
+        List<AgentEntity> agents = agentMapper.selectList(new LambdaQueryWrapper<AgentEntity>()
+                .eq(AgentEntity::getStatus, AgentStatus.PUBLISHED.name()));
+        if (agents == null) {
+            return 0;
+        }
+        int count = 0;
+        for (AgentEntity agent : agents) {
+            ConfigSnapshot snapshot = parseConfigSnapshot(agent.getConfigSnapshot());
+            if (snapshot == null || snapshot.getKnowledgeBaseBindings() == null) {
+                continue;
+            }
+            for (var binding : snapshot.getKnowledgeBaseBindings()) {
+                if (binding != null && kbNum.equals(binding.getKbNum())) {
+                    count++;
+                    break;
+                }
+            }
+        }
+        return count;
+    }
 }

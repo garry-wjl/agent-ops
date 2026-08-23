@@ -1,6 +1,7 @@
 /**
  * Agent 领域类型 — 对齐 Agent 管理技术方案 §3.2 / §10
  */
+import type { KnowledgeBaseBindingParam } from './knowledgeBase';
 
 export type CreationMode = 'CONFIG' | 'ACP' | 'MCP' | 'A2A' | 'API';
 export type AgentType = 'NORMAL' | 'SUPERVISOR' | 'ROUTER';
@@ -94,6 +95,8 @@ export interface ConfigSnapshot {
    * <p>来自沙箱管理「在线」沙箱的 num；空表示不挂载沙箱。
    */
   sandboxRef?: string;
+  /** 绑定的知识库列表（检索模式 / topK / minScore 按项配置） */
+  knowledgeBaseBindings?: KnowledgeBaseBindingParam[];
   childAgentNums?: string[];
   memoryConfig?: MemoryConfig;
   qps?: number;
@@ -345,6 +348,8 @@ export interface AgentCreateParam {
   toolRefs?: ToolRefParam[];
   /** 沙箱引用（单选可空，来自沙箱管理「在线」沙箱 num） */
   sandboxRef?: string;
+  /** 知识库绑定列表 */
+  knowledgeBaseBindings?: KnowledgeBaseBindingParam[];
   childAgentNums?: string[];
   memoryConfig?: MemoryConfig;
   qps?: number;

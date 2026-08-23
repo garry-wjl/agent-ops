@@ -73,4 +73,7 @@ public class AgentCreateParam {
 
     /** 限流 - 每日预算（元） */
     private Integer dailyBudget;
+
+    /** 绑定的知识库列表 */
+    private List<ink.garry.rd.agent.ws.client.agent.KnowledgeBaseBindingParam> knowledgeBaseBindings;
 }

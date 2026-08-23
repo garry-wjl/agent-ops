@@ -13,6 +13,15 @@ import axios, { AxiosError } from 'axios';
 import type { AxiosInstance, AxiosResponse } from 'axios';
 import { message } from 'antd';
 import type { Result } from '@/types';
+import { WORKSPACE_NUM_KEY } from '@/stores/workspace';
+
+function resolveWorkspaceNum(): string | undefined {
+  const stored = localStorage.getItem(WORKSPACE_NUM_KEY);
+  if (stored) return stored;
+  if (typeof window === 'undefined') return undefined;
+  const fromUrl = new URLSearchParams(window.location.search).get('ws');
+  return fromUrl || undefined;
+}
 
 export class BizError extends Error {
   override readonly name = 'BizError';
@@ -87,7 +96,7 @@ instance.interceptors.request.use(config => {
     url.includes('/api/v1/users') ||
     (onLoginPage && url.includes('/api/v1/auth/me'));
   if (!skip) {
-    const ws = localStorage.getItem('currentWorkspaceNum');
+    const ws = resolveWorkspaceNum();
     if (ws) {
       config.headers = config.headers ?? {};
       (config.headers as Record<string, string>)['X-Workspace-Num'] = ws;

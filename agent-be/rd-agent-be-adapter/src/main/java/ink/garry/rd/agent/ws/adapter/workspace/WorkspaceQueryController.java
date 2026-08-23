@@ -29,6 +29,8 @@ public class WorkspaceQueryController extends BaseController {
     @Resource
     private WorkspaceQueryService workspaceQueryService;
     @Resource
+    private ink.garry.rd.agent.ws.application.workspace.WorkspaceKbConfigQueryService workspaceKbConfigQueryService;
+    @Resource
     private WorkspaceVoAssembler assembler;
 
     /**
@@ -52,5 +54,11 @@ public class WorkspaceQueryController extends BaseController {
     public Result<WorkspaceDetailVO> detail(@RequestParam("num") String num) {
         return ok(assembler.toWorkspaceDetailVO(
                 workspaceQueryService.getDetail(num, getCurrentUserId())));
+    }
+
+    @GetMapping("/query/kbConfig")
+    public Result<ink.garry.rd.agent.ws.client.workspace.vo.WorkspaceKbConfigVo> kbConfig() {
+        return ok(assembler.toWorkspaceKbConfigVo(
+                workspaceKbConfigQueryService.get(getCurrentWorkspaceNum())));
     }
 }

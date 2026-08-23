@@ -5,8 +5,12 @@ import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import ink.garry.rd.agent.ws.client.common.BizCode;
 import ink.garry.rd.agent.ws.client.evaluation.task.PublishGateCheckVO;
+import ink.garry.rd.agent.ws.domain.agent.valueobject.ConfigSnapshot;
+import ink.garry.rd.agent.ws.domain.agent.valueobject.KnowledgeBaseBinding;
 import ink.garry.rd.agent.ws.domain.evaluation.task.valueobject.TaskStatus;
+import ink.garry.rd.agent.ws.domain.knowledgebase.valueobject.KbStatus;
 import ink.garry.rd.agent.ws.facade.exception.BusinessException;
+import ink.garry.rd.agent.ws.application.knowledgebase.KnowledgeBaseQueryService;
 import ink.garry.rd.agent.ws.infra.evaluation.task.entity.EvalTaskEntity;
 import ink.garry.rd.agent.ws.infra.evaluation.task.mapper.EvalTaskMapper;
 import jakarta.annotation.Resource;
@@ -32,6 +36,8 @@ public class EvalPublishGateService {
 
     @Resource
     private EvalTaskMapper evalTaskMapper;
+    @Resource
+    private KnowledgeBaseQueryService knowledgeBaseQueryService;
 
     /**
      * 发布前校验；enabled=false 时 no-op。
@@ -47,6 +53,25 @@ public class EvalPublishGateService {
         }
         if (!vo.isPassed()) {
             throw new BusinessException(BizCode.INVALID_PARAM.getCode(), vo.getMessage());
+        }
+    }
+
+    /**
+     * 发布前校验绑定知识库均为 READY。
+     */
+    public void checkKnowledgeBasesReady(ConfigSnapshot snapshot) {
+        if (snapshot == null || snapshot.getKnowledgeBaseBindings() == null) {
+            return;
+        }
+        for (KnowledgeBaseBinding binding : snapshot.getKnowledgeBaseBindings()) {
+            if (binding == null || binding.getKbNum() == null || binding.getKbNum().isBlank()) {
+                continue;
+            }
+            var detail = knowledgeBaseQueryService.detail(binding.getKbNum(), null);
+            if (detail == null || !KbStatus.READY.name().equals(detail.getStatus())) {
+                throw new BusinessException(BizCode.KB_STATUS_INVALID.getCode(),
+                        "发布失败：绑定知识库必须为 READY，kbNum=" + binding.getKbNum());
+            }
         }
     }
 

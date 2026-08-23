@@ -236,6 +236,17 @@ public final class LockKeyConstant {
      */
     public static final String MODEL_CREATE_LOCK_PREFIX = "model:create:lock:";
 
+    /** 知识库新建用例锁前缀;拼接 workspaceNum + ":" + name */
+    public static final String KB_CREATE_LOCK_PREFIX = "kb:create:lock:";
+
+    /** 知识库命令用例锁前缀;拼接 kbNum */
+    public static final String KB_COMMAND_LOCK_PREFIX = "kb:command:lock:";
+
+    /** 知识库索引任务锁前缀;拼接 taskNum */
+    public static final String KB_INDEX_TASK_LOCK_PREFIX = "kb:index:";
+
+    /** 工作空间 KB 配置保存锁前缀;拼接 workspaceNum */
+    public static final String WORKSPACE_KB_CONFIG_LOCK_PREFIX = "workspace:kb-config:lock:";
 
     /** 用户写用例互斥锁前缀；拼接用户 num 后守护 UserCommandService 单条命令。 */
     public static final String USER_COMMAND_LOCK_PREFIX = "user:command:lock:";

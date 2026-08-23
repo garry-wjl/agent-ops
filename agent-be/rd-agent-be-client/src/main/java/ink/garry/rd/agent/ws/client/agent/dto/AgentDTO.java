@@ -162,6 +162,9 @@ public class AgentDTO {
         /** 每日预算(次数 / token,按运营协议口径) */
         private Integer dailyBudget;
 
+        /** 挂载的知识库绑定（检索模式 / topK / minScore） */
+        private List<KnowledgeBaseBindingDTO> knowledgeBaseBindings;
+
         /** Skill 版本引用。 */
         @Data
         @Builder

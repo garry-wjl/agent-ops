@@ -46,6 +46,9 @@ const ToolList = lazy(() => import("@/pages/Tools/list"));
 const ToolEditor = lazy(() => import("@/pages/Tools/editor"));
 const ToolDetail = lazy(() => import("@/pages/Tools/detail"));
 const ModelList = lazy(() => import("@/pages/Models/list"));
+const KbList = lazy(() => import("@/pages/KnowledgeBases/list"));
+const KbCreate = lazy(() => import("@/pages/KnowledgeBases/create"));
+const KbDetail = lazy(() => import("@/pages/KnowledgeBases/detail"));
 const RoleList = lazy(() => import("@/pages/Roles/list"));
 const ErrorPage = lazy(() => import("@/pages/Error"));
 
@@ -171,6 +174,12 @@ export default function AppRoutes() {
           element={<Navigate to="/model/manage" replace />}
         />
         <Route path="/model/manage" element={<ModelList />} />
+
+        {/* 知识库管理 */}
+        <Route path="/kb" element={<Navigate to="/kb/manage" replace />} />
+        <Route path="/kb/manage" element={<KbList />} />
+        <Route path="/kb/manage/editor/:num" element={<KbCreate />} />
+        <Route path="/kb/manage/detail/:kbNum" element={<KbDetail />} />
 
         {/* Prompt 中心 */}
         <Route

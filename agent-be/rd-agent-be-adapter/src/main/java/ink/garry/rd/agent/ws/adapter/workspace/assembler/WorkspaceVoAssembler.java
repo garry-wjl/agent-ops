@@ -124,4 +124,26 @@ public class WorkspaceVoAssembler {
         vo.setRole(dto.getRole());
         return vo;
     }
+
+    public ink.garry.rd.agent.ws.client.workspace.dto.WorkspaceKbConfigSaveParamDTO toWorkspaceKbConfigSaveDTO(
+            ink.garry.rd.agent.ws.client.workspace.vo.WorkspaceKbConfigSaveParam param) {
+        if (param == null) {
+            return null;
+        }
+        ink.garry.rd.agent.ws.client.workspace.dto.WorkspaceKbConfigSaveParamDTO dto =
+                new ink.garry.rd.agent.ws.client.workspace.dto.WorkspaceKbConfigSaveParamDTO();
+        org.springframework.beans.BeanUtils.copyProperties(param, dto);
+        return dto;
+    }
+
+    public ink.garry.rd.agent.ws.client.workspace.vo.WorkspaceKbConfigVo toWorkspaceKbConfigVo(
+            ink.garry.rd.agent.ws.client.workspace.dto.WorkspaceKbConfigDTO dto) {
+        if (dto == null) {
+            return null;
+        }
+        ink.garry.rd.agent.ws.client.workspace.vo.WorkspaceKbConfigVo vo =
+                new ink.garry.rd.agent.ws.client.workspace.vo.WorkspaceKbConfigVo();
+        org.springframework.beans.BeanUtils.copyProperties(dto, vo);
+        return vo;
+    }
 }

@@ -15,6 +15,7 @@ import lombok.Getter;
  * 6xxx    Version 域
  * 7xxx    Tool 域（工具管理）
  * 8xxx    Prompt 域（Prompt 中心）
+ * 12xx    知识库域（知识库管理）
  * 9xxx    系统错误
  */
 @Getter
@@ -94,6 +95,18 @@ public enum BizCode {
 
     // ---- Prompt 域（Prompt 中心） ----
     PROMPT_NOT_FOUND(8001, "Prompt 不存在"),
+
+    // ---- 知识库域（12xx） ----
+    KB_NOT_FOUND(1201, "知识库不存在"),
+    KB_NAME_DUPLICATE(1202, "知识库名称重复"),
+    KB_TYPE_IMMUTABLE(1203, "知识库类型不可变"),
+    KB_BOUND_BY_AGENT(1204, "知识库已被 Agent 绑定"),
+    KB_EMBEDDING_DIMENSION_CONFLICT(1205, "Embedding 维度冲突"),
+    KB_STATUS_INVALID(1206, "知识库状态不允许该操作"),
+    KBF_FILE_NOT_FOUND(1211, "知识库文件不存在"),
+    KBF_INDEX_FAILED(1212, "知识库文件索引失败"),
+    KBF_OSS_FORBIDDEN(1213, "OSS 文件不属于当前工作空间"),
+    WS_KB_CONFIG_INVALID(1221, "工作空间知识库配置无效"),
 
     // ---- 用户管理域 ----
     USER_NOT_FOUND(1101, "用户不存在"),

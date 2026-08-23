@@ -6,7 +6,7 @@
  *
  * - Skills / 工具：多选，弹 AssetPickerModal 勾选；Tab 内展示已选项（名称 + 移除）。
  * - 沙箱：单选可空，弹 AssetPickerModal 单选。
- * - 知识库：禁用占位（KB 未上线），计数恒 0，hover 提示。
+ * - 知识库：多选绑定，弹 KbPickerModal 配置检索模式 / topK / minScore。
  * - 记忆：承载短期 / 长期记忆策略 + 限流参数折叠；徽标计数 = 任一策略非 NONE 时为 1。
  * - 已选但失效（不在候选可用列表）的项标红，提示重选。
  */
@@ -26,6 +26,8 @@ import type {
   LongTermStrategy,
   MemoryConfig,
   MountableToolItem,
+  KnowledgeBaseBindingParam,
+  MountableKbItem,
   ShortTermStrategy,
   SkillRefParam,
   ToolRefParam,
@@ -33,12 +35,14 @@ import type {
 import { useSkillBindableVersionsQuery } from '@/services/skill';
 import AssetPickerModal, { type AssetOption } from './AssetPickerModal';
 import ToolPickerModal, { type ToolGroupOption } from './ToolPickerModal';
+import KbPickerModal from './KbPickerModal';
 import {
   groupMountableChildren,
   isWholeGroupBindingKey,
   normalizeToolRefs,
   toolBindingKey,
 } from './toolBinding';
+import { RETRIEVAL_MODE_LABEL } from '@/pages/KnowledgeBases/constants';
 
 export type { AssetOption };
 export { normalizeToolRefs, toolBindingKey };
@@ -72,6 +76,8 @@ export interface ToolsContextValue {
   toolRefs: ToolRefParam[];
   /** 沙箱单选引用，可空 */
   sandboxRef?: string;
+  /** 知识库绑定（多选，每项可配置检索参数） */
+  knowledgeBaseBindings: KnowledgeBaseBindingParam[];
   memoryConfig: MemoryConfig;
   qps?: number;
   dailyBudget?: number;
@@ -94,6 +100,8 @@ export interface ToolsContextSectionProps {
   /** 展平可挂载项：选择器子节点 + 整组行展开 */
   mountableItems?: MountableToolItem[];
   sandboxOptions: AssetOption[];
+  /** 可挂载知识库（status=READY） */
+  kbOptions: MountableKbItem[];
 }
 
 /** 各 Tab 的功能说明（空态展示）。 */
@@ -104,7 +112,7 @@ const TAB_DESC: Record<ContextTabKey, string> = {
     '按工具组展开勾选：勾选组=整组挂载；只勾组内若干工具=具体工具挂载。列表会标注所属 FunctionCall / MCP 组。',
   sandbox:
     '关联沙箱管理中「在线」的代码沙箱（单选），让 Agent 具备代码执行类能力。',
-  kb: '知识库可提升回复准确性，模块即将上线。',
+  kb: '挂载已就绪知识库，按检索模式注入上下文或提供按需检索能力。',
   memory: '配置短期 / 长期记忆策略，提升多轮对话的上下文连贯性。',
 };
 
@@ -122,6 +130,7 @@ export default function ToolsContextSection({
   toolRefByKey,
   mountableItems,
   sandboxOptions,
+  kbOptions,
 }: ToolsContextSectionProps) {
   const [activeTab, setActiveTab] = useState<ContextTabKey>('skills');
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -140,7 +149,7 @@ export default function ToolsContextSection({
     skills: value.skillNums.length,
     tools: selectedToolKeys.length,
     sandbox: value.sandboxRef ? 1 : 0,
-    kb: 0,
+    kb: (value.knowledgeBaseBindings ?? []).length,
     memory: memoryEnabled ? 1 : 0,
   };
 
@@ -148,7 +157,7 @@ export default function ToolsContextSection({
     { key: 'skills', label: 'Skills' },
     { key: 'tools', label: '工具' },
     { key: 'sandbox', label: '沙箱' },
-    { key: 'kb', label: '知识库', disabled: true },
+    { key: 'kb', label: '知识库' },
     { key: 'memory', label: '记忆' },
   ];
 
@@ -157,7 +166,7 @@ export default function ToolsContextSection({
     skills: '+ Skills',
     tools: '+ 工具',
     sandbox: '+ 沙箱',
-    kb: null,
+    kb: '+ 知识库',
     memory: null,
   };
 
@@ -312,13 +321,7 @@ export default function ToolsContextSection({
                 <CountBadge count={counts[t.key]} />
               </button>
             );
-            return t.disabled ? (
-              <Tooltip key={t.key} title="知识库暂未上线">
-                {btn}
-              </Tooltip>
-            ) : (
-              btn
-            );
+            return btn;
           })}
         </div>
         {addBtn[activeTab] && (
@@ -374,7 +377,19 @@ export default function ToolsContextSection({
           />
         )}
         {activeTab === 'kb' && (
-          <Empty description="知识库模块即将上线，敬请期待" />
+          <KbSelectedList
+            options={kbOptions}
+            bindings={value.knowledgeBaseBindings ?? []}
+            desc={TAB_DESC.kb}
+            onChange={(bindings) => patch({ knowledgeBaseBindings: bindings })}
+            onRemove={(kbNum) =>
+              patch({
+                knowledgeBaseBindings: (value.knowledgeBaseBindings ?? []).filter(
+                  (b) => b.kbNum !== kbNum,
+                ),
+              })
+            }
+          />
         )}
         {activeTab === 'memory' && (
           <MemoryPanel
@@ -397,7 +412,21 @@ export default function ToolsContextSection({
           onCancel={() => setPickerOpen(false)}
         />
       )}
-      {pickerConfig && activeTab !== 'tools' && (
+      {activeTab === 'kb' && pickerOpen && (
+        <KbPickerModal
+          open={pickerOpen}
+          options={kbOptions}
+          value={value.knowledgeBaseBindings ?? []}
+          emptyGuide="暂无就绪知识库，请先到「知识库管理」新建并完成索引"
+          emptyTo="/kb/manage"
+          onOk={(bindings) => {
+            patch({ knowledgeBaseBindings: bindings });
+            setPickerOpen(false);
+          }}
+          onCancel={() => setPickerOpen(false)}
+        />
+      )}
+      {pickerConfig && activeTab !== 'tools' && activeTab !== 'kb' && (
         <AssetPickerModal
           open={pickerOpen}
           title={pickerConfig.title}
@@ -622,6 +651,116 @@ function ToolSelectedList({
                 )}
               </div>
             )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function KbSelectedList({
+  options,
+  bindings,
+  desc,
+  onChange,
+  onRemove,
+}: {
+  options: MountableKbItem[];
+  bindings: KnowledgeBaseBindingParam[];
+  desc: string;
+  onChange: (bindings: KnowledgeBaseBindingParam[]) => void;
+  onRemove: (kbNum: string) => void;
+}) {
+  if (bindings.length === 0) {
+    return (
+      <Empty
+        image={Empty.PRESENTED_IMAGE_SIMPLE}
+        description={<span style={{ color: COLOR.textMuted }}>{desc}</span>}
+      />
+    );
+  }
+  const byNum = new Map(options.map((o) => [o.kbNum, o]));
+  const patchBinding = (
+    kbNum: string,
+    p: Partial<KnowledgeBaseBindingParam>,
+  ) => {
+    onChange(
+      bindings.map((b) => (b.kbNum === kbNum ? { ...b, ...p } : b)),
+    );
+  };
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {bindings.map((b) => {
+        const opt = byNum.get(b.kbNum);
+        const invalid = !opt;
+        return (
+          <div
+            key={b.kbNum}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              padding: '10px 12px',
+              border: `1px solid ${
+                invalid ? COLOR.invalidBorder : COLOR.border
+              }`,
+              background: invalid ? COLOR.invalidBg : '#fff',
+              borderRadius: 8,
+            }}
+          >
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 500,
+                  color: invalid ? COLOR.invalidText : COLOR.textPrimary,
+                }}
+              >
+                {opt?.name ?? b.kbNum}
+                {invalid && (
+                  <Tag color="error" style={{ marginLeft: 8, fontSize: 12 }}>
+                    已失效，请重选
+                  </Tag>
+                )}
+              </div>
+            </div>
+            <Select
+              size="small"
+              style={{ width: 120 }}
+              value={b.retrievalMode ?? 'AUTO'}
+              options={Object.entries(RETRIEVAL_MODE_LABEL).map(([k, label]) => ({
+                value: k,
+                label,
+              }))}
+              onChange={(v) => patchBinding(b.kbNum, { retrievalMode: v })}
+            />
+            <InputNumber
+              size="small"
+              min={1}
+              max={50}
+              style={{ width: 72 }}
+              value={b.topK}
+              onChange={(v) => patchBinding(b.kbNum, { topK: v ?? undefined })}
+            />
+            <InputNumber
+              size="small"
+              min={0}
+              max={1}
+              step={0.05}
+              style={{ width: 72 }}
+              value={b.minScore}
+              onChange={(v) =>
+                patchBinding(b.kbNum, { minScore: v ?? undefined })
+              }
+            />
+            <CloseOutlined
+              onClick={() => onRemove(b.kbNum)}
+              style={{
+                color: COLOR.textMuted,
+                cursor: 'pointer',
+                fontSize: 13,
+              }}
+            />
           </div>
         );
       })}

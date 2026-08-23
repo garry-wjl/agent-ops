@@ -11,3 +11,4 @@ export * from './tool';
 export * from './prompt';
 export * from './model';
 export * from './authz';
+export * from './knowledgeBase';

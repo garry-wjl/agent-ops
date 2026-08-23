@@ -28,6 +28,7 @@ const MODULE_ROUTES: ModuleRoute[] = [
   { path: '/sandbox/manage', name: 'Sandbox 沙箱' },
   { path: '/model/manage', name: '模型管理' },
   { path: '/tool/manage', name: '工具管理' },
+  { path: '/kb/manage', name: '知识库管理' },
   { path: '/skill/manage', name: 'Skill 管理' },
   { path: '/prompt/manage', name: 'Prompt 中心' },
   { path: '/role/manage', name: '角色管理' },

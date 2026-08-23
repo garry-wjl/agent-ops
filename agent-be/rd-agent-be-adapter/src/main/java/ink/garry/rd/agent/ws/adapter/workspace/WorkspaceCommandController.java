@@ -31,6 +31,8 @@ public class WorkspaceCommandController extends BaseController {
     @Resource
     private WorkspaceCommandService workspaceCommandService;
     @Resource
+    private ink.garry.rd.agent.ws.application.workspace.WorkspaceKbConfigCommandService workspaceKbConfigCommandService;
+    @Resource
     private WorkspaceVoAssembler assembler;
 
     /**
@@ -69,5 +71,12 @@ public class WorkspaceCommandController extends BaseController {
     public Result<Void> delete(@Valid @RequestBody WorkspaceDeleteParam param) {
         workspaceCommandService.deleteWorkspace(assembler.toDeleteDTO(param), getCurrentUserId());
         return ok(null);
+    }
+
+    @PostMapping("/command/saveKbConfig")
+    public Result<ink.garry.rd.agent.ws.client.workspace.vo.WorkspaceKbConfigVo> saveKbConfig(
+            @Valid @RequestBody ink.garry.rd.agent.ws.client.workspace.vo.WorkspaceKbConfigSaveParam param) {
+        return ok(assembler.toWorkspaceKbConfigVo(workspaceKbConfigCommandService.save(
+                assembler.toWorkspaceKbConfigSaveDTO(param), getCurrentWorkspaceNum(), getCurrentUserId())));
     }
 }

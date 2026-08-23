@@ -20,14 +20,17 @@ import ink.garry.rd.agent.ws.domain.agent.valueobject.AgentType;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.AgentVersionStatus;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.ConfigSnapshot;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.CreationMode;
+import ink.garry.rd.agent.ws.domain.agent.valueobject.KnowledgeBaseBinding;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.MemoryConfig;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.SkillRef;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.SyncEventType;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.ToolRef;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.Version;
+import ink.garry.rd.agent.ws.domain.knowledgebase.valueobject.RetrievalMode;
 import ink.garry.rd.agent.ws.domain.skill.valueobject.SkillStatus;
 import ink.garry.rd.agent.ws.domain.tool.valueobject.ToolStatus;
 import ink.garry.rd.agent.ws.facade.exception.BusinessException;
+import ink.garry.rd.agent.ws.application.knowledgebase.KnowledgeBaseQueryService;
 import ink.garry.rd.agent.ws.application.skill.SkillQueryService;
 import ink.garry.rd.agent.ws.application.tool.ToolQueryService;
 import ink.garry.rd.agent.ws.application.evaluation.task.EvalPublishGateService;
@@ -114,6 +117,8 @@ public class AgentCommandService {
     private ink.garry.rd.agent.ws.application.model.ModelQueryService modelQueryService;
     @Resource
     private EvalPublishGateService evalPublishGateService;
+    @Resource
+    private KnowledgeBaseQueryService knowledgeBaseQueryService;
     @Resource
     private ink.garry.rd.agent.ws.application.agent.A2aSyncApplicationService a2aSyncApplicationService;
 
@@ -327,6 +332,7 @@ public class AgentCommandService {
 
             // 门禁按「当前在线版本」评测结果校验；草稿尚无 versionNum，不可传 draft.getVersionNum()
             evalPublishGateService.checkAgentPublish(agentNum, currentVersionNum, resolveWorkspaceNum());
+            evalPublishGateService.checkKnowledgeBasesReady(snapshot);
 
             // 2. 翻转 current 标记（发布事务内的写操作，直接调网关）
             agentVersionGateway.switchCurrent(oldId, draft.getId());
@@ -570,6 +576,7 @@ public class AgentCommandService {
                 .sandboxRef(p.getSandboxRef())
                 .childAgentNums(p.getChildAgentNums())
                 .memoryConfig(memoryFromMap(p.getMemoryConfig()))
+                .knowledgeBaseBindings(toKnowledgeBaseBindings(p.getKnowledgeBaseBindings()))
                 .qps(p.getQps())
                 .dailyBudget(p.getDailyBudget())
                 .build();
@@ -618,7 +625,63 @@ public class AgentCommandService {
                     .toList());
         }
         validateMountedToolsPublished(snapshot.getToolNums());
+        snapshot.setKnowledgeBaseBindings(resolveKnowledgeBaseBindings(snapshot.getKnowledgeBaseBindings(), workspaceNum));
         return snapshot;
+    }
+
+    private List<KnowledgeBaseBinding> toKnowledgeBaseBindings(List<ink.garry.rd.agent.ws.client.agent.KnowledgeBaseBindingParam> refs) {
+        if (refs == null || refs.isEmpty()) {
+            return null;
+        }
+        List<KnowledgeBaseBinding> result = new ArrayList<>();
+        for (var ref : refs) {
+            if (ref == null || StrUtil.isBlank(ref.getKbNum())) {
+                continue;
+            }
+            RetrievalMode mode = ref.getRetrievalMode() == null ? RetrievalMode.AUTO
+                    : RetrievalMode.valueOf(ref.getRetrievalMode());
+            result.add(KnowledgeBaseBinding.builder()
+                    .kbNum(ref.getKbNum())
+                    .retrievalMode(mode)
+                    .topK(ref.getTopK())
+                    .minScore(ref.getMinScore())
+                    .build());
+        }
+        return result;
+    }
+
+    private List<KnowledgeBaseBinding> resolveKnowledgeBaseBindings(List<KnowledgeBaseBinding> refs, String workspaceNum) {
+        if (refs == null || refs.isEmpty()) {
+            return refs;
+        }
+        if (refs.size() > 10) {
+            throw new BusinessException(BizCode.INVALID_PARAM.getCode(), "单 Agent 最多绑定 10 个知识库");
+        }
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        List<KnowledgeBaseBinding> deduped = new ArrayList<>();
+        for (KnowledgeBaseBinding ref : refs) {
+            if (ref == null || StrUtil.isBlank(ref.getKbNum())) {
+                continue;
+            }
+            if (!seen.add(ref.getKbNum())) {
+                continue;
+            }
+            var detail = knowledgeBaseQueryService.detail(ref.getKbNum(), workspaceNum);
+            if (detail == null || !workspaceNum.equals(detail.getWorkspaceNum())) {
+                throw new BusinessException(BizCode.KB_NOT_FOUND.getCode(), "挂载的知识库不存在或不属于当前空间");
+            }
+            if (ref.getRetrievalMode() == null) {
+                ref.setRetrievalMode(RetrievalMode.AUTO);
+            }
+            if (ref.getTopK() == null && detail.getRetrievalDefaults() != null) {
+                ref.setTopK(detail.getRetrievalDefaults().getTopK());
+            }
+            if (ref.getMinScore() == null && detail.getRetrievalDefaults() != null) {
+                ref.setMinScore(detail.getRetrievalDefaults().getMinScore());
+            }
+            deduped.add(ref);
+        }
+        return deduped;
     }
 
     /**
