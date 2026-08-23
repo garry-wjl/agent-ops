@@ -172,7 +172,7 @@ public class AgentDTO {
             private String versionNum;
         }
 
-        /** 工具版本引用。 */
+        /** 工具版本引用（可绑具体端点 / MCP 工具）。 */
         @Data
         @Builder
         @AllArgsConstructor
@@ -180,6 +180,11 @@ public class AgentDTO {
         public static class ToolRef {
             private String toolNum;
             private String versionNum;
+            /** FC_ENDPOINT / MCP_TOOL；空=整组挂载。 */
+            private String itemKind;
+            private String method;
+            private String path;
+            private String mcpToolName;
         }
 
         /**

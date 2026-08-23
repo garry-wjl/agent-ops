@@ -44,6 +44,7 @@ const Prompt = lazy(() => import("@/pages/Prompts/list"));
 const SandboxList = lazy(() => import("@/pages/Sandboxes/list"));
 const ToolList = lazy(() => import("@/pages/Tools/list"));
 const ToolEditor = lazy(() => import("@/pages/Tools/editor"));
+const ToolDetail = lazy(() => import("@/pages/Tools/detail"));
 const ModelList = lazy(() => import("@/pages/Models/list"));
 const RoleList = lazy(() => import("@/pages/Roles/list"));
 const ErrorPage = lazy(() => import("@/pages/Error"));
@@ -162,6 +163,7 @@ export default function AppRoutes() {
         <Route path="/tool" element={<Navigate to="/tool/manage" replace />} />
         <Route path="/tool/manage" element={<ToolList />} />
         <Route path="/tool/manage/editor/:num" element={<ToolEditor />} />
+        <Route path="/tool/manage/detail/:num" element={<ToolDetail />} />
 
         {/* 模型管理 */}
         <Route

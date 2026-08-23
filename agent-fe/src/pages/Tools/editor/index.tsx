@@ -53,6 +53,7 @@ import {
   validateMcpConfig,
   validateOpenApiSpec,
   validatePathParams,
+  syncPathParamsFromPath,
   validateProxyHeaders,
 } from "../constants";
 import { emptyDraft, type ToolDraft } from "./types";
@@ -194,7 +195,10 @@ export default function ToolEditorPage() {
     return {
       ...base,
       baseUrl: draft.baseUrl.trim(),
-      endpoints: draft.endpoints,
+      endpoints: draft.endpoints.map((ep) => ({
+        ...ep,
+        pathParams: syncPathParamsFromPath(ep.path, ep.pathParams ?? []),
+      })),
     };
   };
 
@@ -230,7 +234,8 @@ export default function ToolEditorPage() {
         const ep = draft.endpoints[i];
         if (!ep.path.startsWith("/")) return `端点 #${i + 1} Path 需以 / 开头`;
         if (!ep.description.trim()) return `端点 #${i + 1} 缺少描述`;
-        const pc = validatePathParams(ep.path, ep.pathParams ?? []);
+        const synced = syncPathParamsFromPath(ep.path, ep.pathParams ?? []);
+        const pc = validatePathParams(ep.path, synced);
         if (!pc.ok) return `端点 #${i + 1}：${pc.error}`;
       }
     }

@@ -6,8 +6,11 @@ import ink.garry.rd.agent.ws.client.tool.dto.ApiEndpointDTO;
 import ink.garry.rd.agent.ws.client.tool.dto.ApiHeaderDTO;
 import ink.garry.rd.agent.ws.client.tool.dto.ApiParamDTO;
 import ink.garry.rd.agent.ws.client.tool.dto.EndpointMetaDTO;
+import ink.garry.rd.agent.ws.client.tool.dto.FcTestConnectionParamDTO;
+import ink.garry.rd.agent.ws.client.tool.dto.FcTestConnectionResultDTO;
 import ink.garry.rd.agent.ws.client.tool.dto.McpTestConnectionParamDTO;
 import ink.garry.rd.agent.ws.client.tool.dto.McpTestConnectionResultDTO;
+import ink.garry.rd.agent.ws.client.tool.dto.MountableToolItemDTO;
 import ink.garry.rd.agent.ws.client.tool.dto.ProxyHeaderDTO;
 import ink.garry.rd.agent.ws.client.tool.dto.ToolCreateParamDTO;
 import ink.garry.rd.agent.ws.client.tool.dto.ToolDTO;
@@ -19,8 +22,12 @@ import ink.garry.rd.agent.ws.client.tool.vo.ApiEndpointVo;
 import ink.garry.rd.agent.ws.client.tool.vo.ApiHeaderVo;
 import ink.garry.rd.agent.ws.client.tool.vo.ApiParamVo;
 import ink.garry.rd.agent.ws.client.tool.vo.EndpointMetaVo;
+import ink.garry.rd.agent.ws.client.tool.vo.FcTestConnectionParam;
+import ink.garry.rd.agent.ws.client.tool.vo.FcTestConnectionResult;
+import ink.garry.rd.agent.ws.client.tool.vo.McpRemoteToolInfo;
 import ink.garry.rd.agent.ws.client.tool.vo.McpTestConnectionParam;
 import ink.garry.rd.agent.ws.client.tool.vo.McpTestConnectionResult;
+import ink.garry.rd.agent.ws.client.tool.vo.MountableToolItemVo;
 import ink.garry.rd.agent.ws.client.tool.vo.ProxyHeaderVo;
 import ink.garry.rd.agent.ws.client.tool.vo.ToolCreateParam;
 import ink.garry.rd.agent.ws.client.tool.vo.ToolDetailVo;
@@ -163,6 +170,28 @@ public class ToolVoAssembler {
         return dtos.stream().map(this::toToolVo).collect(Collectors.toList());
     }
 
+    /** 具体可挂载项 DTO → Vo。 */
+    public List<MountableToolItemVo> toMountableToolItemVoList(List<MountableToolItemDTO> dtos) {
+        if (CollUtil.isEmpty(dtos)) {
+            return List.of();
+        }
+        return dtos.stream().map(d -> {
+            MountableToolItemVo vo = new MountableToolItemVo();
+            vo.setBindingKey(d.getBindingKey());
+            vo.setToolNum(d.getToolNum());
+            vo.setToolName(d.getToolName());
+            vo.setToolType(d.getToolType());
+            vo.setItemKind(d.getItemKind());
+            vo.setName(d.getName());
+            vo.setTitle(d.getTitle());
+            vo.setDescription(d.getDescription());
+            vo.setMethod(d.getMethod());
+            vo.setPath(d.getPath());
+            vo.setMcpToolName(d.getMcpToolName());
+            return vo;
+        }).collect(Collectors.toList());
+    }
+
     /** 详情 DTO → Vo（嵌套工具快照）。 */
     public ToolDetailVo toToolDetailVO(ToolDetailDTO dto) {
         if (dto == null) {
@@ -217,6 +246,9 @@ public class ToolVoAssembler {
                         .queryParams(toParamDTOs(v.getQueryParams()))
                         .pathParams(toParamDTOs(v.getPathParams()))
                         .headers(toHeaderDTOs(v.getHeaders()))
+                        .requestBodySchema(v.getRequestBodySchema())
+                        .requestBodyRequired(v.getRequestBodyRequired())
+                        .responseBodySchema(v.getResponseBodySchema())
                         .build())
                 .collect(Collectors.toList());
     }
@@ -230,6 +262,7 @@ public class ToolVoAssembler {
                         .name(v.getName())
                         .type(v.getType())
                         .defaultValue(v.getDefaultValue())
+                        .required(v.getRequired())
                         .description(v.getDescription())
                         .build())
                 .collect(Collectors.toList());
@@ -271,6 +304,50 @@ public class ToolVoAssembler {
         vo.setMessage(dto.getMessage());
         vo.setErrorType(dto.getErrorType());
         vo.setStackTrace(dto.getStackTrace());
+        if (CollUtil.isNotEmpty(dto.getTools())) {
+            vo.setTools(dto.getTools().stream().map(t -> {
+                McpRemoteToolInfo info = new McpRemoteToolInfo();
+                info.setName(t.getName());
+                info.setTitle(t.getTitle());
+                info.setDescription(t.getDescription());
+                info.setInputSchema(t.getInputSchema());
+                info.setOutputSchema(t.getOutputSchema());
+                return info;
+            }).collect(Collectors.toList()));
+        }
+        return vo;
+    }
+
+    /** FunctionCall 试连入参 Vo → DTO。 */
+    public FcTestConnectionParamDTO toFcTestParamDTO(FcTestConnectionParam param) {
+        if (param == null) {
+            return null;
+        }
+        FcTestConnectionParamDTO dto = new FcTestConnectionParamDTO();
+        dto.setBaseUrl(param.getBaseUrl());
+        dto.setOpenApiSpec(param.getOpenApiSpec());
+        dto.setBody(param.getBody());
+        if (param.getEndpoint() != null) {
+            List<ApiEndpointDTO> one = toEndpointDTOs(List.of(param.getEndpoint()));
+            dto.setEndpoint(CollUtil.isEmpty(one) ? null : one.get(0));
+        }
+        return dto;
+    }
+
+    /** FunctionCall 试连结果 DTO → Vo。 */
+    public FcTestConnectionResult toFcTestResultVo(FcTestConnectionResultDTO dto) {
+        if (dto == null) {
+            return null;
+        }
+        FcTestConnectionResult vo = new FcTestConnectionResult();
+        vo.setSuccess(dto.isSuccess());
+        vo.setMessage(dto.getMessage());
+        vo.setHttpStatus(dto.getHttpStatus());
+        vo.setLatencyMs(dto.getLatencyMs());
+        vo.setRequestUrl(dto.getRequestUrl());
+        vo.setRequestMethod(dto.getRequestMethod());
+        vo.setResponsePreview(dto.getResponsePreview());
+        vo.setResponseSample(dto.getResponseSample());
         return vo;
     }
 
@@ -303,6 +380,9 @@ public class ToolVoAssembler {
             vo.setQueryParams(toParamVos(d.getQueryParams()));
             vo.setPathParams(toParamVos(d.getPathParams()));
             vo.setHeaders(toHeaderVos(d.getHeaders()));
+            vo.setRequestBodySchema(d.getRequestBodySchema());
+            vo.setRequestBodyRequired(d.getRequestBodyRequired());
+            vo.setResponseBodySchema(d.getResponseBodySchema());
             return vo;
         }).collect(Collectors.toList());
     }
@@ -316,6 +396,7 @@ public class ToolVoAssembler {
             vo.setName(d.getName());
             vo.setType(d.getType());
             vo.setDefaultValue(d.getDefaultValue());
+            vo.setRequired(d.getRequired());
             vo.setDescription(d.getDescription());
             return vo;
         }).collect(Collectors.toList());

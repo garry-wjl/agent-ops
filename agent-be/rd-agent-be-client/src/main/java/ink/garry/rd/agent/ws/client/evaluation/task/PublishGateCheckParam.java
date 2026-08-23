@@ -8,6 +8,6 @@ import lombok.Data;
 public class PublishGateCheckParam {
     @NotBlank
     private String agentNum;
-    @NotBlank
+    /** 当前在线版本号；首次发布可空（门禁关闭或首次发布会放行）。 */
     private String agentVersionNum;
 }

@@ -1,6 +1,7 @@
 package ink.garry.rd.agent.ws.application.evaluation.task;
 
 import cn.hutool.core.lang.Assert;
+import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import ink.garry.rd.agent.ws.client.common.BizCode;
 import ink.garry.rd.agent.ws.client.evaluation.task.PublishGateCheckVO;
@@ -16,6 +17,9 @@ import java.util.List;
 
 /**
  * Agent 发布门禁：要求存在 FINISHED 评测任务且通过率达标。
+ * <p>
+ * 草稿发布前尚无新版本号；门禁按「当前在线版本」的评测结果校验。门禁关闭时直接放行，
+ * 不要求 agentVersionNum（避免 draft.versionNum 为空导致误拦）。
  */
 @Service
 public class EvalPublishGateService {
@@ -33,7 +37,7 @@ public class EvalPublishGateService {
      * 发布前校验；enabled=false 时 no-op。
      *
      * @param agentNum Agent 编号
-     * @param agentVersionNum Agent 版本编号
+     * @param agentVersionNum 用于门禁的 Agent 版本号（通常为当前在线版；首次发布可空）
      * @param workspaceNum 工作空间
      */
     public void checkAgentPublish(String agentNum, String agentVersionNum, String workspaceNum) {
@@ -55,13 +59,19 @@ public class EvalPublishGateService {
 
     private PublishGateCheckVO evaluate(String agentNum, String agentVersionNum, String workspaceNum) {
         Assert.notBlank(agentNum, "agentNum 不能为空");
-        Assert.notBlank(agentVersionNum, "agentVersionNum 不能为空");
         PublishGateCheckVO vo = new PublishGateCheckVO();
         vo.setEnabled(enabled);
         vo.setRequiredPassRate(passRateThreshold);
         if (!enabled) {
             vo.setPassed(true);
             vo.setMessage("发布门禁未启用");
+            return vo;
+        }
+        // 首次发布尚无在线版本：无版本级评测可查，放行（门禁只约束「有在线版后的再发版」）
+        if (StrUtil.isBlank(agentVersionNum)) {
+            vo.setPassed(true);
+            vo.setFinishedTaskCount(0);
+            vo.setMessage("首次发布，跳过版本级门禁");
             return vo;
         }
         List<EvalTaskEntity> tasks = evalTaskMapper.selectList(Wrappers.<EvalTaskEntity>lambdaQuery()

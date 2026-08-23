@@ -12,6 +12,9 @@
 import { get, post } from "../request";
 import type {
   AgentBriefVO,
+  FcTestConnectionParam,
+  FcTestConnectionResult,
+  MountableToolItem,
   McpTestConnectionParam,
   McpTestConnectionResult,
   PageVO,
@@ -68,6 +71,10 @@ export const toolApi = {
   /** Agent Step4 可挂载工具列表（仅 status=PUBLISHED） */
   mountable: () => get<ToolVO[]>("/api/v1/tool/query/mountable"),
 
+  /** Agent 可挂载具体工具项（FC 端点 / MCP tool 展平） */
+  mountableItems: () =>
+    get<MountableToolItem[]>("/api/v1/tool/query/mountableItems"),
+
   /** 复用数（实时统计挂载该工具的已发布 Agent 数） */
   reuseCount: (num: string) =>
     get<number>("/api/v1/tool/query/reuseCount", { num }),
@@ -90,4 +97,8 @@ export const toolApi = {
   /** 测试 MCP 远程连接（不持久化数据）。 */
   testMcpConnection: (param: McpTestConnectionParam) =>
     post<McpTestConnectionResult>("/api/v1/tool/command/testMcpConnection", param),
+
+  /** FunctionCall 一键试连（按默认值发真实 HTTP，不持久化）。 */
+  testFunctionCall: (param: FcTestConnectionParam) =>
+    post<FcTestConnectionResult>("/api/v1/tool/command/testFunctionCall", param),
 };

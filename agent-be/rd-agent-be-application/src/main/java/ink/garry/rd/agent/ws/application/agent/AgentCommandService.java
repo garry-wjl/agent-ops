@@ -325,7 +325,8 @@ public class AgentCommandService {
             ConfigSnapshot snapshot = normalizeSnapshot(draft.getConfigSnapshot(), resolveWorkspaceNum());
             draft.setConfigSnapshot(snapshot);
 
-            evalPublishGateService.checkAgentPublish(agentNum, draft.getVersionNum(), resolveWorkspaceNum());
+            // 门禁按「当前在线版本」评测结果校验；草稿尚无 versionNum，不可传 draft.getVersionNum()
+            evalPublishGateService.checkAgentPublish(agentNum, currentVersionNum, resolveWorkspaceNum());
 
             // 2. 翻转 current 标记（发布事务内的写操作，直接调网关）
             agentVersionGateway.switchCurrent(oldId, draft.getId());
@@ -603,7 +604,18 @@ public class AgentCommandService {
             snapshot.setSkillNums(snapshot.getSkillRefs().stream().map(SkillRef::getSkillNum).toList());
         }
         if ((snapshot.getToolNums() == null || snapshot.getToolNums().isEmpty()) && snapshot.getToolRefs() != null) {
-            snapshot.setToolNums(snapshot.getToolRefs().stream().map(ToolRef::getToolNum).toList());
+            snapshot.setToolNums(snapshot.getToolRefs().stream()
+                    .map(ToolRef::getToolNum)
+                    .filter(StrUtil::isNotBlank)
+                    .distinct()
+                    .toList());
+        } else if (snapshot.getToolRefs() != null && !snapshot.getToolRefs().isEmpty()) {
+            // 具体绑定场景：toolNums 始终与父资产对齐（供复用数 / 旧字段兼容）
+            snapshot.setToolNums(snapshot.getToolRefs().stream()
+                    .map(ToolRef::getToolNum)
+                    .filter(StrUtil::isNotBlank)
+                    .distinct()
+                    .toList());
         }
         validateMountedToolsPublished(snapshot.getToolNums());
         return snapshot;
@@ -683,6 +695,10 @@ public class AgentCommandService {
             result.add(ToolRef.builder()
                     .toolNum(ref.getToolNum())
                     .versionNum(ref.getVersionNum())
+                    .itemKind(ref.getItemKind())
+                    .method(ref.getMethod())
+                    .path(ref.getPath())
+                    .mcpToolName(ref.getMcpToolName())
                     .build());
         }
         return result;
@@ -768,7 +784,7 @@ public class AgentCommandService {
     }
 
     /**
-     * Tool 引用去重：按 {@code toolNum + versionNum} 维度保留首次出现项（方案 §6.3.1 要求 refs 不重复）。
+     * Tool 引用去重：按 {@link ToolRef#bindingKey()} 保留首次出现项。
      *
      * @param refs 待去重的 Tool 引用列表（可空）
      * @return 去重后的列表；入参为空时原样返回
@@ -783,7 +799,10 @@ public class AgentCommandService {
             if (ref == null || StrUtil.isBlank(ref.getToolNum())) {
                 continue;
             }
-            String key = ref.getToolNum() + ':' + (ref.getVersionNum() == null ? "" : ref.getVersionNum());
+            String key = ref.bindingKey();
+            if (StrUtil.isBlank(key)) {
+                continue;
+            }
             if (seen.add(key)) {
                 deduped.add(ref);
             }

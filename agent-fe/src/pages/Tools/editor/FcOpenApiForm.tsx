@@ -15,11 +15,15 @@ import {
   CodeOutlined,
   CopyOutlined,
   ImportOutlined,
+  LinkOutlined,
 } from "@ant-design/icons";
 import { validateOpenApiSpec } from "../constants";
 import type { ToolFormProps } from "./types";
+import FcTestConnectionModal, {
+  parseOpenApiEndpointOptions,
+} from "./FcTestConnectionModal";
 
-const { Text } = Typography;
+const { Text, Link } = Typography;
 
 const OPENAPI_SAMPLE = `{
   "openapi": "3.0.1",
@@ -36,6 +40,31 @@ const OPENAPI_SAMPLE = `{
       "get": {
         "summary": "查询用户列表",
         "description": "返回用户分页列表"
+      },
+      "post": {
+        "summary": "创建用户",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUser"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CreateUser": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "description": "用户名" },
+          "email": { "type": "string", "description": "邮箱" }
+        }
       }
     }
   }
@@ -49,6 +78,7 @@ export default function FcOpenApiForm({ draft, patch }: ToolFormProps) {
   const [urlOpen, setUrlOpen] = useState(false);
   const [url, setUrl] = useState("");
   const [importing, setImporting] = useState(false);
+  const [testOpen, setTestOpen] = useState(false);
 
   const handleCopy = async () => {
     try {
@@ -128,6 +158,18 @@ export default function FcOpenApiForm({ draft, patch }: ToolFormProps) {
             )}
           </Space>
           <Space size={8}>
+            <Link
+              onClick={() => {
+                if (!draft.openApiSpec.trim() || (validation && !validation.ok)) {
+                  message.warning("请先填写合法的 OpenAPI 文档");
+                  return;
+                }
+                setTestOpen(true);
+              }}
+              style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+            >
+              <LinkOutlined /> 一键测试
+            </Link>
             <ActionBtn
               icon={<CodeOutlined />}
               label="示例"
@@ -182,6 +224,13 @@ export default function FcOpenApiForm({ draft, patch }: ToolFormProps) {
           onPressEnter={handleImportUrl}
         />
       </Modal>
+
+      <FcTestConnectionModal
+        open={testOpen}
+        onClose={() => setTestOpen(false)}
+        openApiSpec={draft.openApiSpec}
+        options={parseOpenApiEndpointOptions(draft.openApiSpec)}
+      />
     </div>
   );
 }

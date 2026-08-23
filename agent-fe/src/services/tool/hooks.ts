@@ -21,6 +21,7 @@ export const toolQueryKeys = {
   page: () => ["tool", "page"] as const,
   detail: (num: string) => ["tool", "detail", num] as const,
   mountable: () => ["tool", "mountable"] as const,
+  mountableItems: () => ["tool", "mountableItems"] as const,
   reuseCount: (num: string) => ["tool", "reuseCount", num] as const,
   mountedAgents: (num: string) => ["tool", "mountedAgents", num] as const,
 };
@@ -50,6 +51,17 @@ export function useToolMountableQuery(enabled = true) {
   return useQuery({
     queryKey: [...toolQueryKeys.mountable(), ws],
     queryFn: () => toolApi.mountable(),
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
+/** 可挂载具体工具项（Agent 绑定 FC 端点 / MCP tool） */
+export function useToolMountableItemsQuery(enabled = true) {
+  const ws = useWorkspaceStore((s) => s.currentWorkspaceNum);
+  return useQuery({
+    queryKey: [...toolQueryKeys.mountableItems(), ws],
+    queryFn: () => toolApi.mountableItems(),
     enabled,
     staleTime: 30_000,
   });

@@ -453,6 +453,9 @@ public class ToolCommandService {
                         .queryParams(toParams(d.getQueryParams()))
                         .pathParams(toParams(d.getPathParams()))
                         .headers(toHeaders(d.getHeaders()))
+                        .requestBodySchema(d.getRequestBodySchema())
+                        .requestBodyRequired(d.getRequestBodyRequired())
+                        .responseBodySchema(d.getResponseBodySchema())
                         .build())
                 .collect(Collectors.toList());
     }
@@ -467,6 +470,7 @@ public class ToolCommandService {
                         .name(d.getName())
                         .type(resolveParamType(d.getType()))
                         .defaultValue(d.getDefaultValue())
+                        .required(d.getRequired())
                         .description(d.getDescription())
                         .build())
                 .collect(Collectors.toList());

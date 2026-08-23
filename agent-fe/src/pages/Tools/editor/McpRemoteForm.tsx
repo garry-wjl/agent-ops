@@ -5,16 +5,20 @@
  * - 配置类型 + MCP 配置 JSON 用线框圈为一个整体。
  * - JSON 编辑器右上角提供「示例」（按类型填入样例）「复制」操作。
  * - Monaco JSON 编辑器（配置同 DebugSender）；validateMcpConfig 实时红/绿提示。
+ * - 测试连接成功后自动展示 MCP 工具列表。
  * - 末尾嵌 ProxyHeadersEditor（代理开关；开启后才显示透传 Header 配置）。
  */
+import { useEffect, useState } from "react";
 import Editor from "@monaco-editor/react";
 import { Button, Segmented, Space, Tooltip, Typography, message } from "antd";
 import { ApiOutlined, CodeOutlined, CopyOutlined, GlobalOutlined } from "@ant-design/icons";
-import type { McpConfigType } from "@/types";
+import type { McpConfigType, McpRemoteToolInfo } from "@/types";
 import { validateMcpConfig } from "../constants";
 import type { ToolFormProps } from "./types";
 import ProxyHeadersEditor from "./ProxyHeadersEditor";
+import McpToolListSection from "./McpToolListSection";
 import { useMcpTestConnectionMutation } from "@/services/tool";
+import { normalizeMcpTools } from "./mcpTools";
 
 const { Text } = Typography;
 
@@ -47,6 +51,14 @@ export default function McpRemoteForm({ draft, patch }: ToolFormProps) {
     : null;
 
   const testMutation = useMcpTestConnectionMutation();
+  const [mcpTools, setMcpTools] = useState<McpRemoteToolInfo[]>([]);
+  const [toolsLoaded, setToolsLoaded] = useState(false);
+
+  // 配置变更后清空上次试连工具列表，避免展示过期数据
+  useEffect(() => {
+    setMcpTools([]);
+    setToolsLoaded(false);
+  }, [draft.mcpConfig, draft.mcpConfigType, draft.proxyEnabled, draft.proxyHeaders]);
 
   const handleTestConnection = async () => {
     if (!draft.mcpConfig.trim()) {
@@ -61,20 +73,37 @@ export default function McpRemoteForm({ draft, patch }: ToolFormProps) {
         proxyHeaders: draft.proxyHeaders.filter((h) => h.name.trim()),
       });
       if (result.success) {
+        const tools = normalizeMcpTools(result.tools);
+        setMcpTools(tools);
+        setToolsLoaded(true);
         message.success(result.message ?? "连接成功！");
       } else {
-        // 连接失败：展示详细的错误信息，含堆栈
+        setMcpTools([]);
+        setToolsLoaded(false);
         message.error(
           <div>
-            <div><strong>{result.errorType ?? "连接失败"}</strong></div>
-            <div style={{ fontSize: 12, whiteSpace: "pre-wrap", maxHeight: 300, overflow: "auto" }}>
+            <div>
+              <strong>{result.errorType ?? "连接失败"}</strong>
+            </div>
+            <div
+              style={{
+                fontSize: 12,
+                whiteSpace: "pre-wrap",
+                maxHeight: 300,
+                overflow: "auto",
+              }}
+            >
               {result.message}
               {result.stackTrace && (
                 <>
                   <br />
                   <details>
-                    <summary style={{ cursor: "pointer", color: "#1677ff" }}>查看详情</summary>
-                    <pre style={{ fontSize: 11, marginTop: 4 }}>{result.stackTrace}</pre>
+                    <summary style={{ cursor: "pointer", color: "#1677ff" }}>
+                      查看详情
+                    </summary>
+                    <pre style={{ fontSize: 11, marginTop: 4 }}>
+                      {result.stackTrace}
+                    </pre>
                   </details>
                 </>
               )}
@@ -84,12 +113,13 @@ export default function McpRemoteForm({ draft, patch }: ToolFormProps) {
         );
       }
     } catch (e: any) {
+      setMcpTools([]);
+      setToolsLoaded(false);
       message.error("测试连接请求失败: " + (e?.message ?? "未知错误"));
     }
   };
 
   const switchType = (t: McpConfigType) => {
-    // 切换配置类型时若编辑器为空则填入对应样例，降低录入门槛
     patch({
       mcpConfigType: t,
       mcpConfig: draft.mcpConfig.trim() ? draft.mcpConfig : sampleOf(t),
@@ -113,7 +143,6 @@ export default function McpRemoteForm({ draft, patch }: ToolFormProps) {
 
   return (
     <div>
-      {/* 配置类型 segmented 切换 */}
       <div style={{ marginBottom: 8 }}>
         <Segmented<McpConfigType>
           value={draft.mcpConfigType}
@@ -128,7 +157,6 @@ export default function McpRemoteForm({ draft, patch }: ToolFormProps) {
         {CONFIG_TYPE_DESC[draft.mcpConfigType]}
       </Text>
 
-      {/* MCP 配置 JSON 框（带标题栏：示例 + 复制） */}
       <div
         style={{
           border: "1px solid #E2E8F0",
@@ -137,7 +165,6 @@ export default function McpRemoteForm({ draft, patch }: ToolFormProps) {
           marginTop: 12,
         }}
       >
-        {/* 标题栏 */}
         <div
           style={{
             display: "flex",
@@ -199,7 +226,6 @@ export default function McpRemoteForm({ draft, patch }: ToolFormProps) {
             </Tooltip>
           </Space>
         </div>
-        {/* 编辑器 */}
         <Editor
           height="240px"
           defaultLanguage="json"
@@ -216,6 +242,12 @@ export default function McpRemoteForm({ draft, patch }: ToolFormProps) {
           }}
         />
       </div>
+
+      {toolsLoaded && (
+        <div style={{ marginTop: 24 }}>
+          <McpToolListSection tools={mcpTools} />
+        </div>
+      )}
 
       <div style={{ marginTop: 24 }}>
         <ProxyHeadersEditor

@@ -2,8 +2,11 @@ package ink.garry.rd.agent.ws.adapter.tool;
 
 import ink.garry.rd.agent.ws.adapter.config.BaseController;
 import ink.garry.rd.agent.ws.adapter.tool.assembler.ToolVoAssembler;
+import ink.garry.rd.agent.ws.application.tool.FunctionCallTestService;
 import ink.garry.rd.agent.ws.application.tool.ToolCommandService;
 import ink.garry.rd.agent.ws.client.tool.dto.ToolCreateParamDTO;
+import ink.garry.rd.agent.ws.client.tool.vo.FcTestConnectionParam;
+import ink.garry.rd.agent.ws.client.tool.vo.FcTestConnectionResult;
 import ink.garry.rd.agent.ws.client.tool.vo.McpTestConnectionParam;
 import ink.garry.rd.agent.ws.client.tool.vo.McpTestConnectionResult;
 import ink.garry.rd.agent.ws.client.tool.vo.ToolCreateParam;
@@ -36,6 +39,8 @@ public class ToolCommandController extends BaseController {
 
     @Resource
     private ToolCommandService toolCommandService;
+    @Resource
+    private FunctionCallTestService functionCallTestService;
     @Resource
     private ToolVoAssembler assembler;
 
@@ -122,6 +127,16 @@ public class ToolCommandController extends BaseController {
         McpTestConnectionResult result = assembler.toMcpTestResultVo(
             toolCommandService.testConnection(assembler.toMcpTestParamDTO(param)));
         return ok(result);
+    }
+
+    /**
+     * FunctionCall 一键试连：按 Base URL + 端点（或 OpenAPI 原文）用默认值发真实 HTTP，判断网络连通性。
+     * 不持久化任何数据。
+     */
+    @PostMapping("/testFunctionCall")
+    public Result<FcTestConnectionResult> testFunctionCall(@RequestBody FcTestConnectionParam param) {
+        return ok(assembler.toFcTestResultVo(
+                functionCallTestService.test(assembler.toFcTestParamDTO(param))));
     }
 
     /**

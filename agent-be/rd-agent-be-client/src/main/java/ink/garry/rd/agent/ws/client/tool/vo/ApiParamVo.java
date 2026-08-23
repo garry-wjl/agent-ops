@@ -17,6 +17,9 @@ public class ApiParamVo {
     /** 默认值（可选，字符串形式）。 */
     private String defaultValue;
 
+    /** 是否必填（给 Agent Tool Schema required；可空）。 */
+    private Boolean required;
+
     /** 描述（≤200 字符）。 */
     private String description;
 }

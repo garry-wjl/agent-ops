@@ -27,4 +27,7 @@ public class McpTestConnectionResultDTO {
 
     /** 失败时的详细堆栈信息（限 1000 字符截断）。 */
     private String stackTrace;
+
+    /** 连通成功后 listTools 得到的工具列表（失败或未拉取时为空）。 */
+    private java.util.List<McpRemoteToolInfoDTO> tools;
 }

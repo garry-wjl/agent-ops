@@ -25,6 +25,12 @@ public class ApiParam {
     /** 默认值（可选）；字符串形式存储，运行时按 {@link #type} 反序列化。 */
     private String defaultValue;
 
+    /**
+     * 是否必填（给 LLM / Agent 的 parameters.required；path 占位参数恒为 true）。
+     * query 由录入或 OpenAPI {@code required} 决定；可空表示兼容旧数据。
+     */
+    private Boolean required;
+
     /** 描述（必填，≤200 字符；给 LLM 看的参数说明）。 */
     private String description;
 }

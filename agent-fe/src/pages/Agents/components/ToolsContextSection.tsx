@@ -21,15 +21,27 @@ import {
   Tooltip,
   Tag,
 } from 'antd';
-import { PlusOutlined, CloseOutlined } from '@ant-design/icons';
+import { PlusOutlined, CloseOutlined, DownOutlined, RightOutlined } from '@ant-design/icons';
 import type {
   LongTermStrategy,
   MemoryConfig,
+  MountableToolItem,
   ShortTermStrategy,
   SkillRefParam,
+  ToolRefParam,
 } from '@/types';
 import { useSkillBindableVersionsQuery } from '@/services/skill';
 import AssetPickerModal, { type AssetOption } from './AssetPickerModal';
+import ToolPickerModal, { type ToolGroupOption } from './ToolPickerModal';
+import {
+  groupMountableChildren,
+  isWholeGroupBindingKey,
+  normalizeToolRefs,
+  toolBindingKey,
+} from './toolBinding';
+
+export type { AssetOption };
+export { normalizeToolRefs, toolBindingKey };
 
 const COLOR = {
   border: '#E2E8F0',
@@ -54,7 +66,10 @@ export interface ToolsContextValue {
    * 元素为 {skillNum, versionNum}；versionNum 为空表示尚未定版（由行内下拉默认补最新在线版）。
    */
   skillRefs: SkillRefParam[];
+  /** 父资产编号汇总（兼容旧字段；由 toolRefs 派生） */
   toolNums: string[];
+  /** 具体工具绑定（FC 端点 / MCP tool） */
+  toolRefs: ToolRefParam[];
   /** 沙箱单选引用，可空 */
   sandboxRef?: string;
   memoryConfig: MemoryConfig;
@@ -67,7 +82,17 @@ export interface ToolsContextSectionProps {
   onChange: (next: ToolsContextValue) => void;
   /** 候选资产（已按可用状态筛选：Skill 已发布 / 工具已发布 / 沙箱在线） */
   skillOptions: AssetOption[];
+  /**
+   * 已选列表展示用（整组 + 具体项扁平选项）。
+   * 选择弹窗改用 toolGroups + mountableItems 树形勾选。
+   */
   toolOptions: AssetOption[];
+  /** 工具组（树形选择器父节点） */
+  toolGroups: ToolGroupOption[];
+  /** bindingKey → ToolRef 反查表 */
+  toolRefByKey: Record<string, ToolRefParam>;
+  /** 展平可挂载项：选择器子节点 + 整组行展开 */
+  mountableItems?: MountableToolItem[];
   sandboxOptions: AssetOption[];
 }
 
@@ -76,7 +101,7 @@ const TAB_DESC: Record<ContextTabKey, string> = {
   skills:
     '内置查询 AgentRun 平台管理的 Skills，按需下载调用。仅可挂载「已发布」Skill。',
   tools:
-    '挂载工具管理中「已发布」的工具（含 MCP / FunctionCall），拓展 Agent 的外部能力。',
+    '按工具组展开勾选：勾选组=整组挂载；只勾组内若干工具=具体工具挂载。列表会标注所属 FunctionCall / MCP 组。',
   sandbox:
     '关联沙箱管理中「在线」的代码沙箱（单选），让 Agent 具备代码执行类能力。',
   kb: '知识库可提升回复准确性，模块即将上线。',
@@ -93,6 +118,9 @@ export default function ToolsContextSection({
   onChange,
   skillOptions,
   toolOptions,
+  toolGroups,
+  toolRefByKey,
+  mountableItems,
   sandboxOptions,
 }: ToolsContextSectionProps) {
   const [activeTab, setActiveTab] = useState<ContextTabKey>('skills');
@@ -102,10 +130,15 @@ export default function ToolsContextSection({
     (value.memoryConfig.shortTermStrategy ?? 'NONE') !== 'NONE' ||
     (value.memoryConfig.longTermStrategy ?? 'NONE') !== 'NONE';
 
+  const selectedToolKeys = useMemo(
+    () => (value.toolRefs ?? []).map(toolBindingKey),
+    [value.toolRefs],
+  );
+
   // 各 Tab 计数徽标
   const counts: Record<ContextTabKey, number> = {
     skills: value.skillNums.length,
-    tools: value.toolNums.length,
+    tools: selectedToolKeys.length,
     sandbox: value.sandboxRef ? 1 : 0,
     kb: 0,
     memory: memoryEnabled ? 1 : 0,
@@ -165,7 +198,7 @@ export default function ToolsContextSection({
     });
   };
 
-  // 选择器配置（按当前 Tab）
+  // 选择器配置（按当前 Tab；工具走独立树形弹窗）
   const pickerConfig = useMemo(() => {
     switch (activeTab) {
       case 'skills':
@@ -176,15 +209,6 @@ export default function ToolsContextSection({
           multiple: true,
           emptyGuide: '暂无已发布 Skill，请先到「Skill 管理」新建并发布',
           emptyTo: '/skill/manage',
-        };
-      case 'tools':
-        return {
-          title: '选择工具',
-          options: toolOptions,
-          value: value.toolNums,
-          multiple: true,
-          emptyGuide: '暂无已发布工具，请先到「工具管理」新建并发布',
-          emptyTo: '/tool/manage',
         };
       case 'sandbox':
         return {
@@ -198,12 +222,29 @@ export default function ToolsContextSection({
       default:
         return null;
     }
-  }, [activeTab, skillOptions, toolOptions, sandboxOptions, value]);
+  }, [activeTab, skillOptions, sandboxOptions, value]);
+
+  const patchToolKeys = (keys: string[]) => {
+    const refs: ToolRefParam[] = [];
+    for (const key of keys) {
+      const ref = toolRefByKey[key];
+      if (ref) refs.push(ref);
+    }
+    const normalized = normalizeToolRefs(refs);
+    const toolNums = Array.from(
+      new Set(normalized.map((r) => r.toolNum).filter(Boolean)),
+    );
+    patch({ toolRefs: normalized, toolNums });
+  };
 
   const handlePickerOk = (nums: string[]) => {
     if (activeTab === 'skills') patchSkills(nums);
-    else if (activeTab === 'tools') patch({ toolNums: nums });
     else if (activeTab === 'sandbox') patch({ sandboxRef: nums[0] });
+    setPickerOpen(false);
+  };
+
+  const handleToolPickerOk = (keys: string[]) => {
+    patchToolKeys(keys);
     setPickerOpen(false);
   };
 
@@ -314,12 +355,13 @@ export default function ToolsContextSection({
           />
         )}
         {activeTab === 'tools' && (
-          <SelectedList
+          <ToolSelectedList
             options={toolOptions}
-            value={value.toolNums}
+            value={selectedToolKeys}
+            mountableItems={mountableItems}
             desc={TAB_DESC.tools}
-            onRemove={(num) =>
-              patch({ toolNums: value.toolNums.filter((n) => n !== num) })
+            onRemove={(key) =>
+              patchToolKeys(selectedToolKeys.filter((k) => k !== key))
             }
           />
         )}
@@ -343,7 +385,19 @@ export default function ToolsContextSection({
         )}
       </div>
 
-      {pickerConfig && (
+      {activeTab === 'tools' && pickerOpen && (
+        <ToolPickerModal
+          open={pickerOpen}
+          groups={toolGroups}
+          items={mountableItems ?? []}
+          value={selectedToolKeys}
+          emptyGuide="暂无已发布工具，请先到「工具管理」新建并发布"
+          emptyTo="/tool/manage"
+          onOk={handleToolPickerOk}
+          onCancel={() => setPickerOpen(false)}
+        />
+      )}
+      {pickerConfig && activeTab !== 'tools' && (
         <AssetPickerModal
           open={pickerOpen}
           title={pickerConfig.title}
@@ -381,6 +435,197 @@ function CountBadge({ count }: { count: number }) {
     >
       {count}
     </span>
+  );
+}
+
+/**
+ * 工具已选列表。整组行可展开查看组内具体 FC 端点 / MCP 工具。
+ */
+function ToolSelectedList({
+  options,
+  value,
+  mountableItems,
+  desc,
+  onRemove,
+}: {
+  options: AssetOption[];
+  value: string[];
+  mountableItems?: MountableToolItem[];
+  desc: string;
+  onRemove: (num: string) => void;
+}) {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
+  if (value.length === 0) {
+    return (
+      <Empty
+        image={Empty.PRESENTED_IMAGE_SIMPLE}
+        description={<span style={{ color: COLOR.textMuted }}>{desc}</span>}
+      />
+    );
+  }
+  const byNum = new Map(options.map((o) => [o.num, o]));
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {value.map((num) => {
+        const opt = byNum.get(num);
+        const invalid = !opt;
+        const wholeGroup = isWholeGroupBindingKey(num);
+        const children = wholeGroup
+          ? groupMountableChildren(mountableItems, num)
+          : [];
+        const open = Boolean(expanded[num]);
+        return (
+          <div
+            key={num}
+            style={{
+              border: `1px solid ${
+                invalid ? COLOR.invalidBorder : COLOR.border
+              }`,
+              background: invalid ? COLOR.invalidBg : '#fff',
+              borderRadius: 8,
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '10px 12px',
+              }}
+            >
+              {wholeGroup && (
+                <button
+                  type="button"
+                  aria-label={open ? '收起工具列表' : '展开工具列表'}
+                  onClick={() =>
+                    setExpanded((prev) => ({ ...prev, [num]: !prev[num] }))
+                  }
+                  style={{
+                    border: 'none',
+                    background: 'transparent',
+                    padding: 0,
+                    cursor: 'pointer',
+                    color: COLOR.textMuted,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                  }}
+                >
+                  {open ? (
+                    <DownOutlined style={{ fontSize: 11 }} />
+                  ) : (
+                    <RightOutlined style={{ fontSize: 11 }} />
+                  )}
+                </button>
+              )}
+              <div
+                style={{ flex: 1, minWidth: 0, cursor: wholeGroup ? 'pointer' : 'default' }}
+                onClick={() => {
+                  if (!wholeGroup) return;
+                  setExpanded((prev) => ({ ...prev, [num]: !prev[num] }));
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 500,
+                    color: invalid ? COLOR.invalidText : COLOR.textPrimary,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {opt?.name ?? num}
+                  {wholeGroup && (
+                    <Tag color="blue" style={{ marginLeft: 8, fontSize: 12 }}>
+                      整组
+                      {children.length > 0 ? ` · ${children.length}` : ''}
+                    </Tag>
+                  )}
+                  {!wholeGroup && (
+                    <Tag color="green" style={{ marginLeft: 8, fontSize: 12 }}>
+                      具体工具
+                    </Tag>
+                  )}
+                  {invalid && (
+                    <Tag color="error" style={{ marginLeft: 8, fontSize: 12 }}>
+                      已失效，请重选
+                    </Tag>
+                  )}
+                </div>
+                {opt?.meta && (
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: COLOR.textMuted,
+                      marginTop: 2,
+                    }}
+                  >
+                    {opt.meta}
+                  </div>
+                )}
+              </div>
+              <CloseOutlined
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemove(num);
+                }}
+                style={{
+                  color: COLOR.textMuted,
+                  cursor: 'pointer',
+                  fontSize: 13,
+                }}
+              />
+            </div>
+            {wholeGroup && open && (
+              <div
+                style={{
+                  borderTop: `1px solid ${COLOR.border}`,
+                  background: '#F8FAFC',
+                  padding: '8px 12px 10px 36px',
+                }}
+              >
+                {children.length === 0 ? (
+                  <div style={{ fontSize: 12, color: COLOR.textMuted }}>
+                    暂无组内工具清单（MCP 需能拉到远端工具列表；FC 需已配置端点）
+                  </div>
+                ) : (
+                  <div
+                    style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+                  >
+                    {children.map((it) => (
+                      <div key={it.bindingKey} style={{ minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontSize: 13,
+                            color: COLOR.textPrimary,
+                            fontWeight: 500,
+                          }}
+                        >
+                          {it.name}
+                        </div>
+                        {(it.description || it.title) && (
+                          <div
+                            style={{
+                              fontSize: 12,
+                              color: COLOR.textMuted,
+                              marginTop: 1,
+                            }}
+                          >
+                            {it.description || it.title}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

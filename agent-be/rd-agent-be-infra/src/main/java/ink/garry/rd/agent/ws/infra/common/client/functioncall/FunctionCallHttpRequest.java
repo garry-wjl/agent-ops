@@ -14,11 +14,14 @@ import java.util.Map;
  * @param headers        端点配置的请求头(字面值,已按默认值兜底;优先级高于透传头)
  * @param inboundHeaders 入站请求透传头(在请求线程抓取后随工具链传入;执行方按黑名单过滤后注入,
  *                       端点头覆盖之);可空
+ * @param body           JSON 请求体文本(可空;非空时以 {@code application/json} 发送,除非 headers
+ *                       已显式指定 Content-Type)
  */
 public record FunctionCallHttpRequest(
         String method,
         String url,
         Map<String, String> queryParams,
         Map<String, String> headers,
-        Map<String, String> inboundHeaders) {
+        Map<String, String> inboundHeaders,
+        String body) {
 }

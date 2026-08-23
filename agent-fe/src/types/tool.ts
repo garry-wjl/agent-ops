@@ -60,6 +60,11 @@ export interface ApiParam {
   type: ApiParamType;
   /** 默认值（字符串存储，运行时按 type 反序列化） */
   defaultValue?: string;
+  /**
+   * 是否必填（写入 Agent Tool Schema required）。
+   * path 占位参数恒为 true；query 由录入显式指定。
+   */
+  required?: boolean;
   /** 描述（≤200 字） */
   description?: string;
 }
@@ -78,7 +83,7 @@ export interface ApiHeader {
 export interface ApiEndpoint {
   /** 请求方式 */
   method: HttpMethod;
-  /** 路径（以 / 开头，可含 {paramName} 占位，与 pathParams 一一对应） */
+  /** 路径（以 / 开头；可含 {paramName}，系统自动识别为必填 path 参数，无需单独配置表） */
   path: string;
   /** 端点用途描述（≤200 字，给 LLM 看） */
   description: string;
@@ -88,6 +93,15 @@ export interface ApiEndpoint {
   pathParams?: ApiParam[];
   /** 请求头 */
   headers?: ApiHeader[];
+  /**
+   * 请求体完整 JSON Schema（对象）。
+   * 运行时 LLM 入参字段名为 body，序列化为 HTTP JSON body。
+   */
+  requestBodySchema?: Record<string, unknown>;
+  /** 请求体是否必填（对应 OpenAPI requestBody.required） */
+  requestBodyRequired?: boolean;
+  /** 响应体完整 JSON Schema（对象）；试连成功可一键填充 */
+  responseBodySchema?: Record<string, unknown>;
 }
 
 /** 发布时由后端解析 OpenAPI 得到的单端点摘要。 */
@@ -313,4 +327,43 @@ export interface McpTestConnectionResult {
   errorType?: string;
   /** 失败时的详细堆栈信息 */
   stackTrace?: string;
+  /** 连通成功后拉取的 MCP 工具列表 */
+  tools?: McpRemoteToolInfo[];
+}
+
+/** MCP 远程服务器工具摘要。 */
+export interface McpRemoteToolInfo {
+  name?: string;
+  title?: string;
+  description?: string;
+  /** 入参 JSON Schema */
+  inputSchema?: Record<string, unknown>;
+  /** 返回值 JSON Schema */
+  outputSchema?: Record<string, unknown>;
+}
+
+// ============================================================
+// FunctionCall 一键试连
+// ============================================================
+
+/** FunctionCall 试连入参。 */
+export interface FcTestConnectionParam {
+  baseUrl?: string;
+  endpoint?: ApiEndpoint;
+  openApiSpec?: string;
+  /** 已按默认值展开的 body；可空，由后端按 schema 生成 */
+  body?: Record<string, unknown>;
+}
+
+/** FunctionCall 试连结果。 */
+export interface FcTestConnectionResult {
+  success: boolean;
+  message?: string;
+  httpStatus?: number;
+  latencyMs?: number;
+  requestUrl?: string;
+  requestMethod?: string;
+  responsePreview?: string;
+  /** HTTP 200 且可解析 JSON 时的完整样例，供一键填充返回参数 */
+  responseSample?: string;
 }

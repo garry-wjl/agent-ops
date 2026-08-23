@@ -2,6 +2,7 @@ package ink.garry.rd.agent.ws.application.agentrunner.tool;
 
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.StrUtil;
+import com.alibaba.fastjson2.JSON;
 import ink.garry.rd.agent.ws.client.tool.dto.ApiEndpointDTO;
 import ink.garry.rd.agent.ws.client.tool.dto.ApiHeaderDTO;
 import ink.garry.rd.agent.ws.client.tool.dto.ApiParamDTO;
@@ -32,6 +33,9 @@ import java.util.Map;
 @Slf4j
 public class FunctionCallTool implements AgentTool {
 
+    /** LLM 入参中请求体字段名(与 {@code ToolRunnerFactory.BODY_PARAM_NAME} 对齐)。 */
+    public static final String BODY_PARAM_NAME = "body";
+
     /** 函数名(LLM 兼容、工具内唯一)。 */
     private final String name;
 
@@ -44,7 +48,7 @@ public class FunctionCallTool implements AgentTool {
     /** API Base URL(已去尾部斜杠)。 */
     private final String baseUrl;
 
-    /** 绑定的端点(method / path / query / path / header 元数据)。 */
+    /** 绑定的端点(method / path / query / path / header / body schema 元数据)。 */
     private final ApiEndpointDTO endpoint;
 
     /** infra HTTP 执行器。 */
@@ -83,6 +87,11 @@ public class FunctionCallTool implements AgentTool {
         return name;
     }
 
+    /** 绑定端点（装配层过滤具体绑定时使用）。 */
+    public ApiEndpointDTO getEndpoint() {
+        return endpoint;
+    }
+
     @Override
     public String getDescription() {
         return description;
@@ -94,7 +103,7 @@ public class FunctionCallTool implements AgentTool {
     }
 
     /**
-     * 执行端点调用:读取 LLM 实参 → 替换 path 占位 → 拼装 query / headers → 委托 invoker 发起 HTTP →
+     * 执行端点调用:读取 LLM 实参 → 替换 path 占位 → 拼装 query / headers / body → 委托 invoker 发起 HTTP →
      * 渲染为 Agent 可读文本块。失败统一兜底为 error 块,不让异常击穿 reactor 流。
      */
     @Override
@@ -107,7 +116,8 @@ public class FunctionCallTool implements AgentTool {
                             url,
                             buildQuery(input),
                             buildHeaders(),
-                            inboundHeaders);
+                            inboundHeaders,
+                            buildBody(input));
                     FunctionCallHttpResponse response = invoker.invoke(request);
                     return render(response);
                 })
@@ -159,6 +169,27 @@ public class FunctionCallTool implements AgentTool {
             }
         }
         return headers;
+    }
+
+    /**
+     * 拼装 JSON 请求体:仅当端点声明了 {@code requestBodySchema} 时读取 LLM 的 {@code body} 入参并序列化;
+     * 必填缺失则抛错;未声明 schema 则不发 body。
+     */
+    private String buildBody(Map<String, Object> input) {
+        if (CollUtil.isEmpty(endpoint.getRequestBodySchema())) {
+            return null;
+        }
+        Object body = input == null ? null : input.get(BODY_PARAM_NAME);
+        if (body == null) {
+            if (Boolean.TRUE.equals(endpoint.getRequestBodyRequired())) {
+                throw new IllegalArgumentException("缺少请求体参数: " + BODY_PARAM_NAME);
+            }
+            return null;
+        }
+        if (body instanceof String s) {
+            return s;
+        }
+        return JSON.toJSONString(body);
     }
 
     /** 解析单个参数取值:LLM 实参优先,缺失回退默认值,均无返回 null。 */

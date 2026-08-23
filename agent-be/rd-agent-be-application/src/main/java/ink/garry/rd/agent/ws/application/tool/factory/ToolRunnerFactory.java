@@ -3,15 +3,18 @@ package ink.garry.rd.agent.ws.application.tool.factory;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.lang.Assert;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.crypto.digest.DigestUtil;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import ink.garry.rd.agent.ws.application.agentrunner.tool.FunctionCallTool;
 import ink.garry.rd.agent.ws.application.tool.ToolQueryService;
+import ink.garry.rd.agent.ws.application.tool.support.OpenApiSchemaResolver;
 import ink.garry.rd.agent.ws.client.common.BizCode;
 import ink.garry.rd.agent.ws.client.tool.dto.ApiEndpointDTO;
 import ink.garry.rd.agent.ws.client.tool.dto.ApiHeaderDTO;
 import ink.garry.rd.agent.ws.client.tool.dto.ApiParamDTO;
+import ink.garry.rd.agent.ws.client.tool.dto.McpRemoteToolInfoDTO;
 import ink.garry.rd.agent.ws.client.tool.dto.McpTestConnectionParamDTO;
 import ink.garry.rd.agent.ws.client.tool.dto.McpTestConnectionResultDTO;
 import ink.garry.rd.agent.ws.client.tool.dto.ProxyHeaderDTO;
@@ -76,6 +79,9 @@ public class ToolRunnerFactory {
             java.util.regex.Pattern.compile("[^A-Za-z0-9_-]+");
     /** function name 长度上限（OpenAI / 多数厂商约束 64）。 */
     private static final int FUNCTION_NAME_MAX_LENGTH = 64;
+
+    /** LLM 入参中请求体字段名：完整 JSON Schema 挂在此属性下，运行时序列化为 HTTP body。 */
+    static final String BODY_PARAM_NAME = "body";
 
     /** MCP 远程连接请求 / 初始化超时（秒）。 */
     private static final int MCP_TIMEOUT_SECONDS = 30;
@@ -325,9 +331,18 @@ public class ToolRunnerFactory {
     // helpers
     // ============================================================
 
-    /** 端点描述兜底工具描述。 */
+    /** 端点描述兜底工具描述；附带响应结构摘要供 Agent 识别返回字段。 */
     private String description(ToolDTO tool, ApiEndpointDTO endpoint) {
-        return StrUtil.isNotBlank(endpoint.getDescription()) ? endpoint.getDescription() : tool.getDescription();
+        String base = StrUtil.isNotBlank(endpoint.getDescription())
+                ? endpoint.getDescription() : tool.getDescription();
+        if (CollUtil.isNotEmpty(endpoint.getResponseBodySchema())) {
+            String schemaJson = JSON.toJSONString(endpoint.getResponseBodySchema());
+            if (schemaJson.length() > 1500) {
+                schemaJson = schemaJson.substring(0, 1500) + "...";
+            }
+            return StrUtil.nullToEmpty(base) + "\n返回结构(JSON Schema): " + schemaJson;
+        }
+        return base;
     }
 
     /** OpenAPI baseUrl：取 {@code servers[0].url}；缺失回退工具 baseUrl 字段，仍无则空串。 */
@@ -340,6 +355,16 @@ public class ToolRunnerFactory {
             }
         }
         return StrUtil.nullToEmpty(fallback);
+    }
+
+    /** 试连 / 外部解析：从 OpenAPI root 取 servers[0].url，缺省回退 fallback。 */
+    public String resolveOpenApiBaseUrl(JSONObject root, String fallback) {
+        return openApiBaseUrl(root, fallback);
+    }
+
+    /** 试连 / 外部解析：解析 paths 为端点 DTO（含 requestBodySchema）。 */
+    public List<ApiEndpointDTO> resolveOpenApiEndpoints(JSONObject root) {
+        return parseOpenApiEndpoints(root);
     }
 
     /**
@@ -397,6 +422,8 @@ public class ToolRunnerFactory {
                         .queryParams(query.isEmpty() ? null : query)
                         .pathParams(pathParams.isEmpty() ? null : pathParams)
                         .headers(headers.isEmpty() ? null : headers)
+                        .requestBodySchema(OpenApiSchemaResolver.extractRequestBodySchema(operation, root))
+                        .requestBodyRequired(OpenApiSchemaResolver.extractRequestBodyRequired(operation))
                         .build());
             }
         }
@@ -480,6 +507,7 @@ public class ToolRunnerFactory {
                         .name(name)
                         .type(openApiTypeToParamType(schema == null ? null : schema.getString("type")))
                         .defaultValue(defaultStr)
+                        .required(param.containsKey("required") ? param.getBoolean("required") : null)
                         .description(description)
                         .build());
             } else if ("path".equalsIgnoreCase(in)) {
@@ -487,6 +515,8 @@ public class ToolRunnerFactory {
                         .name(name)
                         .type(openApiTypeToParamType(schema == null ? null : schema.getString("type")))
                         .defaultValue(defaultStr)
+                        // OpenAPI：path 参数恒必填
+                        .required(true)
                         .description(description)
                         .build());
             } else if ("header".equalsIgnoreCase(in)) {
@@ -617,31 +647,29 @@ public class ToolRunnerFactory {
                         .build();
             }
 
-            // 3. 尝试初始化连接
+            // 3. 尝试初始化连接，成功后 listTools 带回工具清单
             McpTestConnectionResultDTO result = client.initialize()
-                    .then(Mono.fromCallable(() -> {
-                        // 初始化成功后再尝试 listTools 确认连通性
-                        return client.listTools()
-                                .flatMap(tools -> {
-                                    int count = tools != null ? tools.size() : 0;
-                                    String msg = "连接成功！" + (count > 0
-                                            ? "发现 " + count + " 个工具"
-                                            : "未发现任何工具");
-                                    return Mono.just(McpTestConnectionResultDTO.builder()
-                                            .success(true)
-                                            .message(msg)
-                                            .build());
-                                })
-                                .onErrorResume(e -> {
-                                    // listTools 失败但客户端已连接：视为基本连通
-                                    log.warn("[mcp-test-connection] listTools failed after init, treat as partial ok", e);
-                                    return Mono.just(McpTestConnectionResultDTO.builder()
-                                            .success(true)
-                                            .message("连接成功（但列出工具失败：" + e.getMessage() + "）")
-                                            .build());
-                                });
-                    }))
-                    .flatMap(m -> m)
+                    .then(Mono.defer(() -> client.listTools()
+                            .map(tools -> {
+                                List<McpRemoteToolInfoDTO> infos = toRemoteToolInfos(tools);
+                                String msg = "连接成功！" + (infos.isEmpty()
+                                        ? "未发现任何工具"
+                                        : "发现 " + infos.size() + " 个工具");
+                                return McpTestConnectionResultDTO.builder()
+                                        .success(true)
+                                        .message(msg)
+                                        .tools(infos)
+                                        .build();
+                            })
+                            .onErrorResume(e -> {
+                                // listTools 失败但客户端已连接：视为基本连通
+                                log.warn("[mcp-test-connection] listTools failed after init, treat as partial ok", e);
+                                return Mono.just(McpTestConnectionResultDTO.builder()
+                                        .success(true)
+                                        .message("连接成功（但列出工具失败：" + e.getMessage() + "）")
+                                        .tools(List.of())
+                                        .build());
+                            })))
                     .block(Duration.ofSeconds(MCP_TIMEOUT_SECONDS));
 
             return result != null ? result : McpTestConnectionResultDTO.builder()
@@ -678,6 +706,50 @@ public class ToolRunnerFactory {
         }
     }
 
+    /** listTools 结果 → 前端可展示的工具摘要列表（含入参 / 返回 schema）。 */
+    static List<McpRemoteToolInfoDTO> toRemoteToolInfos(List<io.modelcontextprotocol.spec.McpSchema.Tool> tools) {
+        if (CollUtil.isEmpty(tools)) {
+            return List.of();
+        }
+        List<McpRemoteToolInfoDTO> out = new ArrayList<>(tools.size());
+        for (io.modelcontextprotocol.spec.McpSchema.Tool tool : tools) {
+            if (tool == null) {
+                continue;
+            }
+            out.add(McpRemoteToolInfoDTO.builder()
+                    .name(tool.name())
+                    .title(tool.title())
+                    .description(tool.description())
+                    .inputSchema(toSchemaMap(tool.inputSchema()))
+                    .outputSchema(tool.outputSchema())
+                    .build());
+        }
+        return out;
+    }
+
+    /** MCP JsonSchema → 可序列化 Map（供前端展示参数结构）。 */
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> toSchemaMap(io.modelcontextprotocol.spec.McpSchema.JsonSchema schema) {
+        if (schema == null) {
+            return null;
+        }
+        try {
+            return (Map<String, Object>) JSON.parseObject(JSON.toJSONString(schema), Map.class);
+        } catch (Exception e) {
+            Map<String, Object> fallback = new LinkedHashMap<>();
+            if (StrUtil.isNotBlank(schema.type())) {
+                fallback.put("type", schema.type());
+            }
+            if (schema.properties() != null) {
+                fallback.put("properties", schema.properties());
+            }
+            if (schema.required() != null) {
+                fallback.put("required", schema.required());
+            }
+            return fallback.isEmpty() ? null : fallback;
+        }
+    }
+
     /** 根据异常类型判定错误分类。 */
     private static String determineErrorType(Throwable e) {
         String msg = e.getMessage();
@@ -710,8 +782,9 @@ public class ToolRunnerFactory {
 
     /**
      * 装配端点的 JSON Schema 参数对象（{@code {type:object, properties:{...}, required:[...]}}）。
-     * <p>path 参数恒为必填（URL 占位必须填充）；query 参数无默认值时必填。请求头不暴露给 LLM
-     * （属配置/鉴权语义，由运行时按默认值注入），不计入参数。
+     * <p>path 参数恒为必填（URL 占位必须填充）；query 参数按 {@link ApiParamDTO#getRequired()} 写入
+     * required（旧数据 required 为空时：无默认值则必填）。请求头不暴露给 LLM。若端点声明了
+     * {@link ApiEndpointDTO#getRequestBodySchema()}，则额外挂载 {@code body} 属性。
      */
     private Map<String, Object> buildParameters(ApiEndpointDTO endpoint) {
         Map<String, Object> properties = new LinkedHashMap<>();
@@ -726,9 +799,15 @@ public class ToolRunnerFactory {
         if (CollUtil.isNotEmpty(endpoint.getQueryParams())) {
             for (ApiParamDTO param : endpoint.getQueryParams()) {
                 properties.put(param.getName(), propertySchema(param));
-                if (StrUtil.isBlank(param.getDefaultValue())) {
+                if (isQueryRequired(param)) {
                     required.add(param.getName());
                 }
+            }
+        }
+        if (CollUtil.isNotEmpty(endpoint.getRequestBodySchema())) {
+            properties.put(BODY_PARAM_NAME, endpoint.getRequestBodySchema());
+            if (Boolean.TRUE.equals(endpoint.getRequestBodyRequired())) {
+                required.add(BODY_PARAM_NAME);
             }
         }
 
@@ -737,6 +816,14 @@ public class ToolRunnerFactory {
         parameters.put("properties", properties);
         parameters.put("required", required);
         return parameters;
+    }
+
+    /** query 必填：显式 required=true；旧数据 required 为空时无默认值则必填。 */
+    private static boolean isQueryRequired(ApiParamDTO param) {
+        if (param.getRequired() != null) {
+            return Boolean.TRUE.equals(param.getRequired());
+        }
+        return StrUtil.isBlank(param.getDefaultValue());
     }
 
     /** 单个参数 → JSON Schema 属性节点（type + description，带默认值时附 default）。 */
@@ -766,23 +853,58 @@ public class ToolRunnerFactory {
     }
 
     /**
-     * 生成端点对应的合法 function name：以「工具名（非 ASCII 时退化为工具编号）+ 方法 + 路径」为基底，
-     * 替换非法字符为下划线、折叠重复下划线、截断至 64 字符，保证同一工具内端点间可区分且符合厂商约束。
+     * 生成端点对应的合法 function name。
+     * <p>
+     * 基底为「工具名（非 ASCII 时退化为工具编号）+ 方法 + 路径」；替换非法字符、折叠下划线。
+     * 长度 ≤64 时原样返回；超长时<strong>不得</strong>简单截断前缀——否则长工具名会吃掉
+     * method/path 差异，多个端点/多个工具撞名后 {@code Toolkit} 后注册覆盖先注册，
+     * Agent 只能看到最后一个工具。超长时改为 {@code {toolNum}_{method}_{md5前8位}}，保证可区分。
      */
-    private String functionName(ToolDTO tool, ApiEndpointDTO endpoint) {
+    String functionName(ToolDTO tool, ApiEndpointDTO endpoint) {
         String base = ILLEGAL_NAME_CHARS.matcher(StrUtil.nullToEmpty(tool.getName())).replaceAll("_");
         if (StrUtil.isBlank(StrUtil.strip(base, "_"))) {
             base = tool.getNum();
         }
         String method = StrUtil.nullToEmpty(endpoint.getMethod());
         String raw = base + "_" + method + "_" + StrUtil.nullToEmpty(endpoint.getPath());
-        String sanitized = ILLEGAL_NAME_CHARS.matcher(raw).replaceAll("_")
-                .replaceAll("_{2,}", "_");
-        sanitized = StrUtil.strip(sanitized, "_");
-        if (sanitized.length() > FUNCTION_NAME_MAX_LENGTH) {
-            sanitized = sanitized.substring(0, FUNCTION_NAME_MAX_LENGTH);
-            sanitized = StrUtil.strip(sanitized, "_");
+        String sanitized = sanitizeFunctionToken(raw);
+        if (StrUtil.isBlank(sanitized)) {
+            sanitized = sanitizeFunctionToken(StrUtil.nullToEmpty(tool.getNum()));
         }
-        return sanitized;
+        if (sanitized.length() <= FUNCTION_NAME_MAX_LENGTH) {
+            return sanitized;
+        }
+        String compact = compactFunctionName(tool.getNum(), method, raw);
+        log.warn("FunctionCall 函数名超长已改用紧凑唯一名 toolNum={} method={} path={} name={}",
+                tool.getNum(), method, endpoint.getPath(), compact);
+        return compact;
+    }
+
+    /** 超长时的紧凑唯一名：toolNum + method + raw 的 md5 前 8 位。 */
+    private String compactFunctionName(String toolNum, String method, String rawIdentity) {
+        String numPart = sanitizeFunctionToken(StrUtil.nullToEmpty(toolNum));
+        if (StrUtil.isBlank(numPart)) {
+            numPart = "tool";
+        }
+        String methodPart = sanitizeFunctionToken(method);
+        if (StrUtil.isBlank(methodPart)) {
+            methodPart = "CALL";
+        }
+        String digest = DigestUtil.md5Hex(rawIdentity).substring(0, 8);
+        String compact = numPart + "_" + methodPart + "_" + digest;
+        if (compact.length() <= FUNCTION_NAME_MAX_LENGTH) {
+            return compact;
+        }
+        int keep = FUNCTION_NAME_MAX_LENGTH - 1 - digest.length();
+        if (keep < 1) {
+            return digest;
+        }
+        return numPart.substring(0, Math.min(numPart.length(), keep)) + "_" + digest;
+    }
+
+    private static String sanitizeFunctionToken(String raw) {
+        String sanitized = ILLEGAL_NAME_CHARS.matcher(StrUtil.nullToEmpty(raw)).replaceAll("_")
+                .replaceAll("_{2,}", "_");
+        return StrUtil.strip(sanitized, "_");
     }
 }
