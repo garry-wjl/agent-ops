@@ -11,7 +11,7 @@
  *
  * 资产化：模型 / 工具 / 沙箱改为从对应资产模块「可用状态」列表下拉关联，仅存引用标识：
  *  - modelId（单选必填，已启用模型 num）
- *  - toolNums（多选，已发布工具 num）
+ *  - toolRefs（多选具体工具：FC 端点 / MCP tool；toolNums 为父资产汇总）
  *  - sandboxRef（单选可空，在线沙箱 num）
  *  - skillNums（多选，已发布 Skill num）
  *
@@ -43,21 +43,23 @@ import EditorBreadcrumb from '@/components/EditorBreadcrumb';
 import { useBreadcrumbName } from '@/hooks/useBreadcrumbName';
 import { useModelSelectableQuery } from '@/services/model';
 import { useSkillPageQuery } from '@/services/skill';
-import { useToolPageQuery } from '@/services/tool';
+import { useToolMountableItemsQuery, useToolMountableQuery } from '@/services/tool';
 import { useSandboxPageQuery } from '@/services/sandbox';
 import type {
   AgentCreateParam,
   AgentType,
   ConfigSnapshot,
   ModelSelectableVO,
+  ToolRefParam,
 } from '@/types';
 import ToolsContextSection, {
+  toolBindingKey,
   type ToolsContextValue,
 } from '../components/ToolsContextSection';
+import type { AssetOption } from '../components/AssetPickerModal';
 import PromptPickerModal from '../components/PromptPickerModal';
 import A2aCreateForm from '../components/A2aCreateForm';
 import { RequiredLabel, ModelMetaCard } from '../components/EditorShared';
-import type { AssetOption } from '../components/AssetPickerModal';
 
 const { Text } = Typography;
 
@@ -102,6 +104,7 @@ function emptyDraft(): AgentDraft {
       skillNums: [],
       skillRefs: [],
       toolNums: [],
+      toolRefs: [],
       sandboxRef: undefined,
       memoryConfig: {
         shortTermStrategy: 'RECENT_N',
@@ -148,11 +151,8 @@ export default function AgentEditorPage() {
     pageSize: 200,
     status: 'PUBLISHED',
   });
-  const { data: toolPage } = useToolPageQuery({
-    pageNo: 1,
-    pageSize: 200,
-    status: 'PUBLISHED',
-  });
+  const { data: mountableGroups } = useToolMountableQuery();
+  const { data: mountableItems } = useToolMountableItemsQuery();
   const { data: sandboxPage } = useSandboxPageQuery({
     pageNo: 1,
     pageSize: 200,
@@ -169,14 +169,49 @@ export default function AgentEditorPage() {
       })),
     [skillPage],
   );
-  const toolOptions: AssetOption[] = useMemo(
+  /** bindingKey / toolNum → ToolRef；整组仅 toolNum，具体项带 itemKind */
+  const toolRefByKey = useMemo(() => {
+    const map: Record<string, ToolRefParam> = {};
+    for (const g of mountableGroups ?? []) {
+      map[g.num] = { toolNum: g.num };
+    }
+    for (const it of mountableItems ?? []) {
+      const ref: ToolRefParam = {
+        toolNum: it.toolNum,
+        itemKind: it.itemKind,
+        method: it.method,
+        path: it.path,
+        mcpToolName: it.mcpToolName,
+      };
+      map[it.bindingKey || toolBindingKey(ref)] = ref;
+    }
+    return map;
+  }, [mountableGroups, mountableItems]);
+  /** 候选：工具组（整组）+ 具体工具，供已选列表展示 */
+  const toolOptions: AssetOption[] = useMemo(() => {
+    const groups = (mountableGroups ?? []).map((g) => ({
+      num: g.num,
+      name: g.name,
+      meta: `整组 · ${g.type === 'MCP' ? 'MCP' : 'FunctionCall'}`,
+    }));
+    const items = (mountableItems ?? []).map((it) => ({
+      num: it.bindingKey,
+      name: it.name,
+      meta: `具体工具 · 属于 ${it.toolType === 'MCP' ? 'MCP' : 'FunctionCall'} 组「${it.toolName}」${
+        it.description ? ` · ${it.description}` : ''
+      }`,
+    }));
+    return [...groups, ...items];
+  }, [mountableGroups, mountableItems]);
+  const toolGroups = useMemo(
     () =>
-      (toolPage?.list ?? []).map((t) => ({
-        num: t.num,
-        name: t.name,
-        meta: `${t.type === 'MCP' ? 'MCP' : 'FunctionCall'} · ${t.description}`,
+      (mountableGroups ?? []).map((g) => ({
+        num: g.num,
+        name: g.name,
+        type: g.type,
+        description: g.description,
       })),
-    [toolPage],
+    [mountableGroups],
   );
   const sandboxOptions: AssetOption[] = useMemo(
     () =>
@@ -227,6 +262,10 @@ export default function AgentEditorPage() {
                 versionNum: '',
               })),
             toolNums: snap?.toolNums ?? [],
+            toolRefs:
+              snap?.toolRefs?.length
+                ? snap.toolRefs
+                : (snap?.toolNums ?? []).map((n) => ({ toolNum: n })),
             sandboxRef: snap?.sandboxRef,
             memoryConfig: {
               shortTermStrategy:
@@ -277,6 +316,7 @@ export default function AgentEditorPage() {
     skillNums: draft.ctx.skillNums,
     skillRefs: draft.ctx.skillRefs,
     toolNums: draft.ctx.toolNums,
+    toolRefs: draft.ctx.toolRefs,
     sandboxRef: draft.ctx.sandboxRef,
     memoryConfig: draft.ctx.memoryConfig,
     qps: draft.ctx.qps,
@@ -296,6 +336,7 @@ export default function AgentEditorPage() {
     skillNums: draft.ctx.skillNums,
     skillRefs: draft.ctx.skillRefs,
     toolNums: draft.ctx.toolNums,
+    toolRefs: draft.ctx.toolRefs,
     sandboxRef: draft.ctx.sandboxRef,
     memoryConfig: draft.ctx.memoryConfig,
     qps: draft.ctx.qps,
@@ -680,6 +721,9 @@ export default function AgentEditorPage() {
                 onChange={(ctx) => patch({ ctx })}
                 skillOptions={skillOptions}
                 toolOptions={toolOptions}
+                toolGroups={toolGroups}
+                toolRefByKey={toolRefByKey}
+                mountableItems={mountableItems}
                 sandboxOptions={sandboxOptions}
               />
             </div>

@@ -9,7 +9,7 @@
  *     草稿   → 详情 / 编辑 / 发布 / 删除
  *     已发布 → 详情 / 编辑 / 弃用（二次确认，提示占用 Agent 数）
  *     已废弃 → 详情 / 重新发布（行灰显）
- * - 编辑跳 /tool/manage/editor/:num；详情走抽屉；复用数可点下钻挂载 Agent 列表
+ * - 编辑跳 /tool/manage/editor/:num；详情跳 /tool/manage/detail/:num；复用数可点下钻挂载 Agent 列表
  */
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -47,7 +47,6 @@ import {
   TOOL_STATUS_META,
   TOOL_TYPE_META,
 } from "../constants";
-import ToolDetailDrawer from "./ToolDetailDrawer";
 import MountedAgentsModal from "./MountedAgentsModal";
 import PermissionGate from "@/components/PermissionGate";
 import UserName from "@/components/UserName";
@@ -71,7 +70,6 @@ export default function ToolListPage() {
   const [keyword, setKeyword] = useState("");
   const [keywordInput, setKeywordInput] = useState("");
 
-  const [detailNum, setDetailNum] = useState<string | undefined>();
   const [mounted, setMounted] = useState<
     { num: string; name: string } | undefined
   >();
@@ -161,7 +159,7 @@ export default function ToolListPage() {
         fixed: "left",
         render: (num: string, r: ToolVO) => (
           <a
-            onClick={() => setDetailNum(r.num)}
+            onClick={() => navigate(`/tool/manage/detail/${r.num}`)}
             style={{
               fontFamily:
                 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
@@ -301,7 +299,7 @@ export default function ToolListPage() {
         fixed: "right",
         render: (_: unknown, r: ToolVO) => (
           <Space size={12} wrap>
-            <a onClick={() => setDetailNum(r.num)}>详情</a>
+            <a onClick={() => navigate(`/tool/manage/detail/${r.num}`)}>详情</a>
             {r.status !== "DEPRECATED" && (
               <PermissionGate anyOf={['tool:update']}>
                 <a onClick={() => navigate(`/tool/manage/editor/${r.num}`)}>
@@ -466,11 +464,6 @@ export default function ToolListPage() {
         />
       </div>
 
-      <ToolDetailDrawer
-        num={detailNum}
-        open={!!detailNum}
-        onClose={() => setDetailNum(undefined)}
-      />
       <MountedAgentsModal
         open={!!mounted}
         toolNum={mounted?.num}

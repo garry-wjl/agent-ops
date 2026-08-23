@@ -15,19 +15,27 @@ import ink.garry.rd.agent.ws.client.tool.dto.ApiHeaderDTO;
 import ink.garry.rd.agent.ws.client.tool.dto.ApiParamDTO;
 import ink.garry.rd.agent.ws.client.tool.dto.EndpointMetaDTO;
 import ink.garry.rd.agent.ws.client.tool.dto.ProxyHeaderDTO;
+import ink.garry.rd.agent.ws.client.tool.dto.MountableToolItemDTO;
+import ink.garry.rd.agent.ws.client.tool.dto.McpRemoteToolInfoDTO;
+import ink.garry.rd.agent.ws.client.tool.dto.McpTestConnectionParamDTO;
+import ink.garry.rd.agent.ws.client.tool.dto.McpTestConnectionResultDTO;
 import ink.garry.rd.agent.ws.client.tool.dto.ToolDTO;
 import ink.garry.rd.agent.ws.client.tool.dto.ToolDetailDTO;
 import ink.garry.rd.agent.ws.client.tool.dto.ToolPageQueryParamDTO;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.AgentStatus;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.ConfigSnapshot;
+import ink.garry.rd.agent.ws.domain.agent.valueobject.ToolRef;
 import ink.garry.rd.agent.ws.domain.tool.Tool;
 import ink.garry.rd.agent.ws.domain.tool.valueobject.ApiEndpoint;
 import ink.garry.rd.agent.ws.domain.tool.valueobject.ApiHeader;
 import ink.garry.rd.agent.ws.domain.tool.valueobject.ApiParam;
+import ink.garry.rd.agent.ws.domain.tool.valueobject.CreationMode;
 import ink.garry.rd.agent.ws.domain.tool.valueobject.EndpointMeta;
 import ink.garry.rd.agent.ws.domain.tool.valueobject.PackageMode;
 import ink.garry.rd.agent.ws.domain.tool.valueobject.ProxyHeader;
 import ink.garry.rd.agent.ws.domain.tool.valueobject.ToolStatus;
+import ink.garry.rd.agent.ws.domain.tool.valueobject.ToolType;
+import ink.garry.rd.agent.ws.application.tool.factory.ToolRunnerFactory;
 import ink.garry.rd.agent.ws.facade.common.PageVO;
 import ink.garry.rd.agent.ws.facade.exception.BusinessException;
 import ink.garry.rd.agent.ws.infra.agent.entity.AgentEntity;
@@ -36,6 +44,7 @@ import ink.garry.rd.agent.ws.infra.tool.entity.ToolEntity;
 import ink.garry.rd.agent.ws.infra.tool.mapper.ToolMapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -78,6 +87,10 @@ public class ToolQueryService {
 
     @Resource
     private AgentMapper agentMapper;
+
+    @Lazy
+    @Resource
+    private ToolRunnerFactory toolRunnerFactory;
 
     // ============================================================
     // 列表 / 详情
@@ -194,6 +207,145 @@ public class ToolQueryService {
         return entities.stream()
                 .map(e -> toDTO(ToolEntity.toDomain(e), null))
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * 列出可挂载的「具体工具」项（FC 端点 / MCP 远端工具展平），供 Agent 多选绑定。
+     * <p>
+     * MCP REMOTE 会尝试连远端拉工具清单；失败时该资产不产出子项（日志告警），避免阻断其它资产。
+     *
+     * @param workspaceNum 当前工作空间
+     * @return 展平后的可挂载项
+     */
+    public List<MountableToolItemDTO> listMountableItems(String workspaceNum) {
+        List<ToolDTO> tools = listMountable(workspaceNum);
+        if (CollUtil.isEmpty(tools)) {
+            return new ArrayList<>();
+        }
+        List<MountableToolItemDTO> items = new ArrayList<>();
+        for (ToolDTO tool : tools) {
+            if (tool == null || StrUtil.isBlank(tool.getNum())) {
+                continue;
+            }
+            if (ToolType.FUNCTION_CALL.name().equals(tool.getType())) {
+                items.addAll(expandFunctionCallItems(tool));
+            } else if (ToolType.MCP.name().equals(tool.getType())) {
+                if (CreationMode.REMOTE.name().equals(tool.getCreationMode())) {
+                    items.addAll(expandMcpRemoteItems(tool));
+                } else if (CreationMode.API_PACKAGE.name().equals(tool.getCreationMode())
+                        && PackageMode.EXISTING_API.name().equals(tool.getPackageMode())
+                        && StrUtil.isNotBlank(tool.getSourceFcToolNum())) {
+                    try {
+                        ToolDTO source = findByNum(tool.getSourceFcToolNum());
+                        items.addAll(expandFunctionCallItems(source));
+                    } catch (Exception e) {
+                        log.warn("展开 MCP API 打包来源 FC 失败 toolNum={} source={}: {}",
+                                tool.getNum(), tool.getSourceFcToolNum(), e.getMessage());
+                    }
+                }
+            }
+        }
+        return items;
+    }
+
+    private List<MountableToolItemDTO> expandFunctionCallItems(ToolDTO tool) {
+        List<MountableToolItemDTO> items = new ArrayList<>();
+        if (CollUtil.isNotEmpty(tool.getEndpoints())) {
+            for (ApiEndpointDTO ep : tool.getEndpoints()) {
+                if (ep == null || StrUtil.isBlank(ep.getPath())) {
+                    continue;
+                }
+                String method = StrUtil.blankToDefault(ep.getMethod(), "GET").toUpperCase();
+                ToolRef keyRef = ToolRef.builder()
+                        .toolNum(tool.getNum())
+                        .itemKind(ToolRef.ITEM_FC_ENDPOINT)
+                        .method(method)
+                        .path(ep.getPath())
+                        .build();
+                items.add(MountableToolItemDTO.builder()
+                        .bindingKey(keyRef.bindingKey())
+                        .toolNum(tool.getNum())
+                        .toolName(tool.getName())
+                        .toolType(tool.getType())
+                        .itemKind(ToolRef.ITEM_FC_ENDPOINT)
+                        .name(method + " " + ep.getPath())
+                        .description(ep.getDescription())
+                        .method(method)
+                        .path(ep.getPath())
+                        .build());
+            }
+            return items;
+        }
+        EndpointMetaDTO meta = tool.getEndpointMeta();
+        if (meta != null && CollUtil.isNotEmpty(meta.getSummaries())) {
+            for (var s : meta.getSummaries()) {
+                if (s == null || StrUtil.isBlank(s.getPath())) {
+                    continue;
+                }
+                String method = StrUtil.blankToDefault(s.getMethod(), "GET").toUpperCase();
+                ToolRef keyRef = ToolRef.builder()
+                        .toolNum(tool.getNum())
+                        .itemKind(ToolRef.ITEM_FC_ENDPOINT)
+                        .method(method)
+                        .path(s.getPath())
+                        .build();
+                items.add(MountableToolItemDTO.builder()
+                        .bindingKey(keyRef.bindingKey())
+                        .toolNum(tool.getNum())
+                        .toolName(tool.getName())
+                        .toolType(tool.getType())
+                        .itemKind(ToolRef.ITEM_FC_ENDPOINT)
+                        .name(method + " " + s.getPath())
+                        .description(s.getSummary())
+                        .method(method)
+                        .path(s.getPath())
+                        .build());
+            }
+        }
+        return items;
+    }
+
+    private List<MountableToolItemDTO> expandMcpRemoteItems(ToolDTO tool) {
+        List<MountableToolItemDTO> items = new ArrayList<>();
+        try {
+            McpTestConnectionResultDTO result = toolRunnerFactory.testConnection(
+                    McpTestConnectionParamDTO.builder()
+                            .mcpConfigType(tool.getMcpConfigType())
+                            .mcpConfig(tool.getMcpConfig())
+                            .proxyEnabled(tool.getProxyEnabled())
+                            .proxyHeaders(tool.getProxyHeaders())
+                            .build());
+            if (result == null || !result.isSuccess()
+                    || CollUtil.isEmpty(result.getTools())) {
+                log.warn("MCP 可挂载项拉取失败或为空 toolNum={} msg={}",
+                        tool.getNum(), result != null ? result.getMessage() : null);
+                return items;
+            }
+            for (McpRemoteToolInfoDTO t : result.getTools()) {
+                if (t == null || StrUtil.isBlank(t.getName())) {
+                    continue;
+                }
+                ToolRef keyRef = ToolRef.builder()
+                        .toolNum(tool.getNum())
+                        .itemKind(ToolRef.ITEM_MCP_TOOL)
+                        .mcpToolName(t.getName())
+                        .build();
+                items.add(MountableToolItemDTO.builder()
+                        .bindingKey(keyRef.bindingKey())
+                        .toolNum(tool.getNum())
+                        .toolName(tool.getName())
+                        .toolType(tool.getType())
+                        .itemKind(ToolRef.ITEM_MCP_TOOL)
+                        .name(t.getName())
+                        .title(t.getTitle())
+                        .description(t.getDescription())
+                        .mcpToolName(t.getName())
+                        .build());
+            }
+        } catch (Exception e) {
+            log.warn("展开 MCP 远端工具失败 toolNum={}: {}", tool.getNum(), e.getMessage());
+        }
+        return items;
     }
 
     // ============================================================
@@ -315,7 +467,7 @@ public class ToolQueryService {
         return counter;
     }
 
-    /** 从 Agent 的 config_snapshot JSON 解析出挂载的工具编号（v4.0：字段由 mcpNums 改为 toolNums；容错：解析失败返回空）。 */
+    /** 从 Agent 的 config_snapshot JSON 解析出挂载的工具资产编号（toolNums 或 toolRefs.toolNum）。 */
     private List<String> toolNumsOf(AgentEntity agent) {
         String snapshotJson = agent.getConfigSnapshot();
         if (StrUtil.isBlank(snapshotJson)) {
@@ -323,7 +475,17 @@ public class ToolQueryService {
         }
         try {
             ConfigSnapshot snapshot = JSON.parseObject(snapshotJson, ConfigSnapshot.class);
-            if (snapshot == null || CollUtil.isEmpty(snapshot.getToolNums())) {
+            if (snapshot == null) {
+                return Collections.emptyList();
+            }
+            if (CollUtil.isNotEmpty(snapshot.getToolRefs())) {
+                return snapshot.getToolRefs().stream()
+                        .filter(r -> r != null && StrUtil.isNotBlank(r.getToolNum()))
+                        .map(ink.garry.rd.agent.ws.domain.agent.valueobject.ToolRef::getToolNum)
+                        .distinct()
+                        .toList();
+            }
+            if (CollUtil.isEmpty(snapshot.getToolNums())) {
                 return Collections.emptyList();
             }
             return snapshot.getToolNums();
@@ -403,6 +565,9 @@ public class ToolQueryService {
                         .queryParams(toParamDTOs(ep.getQueryParams()))
                         .pathParams(toParamDTOs(ep.getPathParams()))
                         .headers(toHeaderDTOs(ep.getHeaders()))
+                        .requestBodySchema(ep.getRequestBodySchema())
+                        .requestBodyRequired(ep.getRequestBodyRequired())
+                        .responseBodySchema(ep.getResponseBodySchema())
                         .build())
                 .collect(Collectors.toList());
     }
@@ -417,6 +582,7 @@ public class ToolQueryService {
                         .name(p.getName())
                         .type(p.getType() == null ? null : p.getType().name())
                         .defaultValue(p.getDefaultValue())
+                        .required(p.getRequired())
                         .description(p.getDescription())
                         .build())
                 .collect(Collectors.toList());

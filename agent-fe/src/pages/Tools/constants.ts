@@ -280,8 +280,33 @@ export function validateProxyHeaders(headers: ProxyHeader[]): ValidateResult {
 }
 
 /**
+ * 从 Path 中的 {name} 自动生成 pathParams（恒必填）；保留同名旧字段的类型/默认值/描述。
+ */
+export function syncPathParamsFromPath(
+  path: string,
+  prev: ApiParam[] = [],
+): ApiParam[] {
+  const names = [...path.matchAll(/\{(\w+)\}/g)].map((m) => m[1]);
+  const seen = new Set<string>();
+  const out: ApiParam[] = [];
+  for (const name of names) {
+    if (seen.has(name)) continue;
+    seen.add(name);
+    const old = prev.find((p) => p.name === name);
+    out.push({
+      name,
+      type: old?.type ?? "string",
+      defaultValue: old?.defaultValue ?? "",
+      description: old?.description ?? "",
+      required: true,
+    });
+  }
+  return out;
+}
+
+/**
  * 校验 path 占位符与 pathParams 一一对应（PRD §7.6 / §8.7）。
- * 返回缺失/多余的占位符名，供端点行级红字提示。
+ * 手动录入场景应先 {@link syncPathParamsFromPath} 再校验。
  */
 export function validatePathParams(
   path: string,
@@ -295,7 +320,7 @@ export function validatePathParams(
   );
   for (const name of inPath) {
     if (!declared.has(name)) {
-      return { ok: false, error: `Path 中 {${name}} 未在参数表定义` };
+      return { ok: false, error: `Path 中 {${name}} 未同步为参数` };
     }
   }
   for (const name of declared) {

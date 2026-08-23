@@ -113,14 +113,37 @@ export interface SkillRefParam {
 }
 
 /**
- * 工具版本引用（2026-06-17 资源版本钉住，与后端 ToolRefParam 对齐）。
- * <p>当前 Tool 无独立版本表时 versionNum 可为空。
+ * 工具版本引用（可绑具体端点 / MCP 工具）。
+ * <p>仅填 toolNum 表示整组挂载（兼容旧数据）。
  */
 export interface ToolRefParam {
-  /** 工具业务编号 */
+  /** 工具资产业务编号 */
   toolNum: string;
   /** 发布版本号；可为空 */
   versionNum?: string;
+  /** FC_ENDPOINT / MCP_TOOL；空=整组 */
+  itemKind?: 'FC_ENDPOINT' | 'MCP_TOOL' | string;
+  /** FC：HTTP 方法 */
+  method?: string;
+  /** FC：路径 */
+  path?: string;
+  /** MCP：远端工具名 */
+  mcpToolName?: string;
+}
+
+/** Agent 可挂载的具体工具项（展平列表） */
+export interface MountableToolItem {
+  bindingKey: string;
+  toolNum: string;
+  toolName: string;
+  toolType: string;
+  itemKind: string;
+  name: string;
+  title?: string;
+  description?: string;
+  method?: string;
+  path?: string;
+  mcpToolName?: string;
 }
 
 /** 列表项 — 对齐 PRD v2.1 / v2.2：精简字段并新增 agentSource 派生字段 */

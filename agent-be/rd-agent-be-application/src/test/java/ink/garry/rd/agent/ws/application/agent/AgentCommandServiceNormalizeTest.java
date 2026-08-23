@@ -83,7 +83,7 @@ class AgentCommandServiceNormalizeTest {
         assertEquals("SKL-1", deduped.get(0).getSkillNum());
     }
 
-    /** Tool 去重:按 toolNum+versionNum 维度。 */
+    /** Tool 去重:按 bindingKey（整组=toolNum；具体项含 itemKind）。 */
     @Test
     void dedupToolRefs_shouldKeepFirstOccurrence() throws Exception {
         ToolRef a = ToolRef.builder().toolNum("TOOL-1").versionNum("1.0.0").build();
@@ -95,6 +95,97 @@ class AgentCommandServiceNormalizeTest {
         assertEquals(2, deduped.size());
         assertEquals("TOOL-1", deduped.get(0).getToolNum());
         assertEquals("TOOL-2", deduped.get(1).getToolNum());
+    }
+
+    /** 同一父资产下不同具体端点不算重复。 */
+    @Test
+    void dedupToolRefs_sameToolDifferentEndpoint_shouldKeepBoth() throws Exception {
+        ToolRef get = ToolRef.builder()
+                .toolNum("TOOL-1")
+                .itemKind(ToolRef.ITEM_FC_ENDPOINT)
+                .method("GET")
+                .path("/a")
+                .build();
+        ToolRef post = ToolRef.builder()
+                .toolNum("TOOL-1")
+                .itemKind(ToolRef.ITEM_FC_ENDPOINT)
+                .method("POST")
+                .path("/a")
+                .build();
+        ToolRef getDup = ToolRef.builder()
+                .toolNum("TOOL-1")
+                .itemKind(ToolRef.ITEM_FC_ENDPOINT)
+                .method("GET")
+                .path("/a")
+                .build();
+
+        List<ToolRef> deduped = invokeDedupToolRefs(List.of(get, post, getDup));
+
+        assertEquals(2, deduped.size());
+        assertEquals("TOOL-1|FC_ENDPOINT|GET|/a", deduped.get(0).bindingKey());
+        assertEquals("TOOL-1|FC_ENDPOINT|POST|/a", deduped.get(1).bindingKey());
+    }
+
+    /** MCP 工具按 mcpToolName 去重。 */
+    @Test
+    void dedupToolRefs_mcpToolName_shouldDedupByName() throws Exception {
+        ToolRef a = ToolRef.builder()
+                .toolNum("MCP-1")
+                .itemKind(ToolRef.ITEM_MCP_TOOL)
+                .mcpToolName("search")
+                .build();
+        ToolRef aDup = ToolRef.builder()
+                .toolNum("MCP-1")
+                .itemKind(ToolRef.ITEM_MCP_TOOL)
+                .mcpToolName("search")
+                .build();
+        ToolRef b = ToolRef.builder()
+                .toolNum("MCP-1")
+                .itemKind(ToolRef.ITEM_MCP_TOOL)
+                .mcpToolName("fetch")
+                .build();
+
+        List<ToolRef> deduped = invokeDedupToolRefs(List.of(a, aDup, b));
+        assertEquals(2, deduped.size());
+    }
+
+    /** 仅 toolNums → 回填为整组 toolRefs。 */
+    @Test
+    void resolveToolRefs_fromToolNumsOnly_shouldBeWholeGroup() throws Exception {
+        List<ToolRef> resolved = invokeResolveToolRefs(List.of("T1", "T2", "T1"), null);
+        assertEquals(2, resolved.size());
+        assertEquals("T1", resolved.get(0).getToolNum());
+        assertFalse(resolved.get(0).isConcreteItem());
+        assertEquals("T2", resolved.get(1).getToolNum());
+    }
+
+    /** 非空 toolRefs 优先于 toolNums。 */
+    @Test
+    void resolveToolRefs_prefersToolRefsOverToolNums() throws Exception {
+        ToolRef concrete = ToolRef.builder()
+                .toolNum("T1")
+                .itemKind(ToolRef.ITEM_FC_ENDPOINT)
+                .method("GET")
+                .path("/x")
+                .build();
+        List<ToolRef> resolved = invokeResolveToolRefs(List.of("T9"), List.of(concrete));
+        assertEquals(1, resolved.size());
+        assertEquals("T1|FC_ENDPOINT|GET|/x", resolved.get(0).bindingKey());
+    }
+
+    /** 不同父资产：整组 + 具体可并存（normalize 不在 BE 做互斥）。 */
+    @Test
+    void resolveToolRefs_differentParents_groupAndConcreteCoexist() throws Exception {
+        ToolRef group = ToolRef.builder().toolNum("T-GROUP").build();
+        ToolRef concrete = ToolRef.builder()
+                .toolNum("T-ITEM")
+                .itemKind(ToolRef.ITEM_MCP_TOOL)
+                .mcpToolName("weather")
+                .build();
+        List<ToolRef> resolved = invokeResolveToolRefs(null, List.of(group, concrete));
+        assertEquals(2, resolved.size());
+        assertFalse(resolved.get(0).isConcreteItem());
+        assertTrue(resolved.get(1).isConcreteItem());
     }
 
     /**
@@ -144,5 +235,13 @@ class AgentCommandServiceNormalizeTest {
         var method = AgentCommandService.class.getDeclaredMethod("dedupToolRefs", List.class);
         method.setAccessible(true);
         return (List<ToolRef>) method.invoke(service, refs);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<ToolRef> invokeResolveToolRefs(List<String> toolNums, List<ToolRef> refs) throws Exception {
+        var method = AgentCommandService.class.getDeclaredMethod(
+                "resolveToolRefs", List.class, List.class);
+        method.setAccessible(true);
+        return (List<ToolRef>) method.invoke(service, toolNums, refs);
     }
 }

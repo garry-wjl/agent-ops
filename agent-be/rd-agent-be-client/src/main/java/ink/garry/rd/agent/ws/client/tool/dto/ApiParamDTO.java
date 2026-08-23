@@ -24,6 +24,12 @@ public class ApiParamDTO {
     /** 默认值（可选，字符串形式）。 */
     private String defaultValue;
 
+    /**
+     * 是否必填（写入 Agent Tool Schema 的 required）；path 参数恒为 true。
+     * 可空：兼容旧数据时由运行时按「无默认值则必填」兜底。
+     */
+    private Boolean required;
+
     /** 描述（≤200 字符）。 */
     private String description;
 }

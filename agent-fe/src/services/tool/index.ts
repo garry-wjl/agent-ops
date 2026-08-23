@@ -4,6 +4,7 @@ export {
   useToolPageQuery,
   useToolDetailQuery,
   useToolMountableQuery,
+  useToolMountableItemsQuery,
   useToolMountedAgentsQuery,
   useToolCreateMutation,
   useToolUpdateMutation,

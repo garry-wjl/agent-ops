@@ -2,9 +2,11 @@ package ink.garry.rd.agent.ws.client.tool.vo;
 
 import lombok.Data;
 
+import java.util.List;
+
 /**
  * MCP 测试连接结果 Vo（adapter 层）。
- * <p>返回测试连接操作的结果：成功/失败 + 错误详情。
+ * <p>返回测试连接操作的结果：成功/失败 + 错误详情 + 工具列表。
  */
 @Data
 public class McpTestConnectionResult {
@@ -20,4 +22,7 @@ public class McpTestConnectionResult {
 
     /** 失败时的详细堆栈信息（限 1000 字符截断）。 */
     private String stackTrace;
+
+    /** 连通成功后拉取的 MCP 工具列表。 */
+    private List<McpRemoteToolInfo> tools;
 }

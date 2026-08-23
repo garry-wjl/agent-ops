@@ -4,6 +4,7 @@ import ink.garry.rd.agent.ws.adapter.config.BaseController;
 import ink.garry.rd.agent.ws.adapter.tool.assembler.ToolVoAssembler;
 import ink.garry.rd.agent.ws.application.tool.ToolQueryService;
 import ink.garry.rd.agent.ws.client.tool.vo.AgentBriefVo;
+import ink.garry.rd.agent.ws.client.tool.vo.MountableToolItemVo;
 import ink.garry.rd.agent.ws.client.tool.vo.ToolDetailVo;
 import ink.garry.rd.agent.ws.client.tool.vo.ToolPageQueryParam;
 import ink.garry.rd.agent.ws.client.tool.vo.ToolVo;
@@ -76,6 +77,17 @@ public class ToolQueryController extends BaseController {
         List<ToolVo> vos = assembler.toToolVoList(
                 toolQueryService.listMountable(getCurrentWorkspaceNum()));
         return ok(vos);
+    }
+
+    /**
+     * 可挂载「具体工具」展平列表（FC 端点 / MCP 远端工具），供 Agent 多选绑定。
+     *
+     * @return 具体工具项
+     */
+    @GetMapping("/mountableItems")
+    public Result<List<MountableToolItemVo>> mountableItems() {
+        return ok(assembler.toMountableToolItemVoList(
+                toolQueryService.listMountableItems(getCurrentWorkspaceNum())));
     }
 
     /**

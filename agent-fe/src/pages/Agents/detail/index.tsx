@@ -49,17 +49,19 @@ import {
 } from '@/services/agent';
 import { skillApi, skillQueryKeys } from '@/services/skill';
 import { useModelSelectableQuery } from '@/services/model';
-import { useToolPageQuery } from '@/services/tool';
+import { useToolMountableItemsQuery, useToolPageQuery } from '@/services/tool';
 import { useSandboxPageQuery } from '@/services/sandbox';
 import { useQueries } from '@tanstack/react-query';
 import type {
   A2aSourceVO,
   AgentDetailVO,
   ModelSelectableVO,
+  MountableToolItem,
   RemoteMcp,
   RemoteSkill,
   SandboxVO,
   SkillVO,
+  ToolRefParam,
   ToolVO,
 } from '@/types';
 import { formatTime, prettyJson } from '@/utils/format';
@@ -70,6 +72,7 @@ import CfgVersionHistoryTab from './CfgVersionHistoryTab';
 import A2aVersionHistoryTab from './A2aVersionHistoryTab';
 import SessionHistoryTab from './SessionHistoryTab';
 import { ModelMetaCard } from '../components/EditorShared';
+import { toolBindingKey, groupMountableChildren } from '../components/toolBinding';
 
 const COLOR = {
   border: '#E2E8F0',
@@ -139,6 +142,7 @@ export default function AgentDetailPage() {
     pageSize: 200,
     status: 'PUBLISHED',
   });
+  const { data: mountableItems } = useToolMountableItemsQuery(!isA2A);
   const { data: sandboxPage } = useSandboxPageQuery({
     pageNo: 1,
     pageSize: 200,
@@ -284,7 +288,8 @@ export default function AgentDetailPage() {
     ? (models.find((m) => m.num === cfgSnapshot.modelId)?.name ??
         cfgSnapshot.modelId)
     : undefined;
-  const toolCount = cfgSnapshot?.toolNums?.length ?? 0;
+  const toolCount =
+    cfgSnapshot?.toolRefs?.length || cfgSnapshot?.toolNums?.length || 0;
 
   const tabs = isA2A ? a2aTabs : cfgTabs;
   const serviceKey = a2aSource
@@ -531,7 +536,7 @@ export default function AgentDetailPage() {
           <SkillsTab skills={loadedSkills} />
         )}
         {!isA2A && activeTab === 'mcpCfg' && (
-          <ToolCfgTab detail={detail} tools={tools} />
+          <ToolCfgTab detail={detail} tools={tools} mountableItems={mountableItems} />
         )}
         {!isA2A && activeTab === 'sandboxCfg' && (
           <SandboxCfgTab detail={detail} sandboxes={sandboxes} />
@@ -803,63 +808,165 @@ function ModelCfgTab({
   );
 }
 
-/** 2026-06-11 配置优化：CONFIG 模式 - 工具配置 Tab（按 toolNums 反查工具管理） */
+/** CONFIG 模式 - 工具配置 Tab：展示具体绑定项，并标注所属 FunctionCall/MCP 组 */
 function ToolCfgTab({
   detail,
   tools,
+  mountableItems,
 }: {
   detail: AgentDetailVO;
   tools: ToolVO[];
+  mountableItems?: MountableToolItem[];
 }) {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const cfg = detail.currentVersion?.configSnapshot;
-  const toolNums = cfg?.toolNums ?? [];
-  if (toolNums.length === 0) {
+  const refs: ToolRefParam[] =
+    cfg?.toolRefs?.length
+      ? cfg.toolRefs
+      : (cfg?.toolNums ?? []).map((n) => ({ toolNum: n }));
+
+  if (refs.length === 0) {
     return <Empty description="该 Agent 未挂载工具" />;
   }
+
+  const byKey = new Map(
+    (mountableItems ?? []).map((it) => [it.bindingKey, it]),
+  );
   const byNum = new Map(tools.map((t) => [t.num, t]));
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {toolNums.map((n) => {
-        const t = byNum.get(n);
-        const invalid = !t;
+      {refs.map((ref) => {
+        const key = toolBindingKey(ref);
+        const item = byKey.get(key);
+        const parent = byNum.get(ref.toolNum);
+        const concrete = Boolean(ref.itemKind);
+        const invalid = concrete ? !item : !parent;
+        const children = !concrete
+          ? groupMountableChildren(mountableItems, ref.toolNum)
+          : [];
+        const open = Boolean(expanded[key]);
+        const title =
+          item?.name ??
+          (concrete
+            ? ref.itemKind === 'MCP_TOOL'
+              ? ref.mcpToolName ?? key
+              : `${(ref.method || 'GET').toUpperCase()} ${ref.path || ''}`
+            : parent?.name ?? ref.toolNum);
+        const groupLabel = item
+          ? `${item.toolType === 'MCP' ? 'MCP' : 'FunctionCall'} · ${item.toolName}`
+          : parent
+            ? `${parent.type === 'MCP' ? 'MCP' : 'FunctionCall'} · ${parent.name}`
+            : ref.toolNum;
         return (
           <div
-            key={n}
+            key={key}
             style={{
               border: `1px solid ${invalid ? '#FECACA' : COLOR.border}`,
               background: invalid ? '#FEF2F2' : '#fff',
               borderRadius: 8,
-              padding: '14px 16px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 4,
+              overflow: 'hidden',
             }}
           >
             <div
               style={{
-                fontSize: 14,
-                fontWeight: 500,
-                color: invalid ? '#DC2626' : COLOR.textPrimary,
+                padding: '14px 16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 4,
+                cursor: !concrete ? 'pointer' : 'default',
+              }}
+              onClick={() => {
+                if (concrete) return;
+                setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
               }}
             >
-              {t?.name ?? n}
-              {t && (
-                <Tag
-                  color={t.type === 'MCP' ? 'blue' : 'green'}
-                  style={{ marginLeft: 8 }}
-                >
-                  {t.type === 'MCP' ? 'MCP' : 'FunctionCall'}
-                </Tag>
-              )}
-              {invalid && (
-                <Tag color="error" style={{ marginLeft: 8 }}>
-                  已失效
-                </Tag>
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 500,
+                  color: invalid ? '#DC2626' : COLOR.textPrimary,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
+                {!concrete && (
+                  <span style={{ color: COLOR.textMuted, fontSize: 11 }}>
+                    {open ? '▼' : '▶'}
+                  </span>
+                )}
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  {title}
+                  {!concrete && (
+                    <Tag color="blue" style={{ marginLeft: 8 }}>
+                      整组
+                      {children.length > 0 ? ` · ${children.length}` : ''}
+                    </Tag>
+                  )}
+                  {concrete && (
+                    <Tag color="green" style={{ marginLeft: 8 }}>
+                      具体工具
+                    </Tag>
+                  )}
+                  {invalid && (
+                    <Tag color="error" style={{ marginLeft: 8 }}>
+                      已失效
+                    </Tag>
+                  )}
+                </span>
+              </div>
+              <div style={{ fontSize: 12, color: COLOR.textMuted }}>
+                所属组：{groupLabel}
+              </div>
+              {(item?.description || (!concrete && parent?.description)) && (
+                <div style={{ fontSize: 12, color: COLOR.textMuted }}>
+                  {item?.description ?? parent?.description}
+                </div>
               )}
             </div>
-            {t?.description && (
-              <div style={{ fontSize: 12, color: COLOR.textMuted }}>
-                {t.description}
+            {!concrete && open && (
+              <div
+                style={{
+                  borderTop: `1px solid ${COLOR.border}`,
+                  background: '#F8FAFC',
+                  padding: '10px 16px 12px 40px',
+                }}
+              >
+                {children.length === 0 ? (
+                  <div style={{ fontSize: 12, color: COLOR.textMuted }}>
+                    暂无组内工具清单（MCP 需能拉到远端工具列表；FC 需已配置端点）
+                  </div>
+                ) : (
+                  <div
+                    style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+                  >
+                    {children.map((it) => (
+                      <div key={it.bindingKey}>
+                        <div
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 500,
+                            color: COLOR.textPrimary,
+                          }}
+                        >
+                          {it.name}
+                        </div>
+                        {(it.description || it.title) && (
+                          <div
+                            style={{
+                              fontSize: 12,
+                              color: COLOR.textMuted,
+                              marginTop: 2,
+                            }}
+                          >
+                            {it.description || it.title}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>

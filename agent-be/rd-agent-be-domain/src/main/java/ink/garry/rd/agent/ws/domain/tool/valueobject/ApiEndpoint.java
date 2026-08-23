@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * API 端点值对象（贫血模型，FunctionCall 手动录入的单个端点，详见 PRD §7.6）。
@@ -37,4 +38,21 @@ public class ApiEndpoint {
 
     /** 请求头列表（可选）。 */
     private List<ApiHeader> headers;
+
+    /**
+     * 请求体 JSON Schema（完整 schema 对象，通常来自 OpenAPI {@code requestBody.content.application/json.schema}
+     * 或手动录入）。运行时 LLM 入参挂在 {@code body} 下，再序列化为 HTTP JSON body。
+     */
+    private Map<String, Object> requestBodySchema;
+
+    /**
+     * 请求体是否必填（对应 OpenAPI {@code requestBody.required}；手动录入默认 false）。
+     */
+    private Boolean requestBodyRequired;
+
+    /**
+     * 响应体 JSON Schema（完整 schema 对象；手动录入或试连一键填充）。
+     * 供 Agent / 运营理解返回结构，不参与 HTTP 请求装配。
+     */
+    private Map<String, Object> responseBodySchema;
 }

@@ -4,6 +4,7 @@ import cn.hutool.core.collection.CollectionUtil;
 import cn.hutool.core.lang.Assert;
 import cn.hutool.core.util.StrUtil;
 import ink.garry.rd.agent.ws.application.agent.AgentQueryService;
+import ink.garry.rd.agent.ws.application.agentrunner.tool.FunctionCallTool;
 import ink.garry.rd.agent.ws.application.agentrunner.tool.JsonFormatTool;
 import ink.garry.rd.agent.ws.application.agentrunner.tool.ReadAttachmentTool;
 import ink.garry.rd.agent.ws.application.agentrunner.tool.SandboxTool;
@@ -50,6 +51,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -248,8 +250,8 @@ public class AgentRunnerFactory {
             }
 
             //3.3 注册挂载的工具（FunctionCall 构建可执行工具；MCP 构建客户端连接；按类型各自分流，互不命中返回空/null）
-            List<String> toolNums = resolveToolNums(agent.getConfigSnapshot());
-            if (CollectionUtil.isEmpty(toolNums)) {
+            List<AgentDTO.ConfigSnapshot.ToolRef> toolRefs = resolveToolRefs(agent.getConfigSnapshot());
+            if (CollectionUtil.isEmpty(toolRefs)) {
                 log.warn("Agent {} 运行时快照未挂载任何工具（toolNums/toolRefs 为空），"
                                 + "若前端已绑定请确认已发布对应版本",
                         agent.getNum());
@@ -258,7 +260,17 @@ public class AgentRunnerFactory {
                 // 届时 RequestContextHolder 已取不到当前请求上下文，故必须此处先取好。
                 // FC 与 MCP REMOTE 共用同一批入站头；下游各自按黑名单过滤后注入出站请求。
                 Map<String, String> inboundHeaders = HttpHeaderUtil.getHeaderMap();
-                for (String toolNum : toolNums) {
+                Set<String> registeredFcNames = new LinkedHashSet<>();
+                Map<String, List<AgentDTO.ConfigSnapshot.ToolRef>> byToolNum = toolRefs.stream()
+                        .filter(r -> r != null && StrUtil.isNotBlank(r.getToolNum()))
+                        .collect(Collectors.groupingBy(
+                                AgentDTO.ConfigSnapshot.ToolRef::getToolNum,
+                                LinkedHashMap::new,
+                                Collectors.toList()));
+                for (Map.Entry<String, List<AgentDTO.ConfigSnapshot.ToolRef>> entry : byToolNum.entrySet()) {
+                    String toolNum = entry.getKey();
+                    List<AgentDTO.ConfigSnapshot.ToolRef> bindings = entry.getValue();
+                    boolean wholeGroup = bindings.stream().noneMatch(this::isConcreteToolRef);
                     // 读查询统一在此完成：一次按 num 加载工具 DTO，供 FC / MCP 两条构建路径复用
                     ToolDTO toolDTO = toolQueryService.findByNum(toolNum);
                     if (isMcpServerConnection(toolDTO)) {
@@ -274,17 +286,36 @@ public class AgentRunnerFactory {
                             // activatedGroups 做 setActiveGroups 全量覆盖，EXTERNAL 分组也会被关掉，
                             // 导致 maps_* 虽已注册却报 Unauthorized tool call / is not available。
                             // ungrouped 工具不受该覆盖影响，与 FC / 文件类工具行为一致。
-                            toolkit.registration()
-                                    .mcpClient(mcpClient)
-                                    .apply();
-                            log.info("已注册 MCP 客户端 toolNum={} toolkitTools={}",
-                                    toolNum, toolkit.getToolNames());
+                            var registration = toolkit.registration().mcpClient(mcpClient);
+                            if (!wholeGroup) {
+                                List<String> enableTools = bindings.stream()
+                                        .filter(this::isConcreteToolRef)
+                                        .map(AgentDTO.ConfigSnapshot.ToolRef::getMcpToolName)
+                                        .filter(StrUtil::isNotBlank)
+                                        .distinct()
+                                        .toList();
+                                if (CollectionUtil.isNotEmpty(enableTools)) {
+                                    registration.enableTools(enableTools);
+                                }
+                            }
+                            registration.apply();
+                            log.info("已注册 MCP 客户端 toolNum={} wholeGroup={} toolkitTools={}",
+                                    toolNum, wholeGroup, toolkit.getToolNames());
                         } catch (Exception e) {
                             log.error("注册 MCP 工具失败，已跳过 toolNum={}", toolNum, e);
                         }
                     } else {
                         // FunctionCall（含 MCP API 打包-EXISTING_API，内部委托来源 FC 工具）：一端点一可执行工具
                         for (AgentTool tool : toolRunnerFactory.buildTools(toolDTO, inboundHeaders)) {
+                            if (!wholeGroup && !matchesFcBinding(tool, toolDTO, bindings)) {
+                                continue;
+                            }
+                            String fn = tool.getName();
+                            if (!registeredFcNames.add(fn)) {
+                                log.error("FunctionCall 函数名冲突将被 Toolkit 覆盖（后注册胜出）"
+                                                + " name={} toolNum={} —— 请检查命名/截断逻辑",
+                                        fn, toolNum);
+                            }
                             toolkit.registerAgentTool(tool);
                         }
                     }
@@ -470,16 +501,63 @@ public class AgentRunnerFactory {
     }
 
     private List<String> resolveToolNums(AgentDTO.ConfigSnapshot snapshot) {
+        return resolveToolRefs(snapshot).stream()
+                .map(AgentDTO.ConfigSnapshot.ToolRef::getToolNum)
+                .filter(StrUtil::isNotBlank)
+                .distinct()
+                .toList();
+    }
+
+    /**
+     * 解析挂载工具引用：优先 toolRefs；否则由 toolNums 回填为「整组」引用（兼容旧数据）。
+     */
+    private List<AgentDTO.ConfigSnapshot.ToolRef> resolveToolRefs(AgentDTO.ConfigSnapshot snapshot) {
         if (snapshot == null) {
             return java.util.Collections.emptyList();
         }
         if (CollectionUtil.isNotEmpty(snapshot.getToolRefs())) {
             return snapshot.getToolRefs().stream()
                     .filter(ref -> ref != null && StrUtil.isNotBlank(ref.getToolNum()))
-                    .map(AgentDTO.ConfigSnapshot.ToolRef::getToolNum)
                     .toList();
         }
-        return snapshot.getToolNums();
+        if (CollectionUtil.isEmpty(snapshot.getToolNums())) {
+            return java.util.Collections.emptyList();
+        }
+        return snapshot.getToolNums().stream()
+                .filter(StrUtil::isNotBlank)
+                .map(num -> AgentDTO.ConfigSnapshot.ToolRef.builder().toolNum(num).build())
+                .toList();
+    }
+
+    private boolean isConcreteToolRef(AgentDTO.ConfigSnapshot.ToolRef ref) {
+        return ref != null && StrUtil.isNotBlank(ref.getItemKind());
+    }
+
+    /**
+     * FC 工具是否命中具体端点绑定（按 method + path）。
+     */
+    private boolean matchesFcBinding(
+            AgentTool tool,
+            ToolDTO toolDTO,
+            List<AgentDTO.ConfigSnapshot.ToolRef> bindings) {
+        if (!(tool instanceof FunctionCallTool fct) || fct.getEndpoint() == null) {
+            return false;
+        }
+        String method = StrUtil.blankToDefault(fct.getEndpoint().getMethod(), "GET").toUpperCase();
+        String path = StrUtil.nullToEmpty(fct.getEndpoint().getPath());
+        for (AgentDTO.ConfigSnapshot.ToolRef ref : bindings) {
+            if (!isConcreteToolRef(ref)) {
+                continue;
+            }
+            if (!"FC_ENDPOINT".equalsIgnoreCase(ref.getItemKind())) {
+                continue;
+            }
+            if (method.equalsIgnoreCase(StrUtil.blankToDefault(ref.getMethod(), "GET"))
+                    && path.equals(StrUtil.nullToEmpty(ref.getPath()))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

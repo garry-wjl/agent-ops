@@ -38,6 +38,7 @@ const MODULE_ROUTES: ModuleRoute[] = [
 /** 路径段 → 子页面名 */
 const SUB_PAGE_NAMES: Record<string, string> = {
   editor: '新建',
+  detail: '详情',
   compare: '版本对比',
   new: '新建',
 };

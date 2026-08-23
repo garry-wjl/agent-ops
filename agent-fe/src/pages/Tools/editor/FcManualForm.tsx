@@ -1,20 +1,13 @@
 /**
  * FunctionCall 手动录入表单（type=FUNCTION_CALL, creationMode=MANUAL）
- * — PRD §8.6 / §7.1.5 / §7.6。
- *
- * - Base URL（必填，含 scheme）。
- * - 端点列表（增删，上限 50）；每个端点为可折叠卡片：
- *   方法 + Path 同行（标签在上）/ 端点描述 / Query 参数 / Path 参数 / Headers。
- * - 参数区：列标题行 + 线框容器（参数行 + 底栏「共 N 个 / 添加参数」）。
- * - Path 参数与 path 占位符一一对应，validatePathParams 行级红字提示。
- *
- * 受控：endpoints / baseUrl 由父草稿持有，经 patch 上抛整数组。
+ * — Body 可视化嵌套字段（含 map）；右上角一键试连。
  */
-import { useState } from "react";
-import { Button, Input, Select, Space, Typography } from "antd";
+import { useEffect, useState } from "react";
+import { Button, Input, Modal, Select, Space, Switch, Typography, message } from "antd";
 import {
   DeleteOutlined,
   DownOutlined,
+  LinkOutlined,
   PlusOutlined,
   UpOutlined,
 } from "@ant-design/icons";
@@ -25,18 +18,27 @@ import type {
   ApiEndpoint,
   HttpMethod,
 } from "@/types";
-import { TOOL_LIMITS, validatePathParams } from "../constants";
+import { TOOL_LIMITS, syncPathParamsFromPath } from "../constants";
 import type { ToolFormProps } from "./types";
+import { RequestBodyForm } from "./BodyFieldEditor";
+import {
+  fieldsToSchema,
+  schemaToFields,
+  type BodyFieldNode,
+} from "./bodySchema";
+import FcTestConnectionModal, {
+  type FcTestEndpointOption,
+} from "./FcTestConnectionModal";
 
-const { Text } = Typography;
+const { Text, Link } = Typography;
 
 const HTTP_METHODS: HttpMethod[] = ["GET", "POST", "PUT", "DELETE", "PATCH"];
 const PARAM_TYPES: ApiParamType[] = ["string", "number", "boolean", "integer"];
+const BODY_METHODS = new Set<HttpMethod>(["POST", "PUT", "PATCH", "DELETE"]);
 
-/** Query / Path 参数表列宽模板：名 / 类型 / 默认值 / 描述 / 删除。 */
+/** Query：名 / 类型 / 默认值 / 描述 / 必填 / 删除 */
 const PARAM_COLS =
-  "minmax(120px,1.2fr) 120px minmax(120px,1.2fr) minmax(140px,1.5fr) 40px";
-/** Headers 表列宽模板：名 / 默认值 / 描述 / 删除。 */
+  "minmax(110px,1.1fr) 110px minmax(100px,1fr) minmax(120px,1.3fr) 56px 40px";
 const HEADER_COLS =
   "minmax(140px,1.4fr) minmax(140px,1.4fr) minmax(160px,1.6fr) 40px";
 
@@ -51,25 +53,52 @@ function emptyEndpoint(): ApiEndpoint {
   };
 }
 
-export default function FcManualForm({ draft, patch }: ToolFormProps) {
+export default function FcManualForm({ draft, patch, disabled }: ToolFormProps) {
   const endpoints = draft.endpoints;
+  const readOnly = !!disabled;
+  const [testOpen, setTestOpen] = useState(false);
+  const [testFocusKey, setTestFocusKey] = useState<string>();
+  const [testFocusIdx, setTestFocusIdx] = useState(0);
 
-  const setEndpoints = (next: ApiEndpoint[]) => patch({ endpoints: next });
+  const setEndpoints = (next: ApiEndpoint[]) => {
+    if (readOnly) return;
+    patch({ endpoints: next });
+  };
 
-  const updateEndpoint = (idx: number, p: Partial<ApiEndpoint>) =>
+  const updateEndpoint = (idx: number, p: Partial<ApiEndpoint>) => {
+    if (readOnly) return;
     setEndpoints(endpoints.map((e, i) => (i === idx ? { ...e, ...p } : e)));
+  };
 
   const addEndpoint = () => {
+    if (readOnly) return;
     if (endpoints.length >= TOOL_LIMITS.ENDPOINT_MAX) return;
     setEndpoints([...endpoints, emptyEndpoint()]);
   };
 
-  const removeEndpoint = (idx: number) =>
+  const removeEndpoint = (idx: number) => {
+    if (readOnly) return;
     setEndpoints(endpoints.filter((_, i) => i !== idx));
+  };
+
+  const testOptions: FcTestEndpointOption[] = endpoints.map((ep, i) => ({
+    label: `端点${i + 1}: ${ep.method} ${ep.path}`,
+    method: ep.method,
+    path: ep.path,
+    endpoint: ep,
+  }));
+
+  const openTestFor = (idx: number) => {
+    if (readOnly) return;
+    const ep = endpoints[idx];
+    if (!ep) return;
+    setTestFocusIdx(idx);
+    setTestFocusKey(`${ep.method} ${ep.path}`);
+    setTestOpen(true);
+  };
 
   return (
     <div>
-      {/* Base URL */}
       <div style={{ marginBottom: 24 }}>
         <div style={{ marginBottom: 8 }}>
           <Text strong>Base URL</Text>
@@ -77,11 +106,11 @@ export default function FcManualForm({ draft, patch }: ToolFormProps) {
         <Input
           placeholder="https://api.example.com"
           value={draft.baseUrl}
+          disabled={readOnly}
           onChange={(e) => patch({ baseUrl: e.target.value })}
         />
       </div>
 
-      {/* 端点区标题 + 添加端点 */}
       <div
         style={{
           display: "flex",
@@ -93,13 +122,15 @@ export default function FcManualForm({ draft, patch }: ToolFormProps) {
         <Text strong style={{ fontSize: 16 }}>
           API 端点
         </Text>
-        <Button
-          icon={<PlusOutlined />}
-          disabled={endpoints.length >= TOOL_LIMITS.ENDPOINT_MAX}
-          onClick={addEndpoint}
-        >
-          添加端点
-        </Button>
+        {!readOnly && (
+          <Button
+            icon={<PlusOutlined />}
+            disabled={endpoints.length >= TOOL_LIMITS.ENDPOINT_MAX}
+            onClick={addEndpoint}
+          >
+            添加端点
+          </Button>
+        )}
       </div>
 
       {endpoints.map((ep, idx) => (
@@ -107,10 +138,34 @@ export default function FcManualForm({ draft, patch }: ToolFormProps) {
           key={idx}
           index={idx}
           endpoint={ep}
+          readOnly={readOnly}
           onChange={(p) => updateEndpoint(idx, p)}
           onRemove={() => removeEndpoint(idx)}
+          onTest={() => openTestFor(idx)}
         />
       ))}
+
+      {!readOnly && (
+        <FcTestConnectionModal
+          open={testOpen}
+          onClose={() => setTestOpen(false)}
+          baseUrl={draft.baseUrl}
+          options={testOptions}
+          initialSelectedKey={testFocusKey}
+          onFillResponseSchema={(schema, option) => {
+            const matches = endpoints
+              .map((e, i) => ({ e, i }))
+              .filter(
+                ({ e }) => e.method === option.method && e.path === option.path,
+              );
+            const idx =
+              matches.find((m) => m.i === testFocusIdx)?.i ?? matches[0]?.i;
+            if (idx == null) return;
+            updateEndpoint(idx, { responseBodySchema: schema });
+            message.success("已填充返回参数，请补充字段描述");
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -120,17 +175,78 @@ function EndpointCard({
   endpoint,
   onChange,
   onRemove,
+  onTest,
+  readOnly = false,
 }: {
   index: number;
   endpoint: ApiEndpoint;
   onChange: (p: Partial<ApiEndpoint>) => void;
   onRemove: () => void;
+  onTest: () => void;
+  readOnly?: boolean;
 }) {
   const [collapsed, setCollapsed] = useState(false);
-  const pathCheck = validatePathParams(
-    endpoint.path,
-    endpoint.pathParams ?? [],
+  const [bodyFields, setBodyFields] = useState<BodyFieldNode[]>(() =>
+    schemaToFields(endpoint.requestBodySchema),
   );
+  const [responseFields, setResponseFields] = useState<BodyFieldNode[]>(() =>
+    schemaToFields(endpoint.responseBodySchema),
+  );
+  const showBody = BODY_METHODS.has(endpoint.method);
+
+  const requestSchemaKey = JSON.stringify(endpoint.requestBodySchema ?? null);
+  const responseSchemaKey = JSON.stringify(endpoint.responseBodySchema ?? null);
+  useEffect(() => {
+    setBodyFields(schemaToFields(endpoint.requestBodySchema));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestSchemaKey]);
+  useEffect(() => {
+    setResponseFields(schemaToFields(endpoint.responseBodySchema));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [responseSchemaKey]);
+
+  const onBodyFieldsChange = (fields: BodyFieldNode[]) => {
+    if (readOnly) return;
+    setBodyFields(fields);
+    onChange({
+      requestBodySchema: fieldsToSchema(fields),
+    });
+  };
+
+  const onResponseFieldsChange = (fields: BodyFieldNode[]) => {
+    if (readOnly) return;
+    setResponseFields(fields);
+    onChange({
+      responseBodySchema: fieldsToSchema(fields),
+    });
+  };
+
+  const onPathChange = (path: string) => {
+    if (readOnly) return;
+    onChange({
+      path,
+      pathParams: syncPathParamsFromPath(path, endpoint.pathParams ?? []),
+    });
+  };
+
+  // 编辑回填：保证 path 占位与 pathParams 同步（不再展示 Path 参数表）
+  useEffect(() => {
+    if (readOnly) return;
+    const synced = syncPathParamsFromPath(
+      endpoint.path,
+      endpoint.pathParams ?? [],
+    );
+    const prev = endpoint.pathParams ?? [];
+    const same =
+      prev.length === synced.length &&
+      prev.every(
+        (p, i) => p.name === synced[i].name && p.required === synced[i].required,
+      );
+    if (!same) {
+      onChange({ pathParams: synced });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在 path / 外部 pathParams 变化时对齐
+  }, [endpoint.path]);
 
   return (
     <div
@@ -141,7 +257,6 @@ function EndpointCard({
         overflow: "hidden",
       }}
     >
-      {/* 卡片头：折叠 + 端点N + 删除端点 */}
       <div
         style={{
           display: "flex",
@@ -157,20 +272,48 @@ function EndpointCard({
         >
           {collapsed ? <DownOutlined /> : <UpOutlined />}
           <Text strong>端点{index + 1}</Text>
+          {readOnly && (
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {endpoint.method} {endpoint.path}
+            </Text>
+          )}
         </Space>
-        <Button
-          type="text"
-          icon={<DeleteOutlined />}
-          style={{ color: "#90A1B9" }}
-          onClick={onRemove}
-        >
-          删除端点
-        </Button>
+        {!readOnly && (
+          <Space size={4}>
+            <Link
+              onClick={(e) => {
+                e.stopPropagation();
+                onTest();
+              }}
+              style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+            >
+              <LinkOutlined /> 一键测试
+            </Link>
+            <Button
+              type="text"
+              danger
+              size="small"
+              icon={<DeleteOutlined />}
+              aria-label="删除端点"
+              title="删除端点"
+              onClick={(e) => {
+                e.stopPropagation();
+                Modal.confirm({
+                  title: "删除端点",
+                  content: `确认删除「端点${index + 1}」？删除后不可恢复。`,
+                  okText: "删除",
+                  okButtonProps: { danger: true },
+                  cancelText: "取消",
+                  onOk: () => onRemove(),
+                });
+              }}
+            />
+          </Space>
+        )}
       </div>
 
       {!collapsed && (
         <div style={{ padding: 16 }}>
-          {/* 方法 + Path */}
           <div
             style={{
               display: "grid",
@@ -186,6 +329,7 @@ function EndpointCard({
               <Select<HttpMethod>
                 style={{ width: "100%" }}
                 value={endpoint.method}
+                disabled={readOnly}
                 onChange={(m) => onChange({ method: m })}
                 options={HTTP_METHODS.map((m) => ({ value: m, label: m }))}
               />
@@ -197,17 +341,12 @@ function EndpointCard({
               <Input
                 placeholder="/users/{id}"
                 value={endpoint.path}
-                onChange={(e) => onChange({ path: e.target.value })}
+                disabled={readOnly}
+                onChange={(e) => onPathChange(e.target.value)}
               />
             </div>
           </div>
-          {!pathCheck.ok && (
-            <div style={{ color: "#DC2626", fontSize: 12, marginBottom: 12 }}>
-              ✗ {pathCheck.error}
-            </div>
-          )}
 
-          {/* 端点描述 */}
           <div style={{ marginBottom: 20 }}>
             <div style={{ marginBottom: 6 }}>
               <Text strong>端点描述</Text>
@@ -215,26 +354,44 @@ function EndpointCard({
             <Input.TextArea
               placeholder="端点的详细描述"
               maxLength={TOOL_LIMITS.ENDPOINT_DESC_MAX}
-              showCount
+              showCount={!readOnly}
               rows={2}
               value={endpoint.description}
+              disabled={readOnly}
               onChange={(e) => onChange({ description: e.target.value })}
             />
           </div>
 
+          <HeaderTable
+            rows={endpoint.headers ?? []}
+            onChange={(rows) => onChange({ headers: rows })}
+            readOnly={readOnly}
+          />
           <ParamTable
             label="Query 参数"
             rows={endpoint.queryParams ?? []}
             onChange={(rows) => onChange({ queryParams: rows })}
+            showRequired
+            readOnly={readOnly}
           />
-          <ParamTable
-            label="Path 参数"
-            rows={endpoint.pathParams ?? []}
-            onChange={(rows) => onChange({ pathParams: rows })}
-          />
-          <HeaderTable
-            rows={endpoint.headers ?? []}
-            onChange={(rows) => onChange({ headers: rows })}
+          {showBody && (
+            <RequestBodyForm
+              fields={bodyFields}
+              required={endpoint.requestBodyRequired}
+              onFieldsChange={onBodyFieldsChange}
+              onRequiredChange={(requestBodyRequired) =>
+                onChange({ requestBodyRequired })
+              }
+              readOnly={readOnly}
+            />
+          )}
+          <RequestBodyForm
+            title="返回参数"
+            hint="定义响应 JSON 结构（可与 Body 同样嵌套）；试连成功后可一键填充"
+            showOverallRequired={false}
+            fields={responseFields}
+            onFieldsChange={onResponseFieldsChange}
+            readOnly={readOnly}
           />
         </div>
       )}
@@ -244,28 +401,43 @@ function EndpointCard({
 
 const colLabelStyle: React.CSSProperties = { fontSize: 13 };
 
-/** Query / Path 参数表（名 / 类型 / 默认值 / 描述）。 */
 function ParamTable({
   label,
   rows,
   onChange,
+  showRequired = false,
+  readOnly = false,
 }: {
   label: string;
   rows: ApiParam[];
   onChange: (rows: ApiParam[]) => void;
+  showRequired?: boolean;
+  readOnly?: boolean;
 }) {
-  const update = (idx: number, p: Partial<ApiParam>) =>
+  const update = (idx: number, p: Partial<ApiParam>) => {
+    if (readOnly) return;
     onChange(rows.map((r, i) => (i === idx ? { ...r, ...p } : r)));
-  const add = () =>
+  };
+  const add = () => {
+    if (readOnly) return;
     onChange([
       ...rows,
-      { name: "", type: "string", defaultValue: "", description: "" },
+      {
+        name: "",
+        type: "string",
+        defaultValue: "",
+        description: "",
+        required: false,
+      },
     ]);
-  const remove = (idx: number) => onChange(rows.filter((_, i) => i !== idx));
+  };
+  const remove = (idx: number) => {
+    if (readOnly) return;
+    onChange(rows.filter((_, i) => i !== idx));
+  };
 
   return (
     <div style={{ marginBottom: 20 }}>
-      {/* 列标题行 */}
       <div
         style={{
           display: "grid",
@@ -284,10 +456,16 @@ function ParamTable({
         <Text strong style={colLabelStyle}>
           描述
         </Text>
+        {showRequired ? (
+          <Text strong style={colLabelStyle}>
+            必填
+          </Text>
+        ) : (
+          <span />
+        )}
         <span />
       </div>
 
-      {/* 线框容器：参数行 + 底栏 */}
       <div
         style={{ border: "1px solid #E2E8F0", borderRadius: 8, padding: 12 }}
       >
@@ -305,30 +483,50 @@ function ParamTable({
             <Input
               placeholder="参数名"
               value={r.name}
+              disabled={readOnly}
               onChange={(e) => update(idx, { name: e.target.value })}
             />
             <Select<ApiParamType>
               value={r.type}
+              disabled={readOnly}
               onChange={(t) => update(idx, { type: t })}
               options={PARAM_TYPES.map((t) => ({ value: t, label: t }))}
             />
             <Input
               placeholder="可选"
               value={r.defaultValue}
+              disabled={readOnly}
               onChange={(e) => update(idx, { defaultValue: e.target.value })}
             />
             <Input
               placeholder="描述"
               value={r.description}
+              disabled={readOnly}
               onChange={(e) => update(idx, { description: e.target.value })}
             />
-            <Button
-              type="text"
-              danger
-              size="small"
-              icon={<DeleteOutlined />}
-              onClick={() => remove(idx)}
-            />
+            {showRequired ? (
+              <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                <Switch
+                  size="small"
+                  checked={!!r.required}
+                  disabled={readOnly}
+                  onChange={(required) => update(idx, { required })}
+                />
+              </div>
+            ) : (
+              <span />
+            )}
+            {readOnly ? (
+              <span />
+            ) : (
+              <Button
+                type="text"
+                danger
+                size="small"
+                icon={<DeleteOutlined />}
+                onClick={() => remove(idx)}
+              />
+            )}
           </div>
         ))}
         <div
@@ -339,37 +537,46 @@ function ParamTable({
           }}
         >
           <Text type="secondary">共{rows.length}个</Text>
-          <Button
-            type="link"
-            icon={<PlusOutlined />}
-            onClick={add}
-            style={{ padding: 0 }}
-          >
-            添加参数
-          </Button>
+          {!readOnly && (
+            <Button
+              type="link"
+              icon={<PlusOutlined />}
+              onClick={add}
+              style={{ padding: 0 }}
+            >
+              添加参数
+            </Button>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-/** Headers 表（名 / 默认值 / 描述，不支持变量占位）。 */
 function HeaderTable({
   rows,
   onChange,
+  readOnly = false,
 }: {
   rows: ApiHeader[];
   onChange: (rows: ApiHeader[]) => void;
+  readOnly?: boolean;
 }) {
-  const update = (idx: number, p: Partial<ApiHeader>) =>
+  const update = (idx: number, p: Partial<ApiHeader>) => {
+    if (readOnly) return;
     onChange(rows.map((r, i) => (i === idx ? { ...r, ...p } : r)));
-  const add = () =>
+  };
+  const add = () => {
+    if (readOnly) return;
     onChange([...rows, { name: "", defaultValue: "", description: "" }]);
-  const remove = (idx: number) => onChange(rows.filter((_, i) => i !== idx));
+  };
+  const remove = (idx: number) => {
+    if (readOnly) return;
+    onChange(rows.filter((_, i) => i !== idx));
+  };
 
   return (
-    <div>
-      {/* 列标题行 */}
+    <div style={{ marginBottom: 20 }}>
       <div
         style={{
           display: "grid",
@@ -405,25 +612,32 @@ function HeaderTable({
             <Input
               placeholder="如 Accept"
               value={r.name}
+              disabled={readOnly}
               onChange={(e) => update(idx, { name: e.target.value })}
             />
             <Input
               placeholder="application/json"
               value={r.defaultValue}
+              disabled={readOnly}
               onChange={(e) => update(idx, { defaultValue: e.target.value })}
             />
             <Input
               placeholder="描述"
               value={r.description}
+              disabled={readOnly}
               onChange={(e) => update(idx, { description: e.target.value })}
             />
-            <Button
-              type="text"
-              danger
-              size="small"
-              icon={<DeleteOutlined />}
-              onClick={() => remove(idx)}
-            />
+            {readOnly ? (
+              <span />
+            ) : (
+              <Button
+                type="text"
+                danger
+                size="small"
+                icon={<DeleteOutlined />}
+                onClick={() => remove(idx)}
+              />
+            )}
           </div>
         ))}
         <div
@@ -434,14 +648,16 @@ function HeaderTable({
           }}
         >
           <Text type="secondary">共{rows.length}个</Text>
-          <Button
-            type="link"
-            icon={<PlusOutlined />}
-            onClick={add}
-            style={{ padding: 0 }}
-          >
-            添加参数
-          </Button>
+          {!readOnly && (
+            <Button
+              type="link"
+              icon={<PlusOutlined />}
+              onClick={add}
+              style={{ padding: 0 }}
+            >
+              添加参数
+            </Button>
+          )}
         </div>
       </div>
     </div>
