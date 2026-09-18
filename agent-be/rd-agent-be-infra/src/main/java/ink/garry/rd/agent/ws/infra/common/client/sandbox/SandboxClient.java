@@ -46,6 +46,10 @@ public class SandboxClient {
 
     @PostConstruct
     public void init() {
+        if (Boolean.TRUE.equals(properties.isMock())) {
+            log.warn("SandboxClient skipped init because sandbox.mock=true");
+            return;
+        }
         this.connectionConfig = ConnectionConfig.builder()
                 .apiKey(properties.getApiKey())
                 .domain(properties.getDomain())

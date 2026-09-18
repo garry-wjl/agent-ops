@@ -18,6 +18,7 @@ import {
   InputNumber,
   Select,
   Space,
+  Switch,
   message,
 } from "antd";
 import {
@@ -69,6 +70,10 @@ export default function SandboxFormDrawer({
         memoryMb: target.memoryMb,
         aliveMinutes: target.aliveMinutes,
         remark: target.remark,
+        poolEnabled: target.poolEnabled ?? false,
+        poolSize: target.poolSize ?? 1,
+        maxConcurrent: target.maxConcurrent ?? 8,
+        sessionIdleTtlMinutes: target.sessionIdleTtlMinutes ?? 10,
       });
     } else {
       form.resetFields();
@@ -78,6 +83,10 @@ export default function SandboxFormDrawer({
         cpu: 1,
         memoryMb: 2048,
         aliveMinutes: 60,
+        poolEnabled: false,
+        poolSize: 1,
+        maxConcurrent: 8,
+        sessionIdleTtlMinutes: 10,
       });
     }
   }, [open, target, form]);
@@ -86,8 +95,14 @@ export default function SandboxFormDrawer({
   const persist = async (): Promise<string> => {
     const values = await form.validateFields();
     if (isEdit) {
+      const poolFields = {
+        poolEnabled: !!values.poolEnabled,
+        poolSize: values.poolSize ?? 1,
+        maxConcurrent: values.maxConcurrent ?? 8,
+        sessionIdleTtlMinutes: values.sessionIdleTtlMinutes ?? 10,
+      };
       const param: SandboxUpdateParam = specLocked
-        ? { num: target!.num, remark: values.remark?.trim() || undefined }
+        ? { num: target!.num, remark: values.remark?.trim() || undefined, ...poolFields }
         : {
             num: target!.num,
             name: values.name.trim(),
@@ -95,6 +110,7 @@ export default function SandboxFormDrawer({
             memoryMb: values.memoryMb,
             aliveMinutes: values.aliveMinutes,
             remark: values.remark?.trim() || undefined,
+            ...poolFields,
           };
       await updateMut.mutateAsync(param);
       return target!.num;
@@ -106,6 +122,10 @@ export default function SandboxFormDrawer({
       memoryMb: values.memoryMb,
       aliveMinutes: values.aliveMinutes,
       remark: values.remark?.trim() || undefined,
+      poolEnabled: !!values.poolEnabled,
+      poolSize: values.poolSize ?? 1,
+      maxConcurrent: values.maxConcurrent ?? 8,
+      sessionIdleTtlMinutes: values.sessionIdleTtlMinutes ?? 10,
     };
     const created = await createMut.mutateAsync(param);
     return created.num;
@@ -262,6 +282,56 @@ export default function SandboxFormDrawer({
             addonAfter="分钟"
             disabled={specLocked}
           />
+        </Form.Item>
+
+        <Form.Item
+          name="poolEnabled"
+          label="启用沙箱池"
+          valuePropName="checked"
+          extra="开启后预创建常驻空闲实例，加速会话启动；关闭则按会话现开容器"
+        >
+          <Switch />
+        </Form.Item>
+
+        <Form.Item noStyle shouldUpdate={(prev, cur) => prev.poolEnabled !== cur.poolEnabled}>
+          {() =>
+            form.getFieldValue("poolEnabled") ? (
+              <Form.Item
+                name="poolSize"
+                label="常驻实例数"
+                rules={[
+                  { required: true, message: "请输入常驻实例数" },
+                  { type: "integer", min: 1, max: 64, message: "常驻数需在 1~64" },
+                ]}
+                extra="默认 1，为热池目标空闲水位"
+              >
+                <InputNumber min={1} max={64} style={{ width: "100%" }} />
+              </Form.Item>
+            ) : null
+          }
+        </Form.Item>
+
+        <Form.Item
+          name="maxConcurrent"
+          label="最大并发实例"
+          rules={[
+            { required: true, message: "请输入最大并发" },
+            { type: "integer", min: 1, max: 128, message: "最大并发需在 1~128" },
+          ]}
+          extra="该资产下 IDLE+BOUND 上限（关池同样生效）"
+        >
+          <InputNumber min={1} max={128} style={{ width: "100%" }} />
+        </Form.Item>
+        <Form.Item
+          name="sessionIdleTtlMinutes"
+          label="会话空闲回收（分钟）"
+          rules={[
+            { required: true, message: "请输入空闲 TTL" },
+            { type: "integer", min: 1, max: 1440, message: "TTL 需在 1~1440" },
+          ]}
+          extra="会话无活动超过该时间后回收容器"
+        >
+          <InputNumber min={1} max={1440} style={{ width: "100%" }} addonAfter="分钟" />
         </Form.Item>
 
         <Form.Item

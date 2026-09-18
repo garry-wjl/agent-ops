@@ -96,6 +96,8 @@ public class SandboxCommandService {
             Sandbox sandbox = sandboxFactory.buildSandbox(
                     param.getWorkspaceNum(), param.getName(), type,
                     param.getCpu(), param.getMemoryMb(), param.getAliveMinutes(), param.getRemark());
+            applyPoolConfig(sandbox, param.getPoolEnabled(), param.getPoolSize(),
+                    param.getMaxConcurrent(), param.getSessionIdleTtlMinutes());
             // 领域动作：聚合内统一校验全部不变量并落库 + 发 SANDBOX_CREATED
             sandbox.save(operatorId);
             return toDTO(sandbox);
@@ -144,6 +146,9 @@ public class SandboxCommandService {
             }
             // 备注任意非删除态可改
             sandbox.setRemark(param.getRemark());
+            // 池策略任意非删除态可改（规格锁定后仍可调）
+            applyPoolConfig(sandbox, param.getPoolEnabled(), param.getPoolSize(),
+                    param.getMaxConcurrent(), param.getSessionIdleTtlMinutes());
             // 整聚合覆盖落库（聚合内统一校验不变量并发 SANDBOX_UPDATED）
             sandbox.save(operatorId);
             return null;
@@ -268,7 +273,7 @@ public class SandboxCommandService {
     @Transactional(rollbackFor = Exception.class)
     public void onlineSandbox(String num, String instanceId, String operatorId) {
         Assert.notBlank(num, "沙箱业务编号不能为空");
-        Assert.notBlank(instanceId, "容器实例 id 不能为空");
+        // instanceId 允许为空：关池预创建为 0；开池实例在 runtime 表
         Assert.notBlank(operatorId, "operatorId 不能为空");
 
         String lockKey = LockKeyConstant.SANDBOX_COMMAND_LOCK_PREFIX + num;
@@ -401,11 +406,34 @@ public class SandboxCommandService {
                 .status(s.getStatus() == null ? null : s.getStatus().name())
                 .remark(s.getRemark())
                 .sandboxInstanceId(s.getSandboxInstanceId())
+                .poolEnabled(s.getPoolEnabled())
+                .poolSize(s.getPoolSize())
+                .maxConcurrent(s.getMaxConcurrent())
+                .sessionIdleTtlMinutes(s.getSessionIdleTtlMinutes())
                 .createNo(s.getCreateNo())
                 .updateNo(s.getUpdateNo())
                 .createTime(s.getCreateTime())
                 .updateTime(s.getUpdateTime())
                 .build();
+    }
+
+    private static void applyPoolConfig(Sandbox sandbox,
+                                        Boolean poolEnabled,
+                                        Integer poolSize,
+                                        Integer maxConcurrent,
+                                        Integer sessionIdleTtlMinutes) {
+        if (poolEnabled != null) {
+            sandbox.setPoolEnabled(poolEnabled);
+        }
+        if (poolSize != null) {
+            sandbox.setPoolSize(poolSize);
+        }
+        if (maxConcurrent != null) {
+            sandbox.setMaxConcurrent(maxConcurrent);
+        }
+        if (sessionIdleTtlMinutes != null) {
+            sandbox.setSessionIdleTtlMinutes(sessionIdleTtlMinutes);
+        }
     }
 
     /**

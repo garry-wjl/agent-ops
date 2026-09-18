@@ -2,6 +2,7 @@ package ink.garry.rd.agent.ws.adapter.sandbox.scheduler;
 
 import cn.hutool.core.collection.CollUtil;
 import ink.garry.rd.agent.ws.application.sandbox.SandboxQueryService;
+import ink.garry.rd.agent.ws.application.sandbox.pool.SandboxPoolService;
 import ink.garry.rd.agent.ws.application.sandbox.runner.SandboxRunner;
 import ink.garry.rd.agent.ws.client.sandbox.dto.SandboxDTO;
 import ink.garry.rd.agent.ws.infra.common.constant.LockKeyConstant;
@@ -18,9 +19,11 @@ import java.util.concurrent.TimeUnit;
 /**
  * 沙箱脏态对账定时任务（adapter 层入站调度入口）。
  * <p>
- * 周期校正平台 status 与 OpenSandbox 真实状态：取全部在线沙箱 → 逐一交
- * {@link SandboxRunner#reconcile(String, String, String)} 判活（不存活则回写下线）。
- * 本类<b>只负责调度 + 分布式锁</b>，不直接碰 OpenSandbox，也不写业务逻辑（沙箱管理技术方案 §7.2.2）。
+ * 周期：取在线资产 → {@link SandboxRunner#reconcile} 清理死亡 runtime →
+ * {@link SandboxPoolService#reclaimInactiveSessions} 回收空闲超时 BOUND →
+ * 开池资产 {@link SandboxPoolService#replenish} 补水位。
+ * 会话隔离模型下资产 ONLINE 表示规格就绪，不再因资产表 instanceId 为空/死亡而下线资产。
+ * 本类只负责调度 + 分布式锁。
  *
  * <h3>并发控制</h3>
  * 多副本部署下经 Redisson 全局锁 {@link LockKeyConstant#SANDBOX_RECONCILE_LOCK} 保证同一时刻
@@ -43,6 +46,8 @@ public class SandboxReconcileScheduler {
     private SandboxQueryService sandboxQueryService;
     @Resource
     private SandboxRunner sandboxRunner;
+    @Resource
+    private SandboxPoolService sandboxPoolService;
     @Resource
     private RedissonClient redissonClient;
 
@@ -101,5 +106,19 @@ public class SandboxReconcileScheduler {
             }
         }
         log.info("[sandbox-reconcile] round done, online={}, checked={}", total, corrected);
+        try {
+            sandboxPoolService.reclaimInactiveSessions();
+        } catch (Exception e) {
+            log.warn("[sandbox-reconcile] reclaim failed: {}", e.getMessage());
+        }
+        for (SandboxDTO dto : onlineList) {
+            try {
+                if (Boolean.TRUE.equals(dto.getPoolEnabled())) {
+                    sandboxPoolService.replenish(dto.getNum(), SYSTEM_OPERATOR);
+                }
+            } catch (Exception e) {
+                log.warn("[sandbox-reconcile] replenish failed num={}: {}", dto.getNum(), e.getMessage());
+            }
+        }
     }
 }

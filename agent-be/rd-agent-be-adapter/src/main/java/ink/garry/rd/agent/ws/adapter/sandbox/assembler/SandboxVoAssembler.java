@@ -41,6 +41,10 @@ public class SandboxVoAssembler {
         dto.setMemoryMb(param.getMemoryMb());
         dto.setAliveMinutes(param.getAliveMinutes());
         dto.setRemark(param.getRemark());
+        dto.setPoolEnabled(param.getPoolEnabled());
+        dto.setPoolSize(param.getPoolSize());
+        dto.setMaxConcurrent(param.getMaxConcurrent());
+        dto.setSessionIdleTtlMinutes(param.getSessionIdleTtlMinutes());
         return dto;
     }
 
@@ -56,6 +60,10 @@ public class SandboxVoAssembler {
         dto.setMemoryMb(param.getMemoryMb());
         dto.setAliveMinutes(param.getAliveMinutes());
         dto.setRemark(param.getRemark());
+        dto.setPoolEnabled(param.getPoolEnabled());
+        dto.setPoolSize(param.getPoolSize());
+        dto.setMaxConcurrent(param.getMaxConcurrent());
+        dto.setSessionIdleTtlMinutes(param.getSessionIdleTtlMinutes());
         return dto;
     }
 
@@ -93,6 +101,10 @@ public class SandboxVoAssembler {
         vo.setStatus(dto.getStatus());
         vo.setRemark(dto.getRemark());
         vo.setSandboxInstanceId(dto.getSandboxInstanceId());
+        vo.setPoolEnabled(dto.getPoolEnabled());
+        vo.setPoolSize(dto.getPoolSize());
+        vo.setMaxConcurrent(dto.getMaxConcurrent());
+        vo.setSessionIdleTtlMinutes(dto.getSessionIdleTtlMinutes());
         vo.setCreateNo(dto.getCreateNo());
         vo.setUpdateNo(dto.getUpdateNo());
         vo.setCreateTime(dto.getCreateTime());

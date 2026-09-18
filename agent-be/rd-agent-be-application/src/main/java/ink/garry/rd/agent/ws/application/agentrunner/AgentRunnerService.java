@@ -12,17 +12,17 @@ import ink.garry.rd.agent.ws.client.session.dto.SessionDTO;
 import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContextHolder;
 import io.a2a.client.transport.jsonrpc.JSONRPCTransport;
 import io.a2a.client.transport.jsonrpc.JSONRPCTransportConfig;
-import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.agent.A2aAgent;
 import io.agentscope.core.a2a.agent.A2aAgentConfig;
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.harness.agent.HarnessAgent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -154,8 +154,8 @@ public class AgentRunnerService {
                         sessionNum, agentNum, agentVersionNum, workspaceNum, operatorId),
                 sessionContext);
 
-        //2. 创建 Agent(注入 sessionNum 以绑定会话级沙箱工具；按 targetVersion 装配目标版本快照；有附件时注册 read_attachment)
-        AgentBase agent = agentRunnerFactory.build(
+        //2. 创建 Agent(注入 sessionNum 以绑定会话级沙箱；按 targetVersion 装配目标版本快照；有附件时注册 read_attachment)
+        Agent agent = agentRunnerFactory.build(
                 agentNum, sessionNum, targetVersion, vars, content.hasAttachments());
 
         //3. 添加用户消息（MULTIMODAL 存 JSON；纯文本保持 TEXT）
@@ -180,10 +180,17 @@ public class AgentRunnerService {
         // transformEvent 拦截 REASONING 事件，将标签内文本转为 ThinkingBlock，上游无感。
         AtomicBoolean inThinkTag = new AtomicBoolean(false);
 
-        // 注意：agent.stream(...) 是惰性 Flux（AgentBase#createEventStream 用了 deferContextual + create），
-        // 订阅之前 callSupplier 不会触发，doCall 里的 addToMemory / executeIteration 也不会发生。
-        // Agent 2.0.0 通过 stateStore 自动保存状态，不再需要手动 saveTo。
-        return agent.stream(msg)
+        RuntimeContext runtimeContext = RuntimeContext.builder()
+                .userId(StrUtil.blankToDefault(operatorId, "anonymous"))
+                .sessionId(finalSessionNum)
+                .build();
+
+        // 注意：agent.stream(...) 是惰性 Flux；HarnessAgent 使用带 RuntimeContext 的重载以隔离 (userId, sessionId)。
+        Flux<Event> eventFlux = agent instanceof HarnessAgent harnessAgent
+                ? harnessAgent.stream(msg, runtimeContext)
+                : agent.stream(msg);
+
+        return eventFlux
                 .map(event -> transformEvent(event, inThinkTag))
                 .doOnNext(acc::accept)
                 .doOnNext(usageAcc::accept)

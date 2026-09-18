@@ -31,4 +31,16 @@ public class SandboxCreateParamDTO {
 
     /** 备注（可空，≤100 字）。 */
     private String remark;
+
+    /** 是否启用热池（默认 false）。 */
+    private Boolean poolEnabled;
+
+    /** 热池常驻数（默认 1）。 */
+    private Integer poolSize;
+
+    /** 最大并发实例（默认 8）。 */
+    private Integer maxConcurrent;
+
+    /** 会话空闲 TTL 分钟（默认 10）。 */
+    private Integer sessionIdleTtlMinutes;
 }

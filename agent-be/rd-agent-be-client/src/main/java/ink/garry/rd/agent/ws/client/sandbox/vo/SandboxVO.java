@@ -44,6 +44,18 @@ public class SandboxVO {
     /** OpenSandbox 容器实例 id；草稿 / 失败态为空。 */
     private String sandboxInstanceId;
 
+    /** 是否启用热池。 */
+    private Boolean poolEnabled;
+
+    /** 热池常驻数。 */
+    private Integer poolSize;
+
+    /** 最大并发实例。 */
+    private Integer maxConcurrent;
+
+    /** 会话空闲 TTL 分钟。 */
+    private Integer sessionIdleTtlMinutes;
+
     /** 创建人工号。 */
     private String createNo;
 
