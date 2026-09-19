@@ -36,8 +36,40 @@ public class SandboxProperties {
     private int requestTimeoutSeconds = 30;
 
     /**
-     * 是否 Mock 远程沙箱（不连真实 OpenSandbox）。
-     * <p>本地/单测设 {@code sandbox.mock=true}；生产必须为 false。
+     * 本地模式（{@code sandbox.mock=true}）是否用 Docker 替代远程 OpenSandbox。
+     * <p>
+     * {@code true}：本机 Docker 生命周期 + exec（需 Docker Desktop / daemon）；
+     * {@code false}：生产 OpenSandbox 网关。禁止空实现。
      */
     private boolean mock = false;
+
+    /**
+     * 本地 Docker 沙箱镜像（仅 {@link #mock}=true 时生效）。
+     * <p>默认 {@code ubuntu:22.04}（需含 sh/tar/base64）；可改为预拉取的 code-interpreter 镜像。
+     */
+    private String dockerImage = "ubuntu:22.04";
+
+    /**
+     * 会话工作空间 OSS。开启后每个会话把独立前缀挂到容器 {@code /workspace}。
+     * 密钥走环境变量，禁止明文落 git。
+     */
+    private OssWorkspace oss = new OssWorkspace();
+
+    /**
+     * 会话 OSS 卷配置。
+     */
+    @Data
+    public static class OssWorkspace {
+
+        /** 关闭时不挂卷，热池行为不变 */
+        private boolean enabled = false;
+
+        private String bucket;
+
+        private String endpoint;
+
+        private String accessKeyId;
+
+        private String accessKeySecret;
+    }
 }

@@ -10,6 +10,7 @@ import ink.garry.rd.agent.ws.application.sandbox.runner.SandboxSession;
 import ink.garry.rd.agent.ws.infra.agentscope.harness.opensandbox.OpenSandboxCommandResult;
 import ink.garry.rd.agent.ws.infra.agentscope.harness.opensandbox.OpenSandboxExecBridge;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -17,10 +18,13 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * 将 {@link SandboxRunner} 适配为 Harness OpenSandbox 执行桥。
+ * 将 {@link SandboxRunner} 适配为 Harness OpenSandbox 执行桥（真实网关）。
+ * <p>
+ * {@code sandbox.mock=true} 时改用 {@link DockerOpenSandboxExecBridge}（本机 Docker）。
  */
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(prefix = "sandbox", name = "mock", havingValue = "false", matchIfMissing = true)
 public class SandboxRunnerOpenSandboxExecBridge implements OpenSandboxExecBridge {
 
     private final SandboxRunner sandboxRunner;

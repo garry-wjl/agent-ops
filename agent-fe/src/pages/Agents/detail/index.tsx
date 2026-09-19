@@ -100,7 +100,6 @@ type CfgTabKey =
   | 'skillCfg'
   | 'mcpCfg'
   | 'sandboxCfg'
-  | 'advancedCfg'
   | 'apiInfo'
   | 'apiKey'
   | 'versions'
@@ -248,7 +247,6 @@ export default function AgentDetailPage() {
       { key: 'skillCfg', label: 'Skill 配置' },
       { key: 'mcpCfg', label: '工具配置' },
       { key: 'sandboxCfg', label: '沙箱配置' },
-      { key: 'advancedCfg', label: '记忆配置' },
       { key: 'apiInfo', label: 'API 信息' },
       { key: 'apiKey', label: '秘钥管理' },
       { key: 'sessions', label: '会话历史' },
@@ -528,7 +526,7 @@ export default function AgentDetailPage() {
             <BasicTab detail={detail} />
           ))}
 
-        {/* CONFIG：模型 / Skill / 工具 / 沙箱 / 记忆 */}
+        {/* CONFIG：模型 / Skill / 工具 / 沙箱 */}
         {!isA2A && activeTab === 'modelCfg' && (
           <ModelCfgTab detail={detail} models={models} />
         )}
@@ -540,9 +538,6 @@ export default function AgentDetailPage() {
         )}
         {!isA2A && activeTab === 'sandboxCfg' && (
           <SandboxCfgTab detail={detail} sandboxes={sandboxes} />
-        )}
-        {!isA2A && activeTab === 'advancedCfg' && (
-          <AdvancedCfgTab detail={detail} />
         )}
 
         {/* A2A：Skills / MCP */}
@@ -764,13 +759,29 @@ function BasicTab(props: { detail: AgentDetailVO }) {
         label="最大迭代轮次"
         value={cfg?.maxIters != null ? String(cfg.maxIters) : '10'}
       />
+      <Field
+        label="用户长期记忆"
+        value={cfg?.enableLongTermMemory ? '已开启' : '关闭'}
+      />
+      <Field
+        label="压缩触发消息数"
+        value={String(cfg?.compaction?.triggerMessages ?? 50)}
+      />
+      <Field
+        label="压缩触发 Token"
+        value={String(cfg?.compaction?.triggerTokens ?? 0)}
+      />
+      <Field
+        label="压缩后保留消息数"
+        value={String(cfg?.compaction?.keepMessages ?? 20)}
+      />
+      <PromptBlock
+        title="压缩摘要提示词"
+        content={cfg?.compaction?.summaryPrompt?.trim() || '（沿用 Harness 默认）'}
+      />
       <PromptBlock
         title="系统提示词"
         content={cfg?.systemPrompt?.trim() || '（无系统提示词）'}
-      />
-      <PromptBlock
-        title="用户提示词模板"
-        content={cfg?.userPrompt?.trim() || '（无用户提示词）'}
       />
     </div>
   );
@@ -1004,33 +1015,6 @@ function SandboxCfgTab({
       <Field label="类型" value={sb.type} />
       <Field label="规格" value={`${sb.cpu} 核 / ${sb.memoryMb} MB`} />
       <Field label="状态" value={sb.status} />
-    </div>
-  );
-}
-
-/** v2.6：CONFIG 模式 - 高级配置 Tab */
-function AdvancedCfgTab({ detail }: { detail: AgentDetailVO }) {
-  const cfg = detail.currentVersion?.configSnapshot;
-  if (!cfg) return <Empty description="无在线版本" />;
-  const m = cfg.memoryConfig;
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <Field
-        label="短期记忆策略"
-        value={m?.shortTermStrategy ?? (m?.shortTermEnabled ? 'RECENT_N' : 'NONE')}
-      />
-      {typeof m?.shortTermN === 'number' && (
-        <Field label="短期记忆 N" value={String(m.shortTermN)} />
-      )}
-      <Field
-        label="长期记忆策略"
-        value={m?.longTermStrategy ?? (m?.longTermEnabled ? 'VECTOR_RECALL' : 'NONE')}
-      />
-      <Field label="QPS" value={cfg.qps != null ? String(cfg.qps) : '-'} />
-      <Field
-        label="每日预算"
-        value={cfg.dailyBudget != null ? String(cfg.dailyBudget) : '-'}
-      />
     </div>
   );
 }

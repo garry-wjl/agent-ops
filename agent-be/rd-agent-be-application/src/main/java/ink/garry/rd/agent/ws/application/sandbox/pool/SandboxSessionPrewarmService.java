@@ -53,7 +53,7 @@ public class SandboxSessionPrewarmService {
                 log.info("[sandbox-prewarm] skip non-online sandbox agentNum={} ref={}", agentNum, ref);
                 return;
             }
-            String instanceId = sandboxPoolService.ensureBound(ref, sessionNum, operatorId);
+            String instanceId = sandboxPoolService.ensureBound(ref, sessionNum, operatorId, agentNum);
             log.info("[sandbox-prewarm] bound agentNum={} sessionNum={} instanceId={}",
                     agentNum, sessionNum, instanceId);
         } catch (Exception e) {

@@ -5,7 +5,7 @@ import java.math.BigDecimal;
 /**
  * 远程沙箱容器生命周期网关（OpenSandbox 或 Mock）。
  * <p>
- * 领域/应用只依赖本接口，便于单测与本地 {@code sandbox.mock=true} 不连真实网关。
+ * 领域/应用只依赖本接口，便于本地 Docker（{@code sandbox.mock=true}）与生产 OpenSandbox 切换。
  */
 public interface SandboxContainerGateway {
 
@@ -18,6 +18,27 @@ public interface SandboxContainerGateway {
      * @return 远程 instanceId
      */
     String create(BigDecimal cpu, int memoryMb, int aliveMinutes);
+
+    /**
+     * 是否把工作空间按会话挂到独立 OSS 前缀。
+     * <p>
+     * 开启后热池不能复用：空闲容器没有会话 subPath，领走会串会话。
+     *
+     * @return 默认关闭
+     */
+    default boolean isolatesWorkspaceBySession() {
+        return false;
+    }
+
+    /**
+     * 创建并挂上会话工作空间。未开启隔离时忽略 subPath，行为与 {@link #create(BigDecimal, int, int)} 相同。
+     *
+     * @param workspaceSubPath {@code workspaceNum/agentNum/sessionNum}，可空
+     * @return 远程 instanceId
+     */
+    default String create(BigDecimal cpu, int memoryMb, int aliveMinutes, String workspaceSubPath) {
+        return create(cpu, memoryMb, aliveMinutes);
+    }
 
     /**
      * 销毁远程容器。

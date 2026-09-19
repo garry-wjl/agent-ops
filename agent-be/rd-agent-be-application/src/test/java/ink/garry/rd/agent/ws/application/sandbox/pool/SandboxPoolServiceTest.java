@@ -250,6 +250,23 @@ class SandboxPoolServiceTest {
         verify(runtimeRepository, never()).softDelete("SRI-A");
     }
 
+    @Test
+    void ensureBound_sessionIsolation_skipsIdleAndMountsPrefix() {
+        when(sandboxContainerGateway.isolatesWorkspaceBySession()).thenReturn(true);
+        Sandbox asset = onlineAsset(true, 1, 8);
+        when(sandboxFactory.buildSandboxByNum("SBX1")).thenReturn(asset);
+        when(runtimeRepository.findBoundBySessionNum("SES9")).thenReturn(Optional.empty());
+        when(runtimeRepository.countAlive("SBX1")).thenReturn(0L);
+        when(sandboxContainerGateway.create(any(), anyInt(), anyInt(), eq("WS1/AGT9/SES9")))
+                .thenReturn("os-iso");
+
+        String id = sandboxPoolService.ensureBound("SBX1", "SES9", "u1", "AGT9");
+
+        assertEquals("os-iso", id);
+        verify(runtimeRepository, never()).listBySandboxAndStatus(anyString(), any());
+        verify(sandboxContainerGateway, never()).create(any(), anyInt(), anyInt());
+    }
+
     private static Sandbox onlineAsset(boolean pool, int poolSize, int max) {
         Sandbox s = new Sandbox();
         s.setNum("SBX1");

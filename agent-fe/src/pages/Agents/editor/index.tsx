@@ -15,7 +15,7 @@
  *  - sandboxRef（单选可空，在线沙箱 num）
  *  - skillNums（多选，已发布 Skill num）
  *
- * 分区：基本信息 → 关联模型 → 工具与上下文（Skills/工具/沙箱/知识库/记忆）。
+ * 分区：基本信息 → 关联模型 → 工具与上下文（Skills / 工具 / 沙箱）。
  * 详见 PRD §7 / §8.1、技术方案 §9 fe。
  */
 import { useEffect, useMemo, useState } from 'react';
@@ -48,6 +48,7 @@ import { useSandboxPageQuery } from '@/services/sandbox';
 import type {
   AgentCreateParam,
   AgentType,
+  CompactionSetting,
   ConfigSnapshot,
   ModelSelectableVO,
   ToolRefParam,
@@ -60,6 +61,7 @@ import type { AssetOption } from '../components/AssetPickerModal';
 import PromptPickerModal from '../components/PromptPickerModal';
 import A2aCreateForm from '../components/A2aCreateForm';
 import { RequiredLabel, ModelMetaCard } from '../components/EditorShared';
+import { omitUnusedHarnessConfig } from './harnessFormFields';
 
 const { Text } = Typography;
 
@@ -79,14 +81,24 @@ interface AgentDraft {
   description?: string;
   agentType: AgentType;
   systemPrompt?: string;
-  userPrompt?: string;
   modelId?: string;
   temperature?: number;
-  /** 2026-06-17 模型管理优化:Plan 模式开关(仅持久化/展示,运行时不消费) */
+  /** Plan 模式：开启时 Harness 打开任务列表（enableTaskList） */
   enablePlan?: boolean;
-  /** 最大迭代轮次（ReAct 循环次数），默认 10 */
+  /** Harness / ReAct 最大迭代轮次，默认 10 */
   maxIters?: number;
+  enableLongTermMemory?: boolean;
+  compaction: CompactionSetting;
   ctx: ToolsContextValue;
+}
+
+function defaultCompaction(): CompactionSetting {
+  return {
+    triggerMessages: 50,
+    triggerTokens: 0,
+    keepMessages: 20,
+    summaryPrompt: '',
+  };
 }
 
 function emptyDraft(): AgentDraft {
@@ -95,24 +107,18 @@ function emptyDraft(): AgentDraft {
     description: '',
     agentType: 'NORMAL',
     systemPrompt: '',
-    userPrompt: '',
     modelId: undefined,
     temperature: 0.7,
     enablePlan: false,
     maxIters: 10,
+    enableLongTermMemory: false,
+    compaction: defaultCompaction(),
     ctx: {
       skillNums: [],
       skillRefs: [],
       toolNums: [],
       toolRefs: [],
       sandboxRef: undefined,
-      memoryConfig: {
-        shortTermStrategy: 'RECENT_N',
-        shortTermN: 10,
-        longTermStrategy: 'NONE',
-      },
-      qps: 10,
-      dailyBudget: 100,
     },
   };
 }
@@ -246,11 +252,16 @@ export default function AgentEditorPage() {
           description: snap?.description ?? detail.description ?? '',
           agentType: (snap?.agentType ?? detail.agentType ?? 'NORMAL') as AgentType,
           systemPrompt: snap?.systemPrompt ?? '',
-          userPrompt: snap?.userPrompt ?? '',
           modelId: snap?.modelId,
           temperature: snap?.temperature ?? 0.7,
           enablePlan: snap?.enablePlan ?? false,
           maxIters: snap?.maxIters ?? 10,
+          enableLongTermMemory: snap?.enableLongTermMemory ?? false,
+          compaction: {
+            ...defaultCompaction(),
+            ...snap?.compaction,
+            summaryPrompt: snap?.compaction?.summaryPrompt ?? '',
+          },
           ctx: {
             skillNums: snap?.skillNums ?? [],
             // 优先用已钉版的 skillRefs 回填；旧数据仅有 skillNums 时用空 versionNum 占位，
@@ -267,15 +278,6 @@ export default function AgentEditorPage() {
                 ? snap.toolRefs
                 : (snap?.toolNums ?? []).map((n) => ({ toolNum: n })),
             sandboxRef: snap?.sandboxRef,
-            memoryConfig: {
-              shortTermStrategy:
-                snap?.memoryConfig?.shortTermStrategy ?? 'RECENT_N',
-              shortTermN: snap?.memoryConfig?.shortTermN ?? 10,
-              longTermStrategy:
-                snap?.memoryConfig?.longTermStrategy ?? 'NONE',
-            },
-            qps: snap?.qps ?? 10,
-            dailyBudget: snap?.dailyBudget ?? 100,
           },
         });
       } catch {
@@ -301,47 +303,45 @@ export default function AgentEditorPage() {
     return null;
   };
 
-  /** 组装提交快照 / 入参。 */
-  const buildSnapshot = (): ConfigSnapshot => ({
-    name: draft.name.trim(),
-    description: draft.description?.trim(),
-    creationMode: 'CONFIG',
-    agentType: draft.agentType,
-    systemPrompt: draft.systemPrompt,
-    userPrompt: draft.userPrompt,
-    modelId: draft.modelId,
-    temperature: draft.temperature,
-    enablePlan: draft.enablePlan ?? false,
-    maxIters: draft.maxIters ?? 10,
-    skillNums: draft.ctx.skillNums,
-    skillRefs: draft.ctx.skillRefs,
-    toolNums: draft.ctx.toolNums,
-    toolRefs: draft.ctx.toolRefs,
-    sandboxRef: draft.ctx.sandboxRef,
-    memoryConfig: draft.ctx.memoryConfig,
-    qps: draft.ctx.qps,
-    dailyBudget: draft.ctx.dailyBudget,
-  });
+  /** 组装提交快照 / 入参。Harness 不消费的字段在此剥掉。 */
+  const buildSnapshot = (): ConfigSnapshot =>
+    omitUnusedHarnessConfig({
+      name: draft.name.trim(),
+      description: draft.description?.trim(),
+      creationMode: 'CONFIG',
+      agentType: draft.agentType,
+      systemPrompt: draft.systemPrompt,
+      modelId: draft.modelId,
+      temperature: draft.temperature,
+      enablePlan: draft.enablePlan ?? false,
+      maxIters: draft.maxIters ?? 10,
+      enableLongTermMemory: draft.enableLongTermMemory ?? false,
+      compaction: draft.compaction,
+      skillNums: draft.ctx.skillNums,
+      skillRefs: draft.ctx.skillRefs,
+      toolNums: draft.ctx.toolNums,
+      toolRefs: draft.ctx.toolRefs,
+      sandboxRef: draft.ctx.sandboxRef,
+    });
 
-  const buildCreateParam = (): AgentCreateParam => ({
-    name: draft.name.trim(),
-    description: draft.description?.trim(),
-    agentType: draft.agentType,
-    systemPrompt: draft.systemPrompt,
-    userPrompt: draft.userPrompt,
-    modelId: draft.modelId,
-    temperature: draft.temperature,
-    enablePlan: draft.enablePlan ?? false,
-    maxIters: draft.maxIters ?? 10,
-    skillNums: draft.ctx.skillNums,
-    skillRefs: draft.ctx.skillRefs,
-    toolNums: draft.ctx.toolNums,
-    toolRefs: draft.ctx.toolRefs,
-    sandboxRef: draft.ctx.sandboxRef,
-    memoryConfig: draft.ctx.memoryConfig,
-    qps: draft.ctx.qps,
-    dailyBudget: draft.ctx.dailyBudget,
-  });
+  const buildCreateParam = (): AgentCreateParam =>
+    omitUnusedHarnessConfig({
+      name: draft.name.trim(),
+      description: draft.description?.trim(),
+      agentType: draft.agentType,
+      systemPrompt: draft.systemPrompt,
+      modelId: draft.modelId,
+      temperature: draft.temperature,
+      enablePlan: draft.enablePlan ?? false,
+      maxIters: draft.maxIters ?? 10,
+      enableLongTermMemory: draft.enableLongTermMemory ?? false,
+      compaction: draft.compaction,
+      skillNums: draft.ctx.skillNums,
+      skillRefs: draft.ctx.skillRefs,
+      toolNums: draft.ctx.toolNums,
+      toolRefs: draft.ctx.toolRefs,
+      sandboxRef: draft.ctx.sandboxRef,
+    });
 
   /** 新建：create → 跳详情。编辑：editDraftVersion → 跳详情。 */
   const handleSave = async () => {
@@ -483,7 +483,7 @@ export default function AgentEditorPage() {
                     <div>
                       <div style={{ fontWeight: 600 }}>配置模式</div>
                       <div style={{ fontSize: 12, color: COLOR.textMuted }}>
-                        在平台从零搭建：模型 / Skills / 工具 / 沙箱 / 记忆
+                        在平台从零搭建：模型 / Skills / 工具 / 沙箱
                       </div>
                     </div>
                   </div>
@@ -613,7 +613,7 @@ export default function AgentEditorPage() {
                 <ModelMetaCard model={selectedModel} />
               )}
 
-              {/* 2026-06-17 模型管理优化：Plan 模式开关（仅持久化/展示，运行时不消费） */}
+              {/* Plan 模式：开启时运行时 enableTaskList */}
               <Form.Item
                 label="Plan 模式"
                 required
@@ -626,6 +626,95 @@ export default function AgentEditorPage() {
                   <Radio value="OFF">关闭</Radio>
                   <Radio value="ON">开启</Radio>
                 </Radio.Group>
+              </Form.Item>
+
+              <Form.Item label="用户长期记忆">
+                <Radio.Group
+                  value={draft.enableLongTermMemory ? 'ON' : 'OFF'}
+                  onChange={(e) =>
+                    patch({ enableLongTermMemory: e.target.value === 'ON' })
+                  }
+                >
+                  <Radio value="OFF">关闭</Radio>
+                  <Radio value="ON">开启</Radio>
+                </Radio.Group>
+                <div style={{ marginTop: 6, fontSize: 12, color: COLOR.textMuted }}>
+                  关闭时不记录任何用户的长期记忆。开启后按用户写入数据库，跨会话保留，不放进会话沙箱。
+                </div>
+              </Form.Item>
+
+              <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>
+                上下文压缩
+              </div>
+              <div style={{ display: 'flex', gap: 16 }}>
+                <Form.Item label="触发消息数" style={{ width: 160 }}>
+                  <InputNumber
+                    min={1}
+                    max={500}
+                    precision={0}
+                    style={{ width: '100%' }}
+                    value={draft.compaction.triggerMessages}
+                    onChange={(v) =>
+                      patch({
+                        compaction: {
+                          ...draft.compaction,
+                          triggerMessages: v ?? 50,
+                        },
+                      })
+                    }
+                  />
+                </Form.Item>
+                <Form.Item label="触发 Token" style={{ width: 160 }}>
+                  <InputNumber
+                    min={0}
+                    max={2000000}
+                    precision={0}
+                    style={{ width: '100%' }}
+                    value={draft.compaction.triggerTokens}
+                    onChange={(v) =>
+                      patch({
+                        compaction: {
+                          ...draft.compaction,
+                          triggerTokens: v ?? 0,
+                        },
+                      })
+                    }
+                  />
+                </Form.Item>
+                <Form.Item label="保留消息数" style={{ width: 160 }}>
+                  <InputNumber
+                    min={1}
+                    max={200}
+                    precision={0}
+                    style={{ width: '100%' }}
+                    value={draft.compaction.keepMessages}
+                    onChange={(v) =>
+                      patch({
+                        compaction: {
+                          ...draft.compaction,
+                          keepMessages: v ?? 20,
+                        },
+                      })
+                    }
+                  />
+                </Form.Item>
+              </div>
+              <Form.Item label="压缩摘要提示词">
+                <Input.TextArea
+                  placeholder="可空；留空使用 Harness 默认摘要提示词"
+                  rows={3}
+                  maxLength={2000}
+                  showCount
+                  value={draft.compaction.summaryPrompt}
+                  onChange={(e) =>
+                    patch({
+                      compaction: {
+                        ...draft.compaction,
+                        summaryPrompt: e.target.value,
+                      },
+                    })
+                  }
+                />
               </Form.Item>
 
               <Form.Item
@@ -702,14 +791,6 @@ export default function AgentEditorPage() {
                     {'{{OPERATOR_ID}}'}
                   </div>
                 </div>
-              </Form.Item>
-              <Form.Item label="用户提示词模板">
-                <Input.TextArea
-                  placeholder="可空；支持 {{变量}} 占位"
-                  rows={2}
-                  value={draft.userPrompt}
-                  onChange={(e) => patch({ userPrompt: e.target.value })}
-                />
               </Form.Item>
             </Form>
 

@@ -135,6 +135,12 @@ public class AgentDTO {
         /** 最大迭代轮次（ReAct 循环次数），默认 10 */
         private Integer maxIters;
 
+        /** 开启后才记录该用户的长期记忆；缺省 false */
+        private Boolean enableLongTermMemory;
+
+        /** Harness 上下文压缩策略 */
+        private ink.garry.rd.agent.ws.client.agent.CompactionSetting compaction;
+
         /** 挂载的 Skill 业务编号列表（多选） */
         private List<String> skillNums;
 

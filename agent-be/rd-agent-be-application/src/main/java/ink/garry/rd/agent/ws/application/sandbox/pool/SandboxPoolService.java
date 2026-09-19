@@ -10,6 +10,7 @@ import ink.garry.rd.agent.ws.domain.sandbox.repository.SandboxRuntimeInstanceRep
 import ink.garry.rd.agent.ws.domain.sandbox.repository.SandboxRuntimeInstanceRepository.SandboxRuntimeInstanceRecord;
 import ink.garry.rd.agent.ws.domain.sandbox.valueobject.SandboxRuntimeStatus;
 import ink.garry.rd.agent.ws.domain.sandbox.valueobject.SandboxStatus;
+import ink.garry.rd.agent.ws.domain.sandbox.valueobject.SessionWorkspaceMount;
 import ink.garry.rd.agent.ws.facade.exception.BusinessException;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -179,6 +180,82 @@ public class SandboxPoolService {
     }
 
     /**
+     * 绑定会话。OSS 会话隔离开启时不领热池空闲容器，按
+     * {@code workspaceNum/agentNum/sessionNum} 新建并挂载。
+     *
+     * @param agentNum Agent 编号；隔离关闭时忽略
+     * @return OpenSandbox / Docker instanceId
+     */
+    public String ensureBound(String sandboxNum, String sessionNum, String operatorId, String agentNum) {
+        if (!sandboxContainerGateway.isolatesWorkspaceBySession()) {
+            return ensureBound(sandboxNum, sessionNum, operatorId);
+        }
+        if (StrUtil.isBlank(sandboxNum) || StrUtil.isBlank(sessionNum)) {
+            throw new BusinessException(BizCode.INVALID_PARAM.getCode(), "沙箱编号与会话编号不能为空");
+        }
+        String op = StrUtil.blankToDefault(operatorId, "system");
+        RLock lock = redissonClient.getLock(POOL_LOCK_PREFIX + sandboxNum);
+        boolean acquired;
+        try {
+            acquired = lock.tryLock(LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BusinessException(BizCode.CONFLICT.getCode(), "沙箱池操作被中断");
+        }
+        if (!acquired) {
+            throw new BusinessException(BizCode.CONFLICT.getCode(), "沙箱池繁忙，请稍后重试");
+        }
+        try {
+            var existing = runtimeRepository.findBoundBySessionNum(sessionNum);
+            if (existing.isPresent()) {
+                SandboxRuntimeInstanceRecord cur = existing.get();
+                if (sandboxNum.equals(cur.sandboxNum())
+                        && sandboxContainerGateway.isAlive(cur.opensandboxInstanceId())) {
+                    touchActive(cur, op);
+                    return cur.opensandboxInstanceId();
+                }
+                safeKill(cur.opensandboxInstanceId());
+                runtimeRepository.softDelete(cur.num());
+            }
+            Sandbox asset = requireOnlineAsset(sandboxNum);
+            String subPath;
+            try {
+                subPath = SessionWorkspaceMount.subPath(asset.getWorkspaceNum(), agentNum, sessionNum);
+            } catch (IllegalArgumentException ex) {
+                throw new BusinessException(BizCode.INVALID_PARAM.getCode(), ex.getMessage());
+            }
+            long alive = runtimeRepository.countAlive(sandboxNum);
+            int maxConcurrent = asset.getMaxConcurrent() != null ? asset.getMaxConcurrent() : 8;
+            if (alive >= maxConcurrent) {
+                throw new BusinessException(BizCode.CONFLICT.getCode(),
+                        "沙箱并发实例已达上限（" + maxConcurrent + "），请稍后重试或扩大 maxConcurrent");
+            }
+            String osId = sandboxContainerGateway.create(
+                    asset.getCpu(), asset.getMemoryMb(), asset.getAliveMinutes(), subPath);
+            String sri = sandboxGateway.generateRuntimeInstanceNum();
+            LocalDateTime now = LocalDateTime.now();
+            runtimeRepository.insert(new SandboxRuntimeInstanceRecord(
+                    sri,
+                    asset.getNum(),
+                    asset.getWorkspaceNum(),
+                    osId,
+                    SandboxRuntimeStatus.BOUND,
+                    sessionNum,
+                    now,
+                    null,
+                    op,
+                    op));
+            log.info("[sandbox-pool] session workspace sandboxNum={} sessionNum={} subPath={} instanceId={}",
+                    sandboxNum, sessionNum, subPath, osId);
+            return osId;
+        } finally {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
+    }
+
+    /**
      * 销毁资产下全部运行时实例（下线/删除时）。
      *
      * @param sandboxNum 资产编号
@@ -191,6 +268,21 @@ public class SandboxPoolService {
         }
         log.info("[sandbox-pool] destroyed all runtime instances sandboxNum={} count={}",
                 sandboxNum, all.size());
+    }
+
+    /**
+     * 当前会话已绑定的容器 id；未绑定返回 null。
+     *
+     * @param sessionNum 会话编号
+     * @return OpenSandbox / Docker 容器 id
+     */
+    public String boundInstanceId(String sessionNum) {
+        if (StrUtil.isBlank(sessionNum)) {
+            return null;
+        }
+        return runtimeRepository.findBoundBySessionNum(sessionNum)
+                .map(SandboxRuntimeInstanceRecord::opensandboxInstanceId)
+                .orElse(null);
     }
 
     /**
@@ -284,6 +376,9 @@ public class SandboxPoolService {
         if (!Boolean.TRUE.equals(asset.getPoolEnabled())) {
             return;
         }
+        if (sandboxContainerGateway.isolatesWorkspaceBySession()) {
+            return;
+        }
         int poolSize = asset.getPoolSize() != null ? asset.getPoolSize() : 1;
         int maxConcurrent = asset.getMaxConcurrent() != null ? asset.getMaxConcurrent() : 8;
         long idle = runtimeRepository.countIdle(sandboxNum);
@@ -326,6 +421,9 @@ public class SandboxPoolService {
     }
 
     private void releaseOrDestroy(SandboxRuntimeInstanceRecord r, String operatorId, boolean preferIdle) {
+        if (sandboxContainerGateway.isolatesWorkspaceBySession()) {
+            preferIdle = false;
+        }
         if (preferIdle) {
             Sandbox asset = sandboxFactory.buildSandboxByNum(r.sandboxNum());
             int poolSize = asset != null && asset.getPoolSize() != null ? asset.getPoolSize() : 1;
