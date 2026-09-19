@@ -15,7 +15,7 @@
  *  - sandboxRef（单选可空，在线沙箱 num）
  *  - skillNums（多选，已发布 Skill num）
  *
- * 分区：基本信息 → 关联模型 → 工具与上下文（Skills / 工具 / 沙箱）。
+ * 分区：基本信息 → 关联模型 → 系统提示词 → 沙箱 → 工具与上下文（Skills / 工具）。
  * 详见 PRD §7 / §8.1、技术方案 §9 fe。
  */
 import { useEffect, useMemo, useState } from 'react';
@@ -44,7 +44,7 @@ import { useBreadcrumbName } from '@/hooks/useBreadcrumbName';
 import { useModelSelectableQuery } from '@/services/model';
 import { useSkillPageQuery } from '@/services/skill';
 import { useToolMountableItemsQuery, useToolMountableQuery } from '@/services/tool';
-import { useSandboxPageQuery, sandboxApi } from '@/services/sandbox';
+import { sandboxApi } from '@/services/sandbox';
 import type {
   AgentCreateParam,
   AgentType,
@@ -57,6 +57,9 @@ import ToolsContextSection, {
   toolBindingKey,
   type ToolsContextValue,
 } from '../components/ToolsContextSection';
+import SandboxSpecSection, {
+  DEFAULT_SANDBOX_SPEC,
+} from '../components/SandboxSpecSection';
 import type { AssetOption } from '../components/AssetPickerModal';
 import PromptPickerModal from '../components/PromptPickerModal';
 import A2aCreateForm from '../components/A2aCreateForm';
@@ -119,11 +122,7 @@ function emptyDraft(): AgentDraft {
       toolNums: [],
       toolRefs: [],
       sandboxRef: undefined,
-      sandboxEnabled: false,
-      sandboxCpu: 1,
-      sandboxMemoryMb: 2048,
-      sandboxAliveMinutes: 10,
-      sandboxMaxConcurrent: 8,
+      ...DEFAULT_SANDBOX_SPEC,
     },
   };
 }
@@ -164,11 +163,6 @@ export default function AgentEditorPage() {
   });
   const { data: mountableGroups } = useToolMountableQuery();
   const { data: mountableItems } = useToolMountableItemsQuery();
-  const { data: sandboxPage } = useSandboxPageQuery({
-    pageNo: 1,
-    pageSize: 200,
-    status: 'ONLINE',
-  });
 
   const models: ModelSelectableVO[] = selectableModels ?? [];
   const skillOptions: AssetOption[] = useMemo(
@@ -223,15 +217,6 @@ export default function AgentEditorPage() {
         description: g.description,
       })),
     [mountableGroups],
-  );
-  const sandboxOptions: AssetOption[] = useMemo(
-    () =>
-      (sandboxPage?.list ?? []).map((s) => ({
-        num: s.num,
-        name: s.name,
-        meta: `${s.type} · ${s.cpu}核 / ${s.memoryMb}MB`,
-      })),
-    [sandboxPage],
   );
 
   // —— 编辑态：拉取草稿版本快照回填 ——
@@ -835,6 +820,12 @@ export default function AgentEditorPage() {
               </Form.Item>
             </Form>
 
+            <SectionTitle>沙箱</SectionTitle>
+            <SandboxSpecSection
+              value={draft.ctx}
+              onChange={(ctx) => patch({ ctx })}
+            />
+
             {/* ▣ 工具与上下文 */}
             <SectionTitle>工具与上下文</SectionTitle>
             <div style={{ maxWidth: 880 }}>
@@ -846,7 +837,6 @@ export default function AgentEditorPage() {
                 toolGroups={toolGroups}
                 toolRefByKey={toolRefByKey}
                 mountableItems={mountableItems}
-                sandboxOptions={sandboxOptions}
               />
             </div>
           </>

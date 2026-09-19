@@ -1,11 +1,11 @@
 /**
  * 「工具与上下文」交互区块 —— Agent 配置优化（2026-06-11）
  *
- * 把 Skill / 工具 / 沙箱 合并为横向 Tab + 计数徽标 + 右上「+ 添加」。
+ * Skills / 工具 横向 Tab + 计数徽标 + 右上「+ 添加」。
+ * 沙箱不在此 Tab 内，由编辑页独立区块承载。
  * 受控组件：值与候选资产均由父组件（AgentEditor）透传。
  *
- * - Skills / 工具：多选，弹 AssetPickerModal 勾选；Tab 内展示已选项（名称 + 移除）。
- * - 沙箱：单选可空，弹 AssetPickerModal 单选。
+ * - Skills / 工具：多选，弹选择器勾选；Tab 内展示已选项（名称 + 移除）。
  * - 知识库 / 短期长期记忆 / QPS / 每日预算：Harness 装配不读取，界面已去掉。
  * - 已选但失效（不在候选可用列表）的项标红，提示重选。
  */
@@ -13,13 +13,10 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Button,
   Empty,
-  InputNumber,
   Select,
-  Switch,
   Tooltip,
   Tag,
   Space,
-  Typography,
 } from 'antd';
 import { PlusOutlined, CloseOutlined, DownOutlined, RightOutlined } from '@ant-design/icons';
 import type {
@@ -53,7 +50,7 @@ const COLOR = {
   invalidText: '#DC2626',
 } as const;
 
-type ContextTabKey = 'skills' | 'tools' | 'sandbox';
+type ContextTabKey = 'skills' | 'tools';
 
 export interface ToolsContextValue {
   skillNums: string[];
@@ -96,7 +93,6 @@ export interface ToolsContextSectionProps {
   toolRefByKey: Record<string, ToolRefParam>;
   /** 展平可挂载项：选择器子节点 + 整组行展开 */
   mountableItems?: MountableToolItem[];
-  sandboxOptions: AssetOption[];
 }
 
 /** 各 Tab 的功能说明（空态展示）。 */
@@ -105,11 +101,9 @@ const TAB_DESC: Record<ContextTabKey, string> = {
     '内置查询 AgentRun 平台管理的 Skills，按需下载调用。仅可挂载「已发布」Skill。',
   tools:
     '按工具组展开勾选：勾选组=整组挂载；只勾组内若干工具=具体工具挂载。列表会标注所属 FunctionCall / MCP 组。',
-  sandbox:
-    '为本 Agent 独占配置沙箱规格（存元数据）。真正容器在创建会话时启动；可在沙箱管理只读查看。',
 };
 
-const SECTION_GUIDE = '可挂载 Skills、工具，或关联沙箱，拓展 Agent 能力。';
+const SECTION_GUIDE = '可挂载 Skills 或工具，拓展 Agent 能力。';
 
 /**
  * 工具与上下文区块。
@@ -122,7 +116,6 @@ export default function ToolsContextSection({
   toolGroups,
   toolRefByKey,
   mountableItems,
-  sandboxOptions,
 }: ToolsContextSectionProps) {
   const [activeTab, setActiveTab] = useState<ContextTabKey>('skills');
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -136,19 +129,16 @@ export default function ToolsContextSection({
   const counts: Record<ContextTabKey, number> = {
     skills: value.skillNums.length,
     tools: selectedToolKeys.length,
-    sandbox: value.sandboxEnabled ? 1 : 0,
   };
 
   const tabs: { key: ContextTabKey; label: string }[] = [
     { key: 'skills', label: 'Skills' },
     { key: 'tools', label: '工具' },
-    { key: 'sandbox', label: '沙箱' },
   ];
 
-  const addBtn: Record<ContextTabKey, string | null> = {
+  const addBtn: Record<ContextTabKey, string> = {
     skills: '+ Skills',
     tools: '+ 工具',
-    sandbox: null,
   };
 
   const patch = (p: Partial<ToolsContextValue>) =>
@@ -197,19 +187,10 @@ export default function ToolsContextSection({
           emptyGuide: '暂无已发布 Skill，请先到「Skill 管理」新建并发布',
           emptyTo: '/skill/manage',
         };
-      case 'sandbox':
-        return {
-          title: '选择沙箱',
-          options: sandboxOptions,
-          value: value.sandboxRef ? [value.sandboxRef] : [],
-          multiple: false,
-          emptyGuide: '暂无在线沙箱，请先到「沙箱管理」新建并上线',
-          emptyTo: '/sandbox/manage',
-        };
       default:
         return null;
     }
-  }, [activeTab, skillOptions, sandboxOptions, value]);
+  }, [activeTab, skillOptions, value]);
 
   const patchToolKeys = (keys: string[]) => {
     const refs: ToolRefParam[] = [];
@@ -226,7 +207,6 @@ export default function ToolsContextSection({
 
   const handlePickerOk = (nums: string[]) => {
     if (activeTab === 'skills') patchSkills(nums);
-    else if (activeTab === 'sandbox') patch({ sandboxRef: nums[0] });
     setPickerOpen(false);
   };
 
@@ -296,26 +276,24 @@ export default function ToolsContextSection({
             );
           })}
         </div>
-        {addBtn[activeTab] && (
-          <button
-            type="button"
-            onClick={() => setPickerOpen(true)}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: COLOR.primary,
-              fontSize: 13,
-              fontWeight: 500,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-            }}
-          >
-            <PlusOutlined style={{ fontSize: 12 }} />
-            {addBtn[activeTab]?.replace('+ ', '')}
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => setPickerOpen(true)}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: COLOR.primary,
+            fontSize: 13,
+            fontWeight: 500,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+          }}
+        >
+          <PlusOutlined style={{ fontSize: 12 }} />
+          {addBtn[activeTab].replace('+ ', '')}
+        </button>
       </div>
 
       {/* Tab 内容 */}
@@ -339,88 +317,6 @@ export default function ToolsContextSection({
               patchToolKeys(selectedToolKeys.filter((k) => k !== key))
             }
           />
-        )}
-        {activeTab === 'sandbox' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-              {TAB_DESC.sandbox}
-            </Typography.Text>
-            <Space align="center">
-              <span style={{ color: COLOR.textSecondary }}>启用沙箱</span>
-              <Switch
-                checked={Boolean(value.sandboxEnabled)}
-                onChange={(checked) =>
-                  patch({
-                    sandboxEnabled: checked,
-                    sandboxCpu: value.sandboxCpu ?? 1,
-                    sandboxMemoryMb: value.sandboxMemoryMb ?? 2048,
-                    sandboxAliveMinutes: value.sandboxAliveMinutes ?? 10,
-                    sandboxMaxConcurrent: value.sandboxMaxConcurrent ?? 8,
-                  })
-                }
-              />
-              {value.sandboxRef ? (
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  资产 {value.sandboxRef}
-                </Typography.Text>
-              ) : null}
-            </Space>
-            {value.sandboxEnabled ? (
-              <Space wrap size="middle">
-                <span>
-                  CPU（核）{' '}
-                  <InputNumber
-                    min={0.5}
-                    max={16}
-                    step={0.5}
-                    value={value.sandboxCpu ?? 1}
-                    onChange={(v) => patch({ sandboxCpu: Number(v) || 1 })}
-                  />
-                </span>
-                <span>
-                  内存（MB）{' '}
-                  <InputNumber
-                    min={128}
-                    max={65536}
-                    step={128}
-                    value={value.sandboxMemoryMb ?? 2048}
-                    onChange={(v) => patch({ sandboxMemoryMb: Number(v) || 2048 })}
-                  />
-                </span>
-                <span>
-                  存活（分钟）{' '}
-                  <InputNumber
-                    min={1}
-                    max={1440}
-                    value={value.sandboxAliveMinutes ?? 10}
-                    onChange={(v) =>
-                      patch({ sandboxAliveMinutes: Number(v) || 10 })
-                    }
-                  />
-                </span>
-                <span>
-                  最大并发{' '}
-                  <InputNumber
-                    min={1}
-                    max={64}
-                    value={value.sandboxMaxConcurrent ?? 8}
-                    onChange={(v) =>
-                      patch({ sandboxMaxConcurrent: Number(v) || 8 })
-                    }
-                  />
-                </span>
-              </Space>
-            ) : (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={
-                  <span style={{ color: COLOR.textMuted }}>
-                    未启用沙箱时，Agent 不挂载远程代码执行环境
-                  </span>
-                }
-              />
-            )}
-          </div>
         )}
       </div>
 
