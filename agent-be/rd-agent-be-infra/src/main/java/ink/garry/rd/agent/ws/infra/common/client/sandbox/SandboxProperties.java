@@ -50,13 +50,15 @@ public class SandboxProperties {
     private String dockerImage = "ubuntu:22.04";
 
     /**
-     * 会话工作空间 OSS。开启后每个会话把独立前缀挂到容器 {@code /workspace}。
-     * 密钥走环境变量，禁止明文落 git。
+     * 会话工作空间（ACS/K8s：挂 BYO PVC，底层多为 OSS CSI）。
+     * <p>
+     * 开启后每个会话用独立 {@code subPath} 挂到容器 {@code /workspace}，且不再复用热池空闲容器。
+     * PVC 与 CSI 凭据在集群侧配置，不进本服务。
      */
     private OssWorkspace oss = new OssWorkspace();
 
     /**
-     * 会话 OSS 卷配置。
+     * 会话工作空间卷配置（配置前缀仍为 {@code sandbox.oss}，兼容已有开关环境变量）。
      */
     @Data
     public static class OssWorkspace {
@@ -64,12 +66,10 @@ public class SandboxProperties {
         /** 关闭时不挂卷，热池行为不变 */
         private boolean enabled = false;
 
-        private String bucket;
-
-        private String endpoint;
-
-        private String accessKeyId;
-
-        private String accessKeySecret;
+        /**
+         * OpenSandbox 创建沙箱时引用的 PVC 名（同命名空间），例如 {@code agent-ops-workspace}。
+         * <p>对应 API {@code volumes[].pvc.claimName}，且 {@code createIfNotExists=false}。
+         */
+        private String pvcClaimName;
     }
 }

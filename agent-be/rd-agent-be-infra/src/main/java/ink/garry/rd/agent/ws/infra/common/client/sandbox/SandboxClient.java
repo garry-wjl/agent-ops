@@ -133,9 +133,9 @@ public class SandboxClient {
     }
 
     /**
-     * 按规格创建容器。OSS 会话工作空间开启时，把 {@code workspaceSubPath} 挂到 {@code /workspace}。
+     * 按规格创建容器。会话工作空间开启时，把 {@code workspaceSubPath} 挂到 {@code /workspace}（PVC）。
      *
-     * @param workspaceSubPath 会话 OSS 前缀
+     * @param workspaceSubPath 会话卷 subPath
      * @return 新建容器的 sandboxId
      */
     public String create(BigDecimal cpu, int memoryMb, int aliveMinutes, String workspaceSubPath) {
@@ -163,7 +163,7 @@ public class SandboxClient {
     }
 
     /**
-     * @return OSS 会话工作空间是否开启
+     * @return 会话工作空间（PVC）是否开启
      */
     public boolean isolatesWorkspaceBySession() {
         return properties.getOss() != null && properties.getOss().isEnabled();

@@ -143,13 +143,11 @@ sandbox:
   mock: ${SANDBOX_MOCK:false}
   # 仅 mock=true 时生效：本机 docker run 镜像（需已拉取或可拉取）
   docker-image: ${SANDBOX_DOCKER_IMAGE:ubuntu:22.04}
-  # 会话工作空间：开启后按 workspace/agent/session 挂 OSS，不再复用热池空闲容器
+  # 会话工作空间：开启后按 workspace/agent/session 挂 PVC（ACS OSS CSI），不再复用热池空闲容器
+  # PVC/Secret/CSI 在 OpenSandbox 命名空间由运维创建；本服务只传 claimName + subPath
   oss:
     enabled: ${SANDBOX_OSS_ENABLED:false}
-    bucket: ${SANDBOX_OSS_BUCKET:}
-    endpoint: ${SANDBOX_OSS_ENDPOINT:}
-    access-key-id: ${SANDBOX_OSS_ACCESS_KEY_ID:}
-    access-key-secret: ${SANDBOX_OSS_ACCESS_KEY_SECRET:}
+    pvc-claim-name: ${SANDBOX_OSS_PVC_CLAIM_NAME:agent-ops-workspace}
 
 # rd-agent Control Plane 自有配置
 # 历史:v2.x 曾接入 spring-ai-alibaba-starter-a2a-nacos 做 A2A AgentCard 同步,
