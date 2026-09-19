@@ -134,13 +134,22 @@ sandbox:
   # 沙箱服务网关域名（不含协议）
   domain: ${SANDBOX_DOMAIN:10.246.6.133:8090}
   protocol: ${SANDBOX_PROTOCOL:http}
-  # 固定容器镜像，所有会话沙箱统一
+  # 固定容器镜像（OpenSandbox 生产用）
   image: ${SANDBOX_IMAGE:opensandbox/code-interpreter:v1.0.2}
   # 容器存活 / Redis 映射 / 滑动续期窗口（分钟），默认 10
   ttl-minutes: ${SANDBOX_TTL_MINUTES:10}
   request-timeout-seconds: ${SANDBOX_REQUEST_TIMEOUT_SECONDS:30}
-  # 本地/自动化测试可设 true，走 MockSandboxContainerGateway，不连真实 OpenSandbox
+  # true=本地 Docker 沙箱（真实 exec）；false=远程 OpenSandbox。勿再使用空 Mock。
   mock: ${SANDBOX_MOCK:false}
+  # 仅 mock=true 时生效：本机 docker run 镜像（需已拉取或可拉取）
+  docker-image: ${SANDBOX_DOCKER_IMAGE:ubuntu:22.04}
+  # 会话工作空间：开启后按 workspace/agent/session 挂 OSS，不再复用热池空闲容器
+  oss:
+    enabled: ${SANDBOX_OSS_ENABLED:false}
+    bucket: ${SANDBOX_OSS_BUCKET:}
+    endpoint: ${SANDBOX_OSS_ENDPOINT:}
+    access-key-id: ${SANDBOX_OSS_ACCESS_KEY_ID:}
+    access-key-secret: ${SANDBOX_OSS_ACCESS_KEY_SECRET:}
 
 # rd-agent Control Plane 自有配置
 # 历史:v2.x 曾接入 spring-ai-alibaba-starter-a2a-nacos 做 A2A AgentCard 同步,

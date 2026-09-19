@@ -5,6 +5,7 @@ import cn.hutool.core.util.StrUtil;
 import com.alibaba.fastjson2.JSON;
 import ink.garry.rd.agent.ws.client.agent.A2aResyncVO;
 import ink.garry.rd.agent.ws.client.agent.AgentCreateParam;
+import ink.garry.rd.agent.ws.client.agent.CompactionSetting;
 import ink.garry.rd.agent.ws.client.agent.PublishParam;
 import ink.garry.rd.agent.ws.client.common.BizCode;
 import ink.garry.rd.agent.ws.client.skill.dto.SkillDetailDTO;
@@ -18,6 +19,7 @@ import ink.garry.rd.agent.ws.domain.agent.valueobject.A2aSourceInfo;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.AgentStatus;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.AgentType;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.AgentVersionStatus;
+import ink.garry.rd.agent.ws.domain.agent.valueobject.CompactionPolicy;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.ConfigSnapshot;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.CreationMode;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.MemoryConfig;
@@ -552,6 +554,18 @@ public class AgentCommandService {
         return (ws == null || ws.isBlank()) ? DEFAULT_WORKSPACE_NUM : ws;
     }
 
+    private static CompactionPolicy toCompactionPolicy(CompactionSetting setting) {
+        if (setting == null) {
+            return null;
+        }
+        return CompactionPolicy.builder()
+                .triggerMessages(setting.getTriggerMessages())
+                .triggerTokens(setting.getTriggerTokens())
+                .keepMessages(setting.getKeepMessages())
+                .summaryPrompt(setting.getSummaryPrompt())
+                .build();
+    }
+
     private ConfigSnapshot buildSnapshotFromParam(AgentCreateParam p, AgentType type) {
         ConfigSnapshot snapshot = ConfigSnapshot.builder()
                 .name(p.getName())
@@ -563,6 +577,8 @@ public class AgentCommandService {
                 .temperature(p.getTemperature())
                 .enablePlan(p.getEnablePlan())
                 .maxIters(p.getMaxIters())
+                .enableLongTermMemory(p.getEnableLongTermMemory())
+                .compaction(toCompactionPolicy(p.getCompaction()))
                 .skillNums(p.getSkillNums())
                 .toolNums(p.getToolNums())
                 .skillRefs(toSkillRefs(p.getSkillRefs()))
@@ -597,6 +613,8 @@ public class AgentCommandService {
         if (snapshot.getMaxIters() == null) {
             snapshot.setMaxIters(10);
         }
+        snapshot.setEnableLongTermMemory(Boolean.TRUE.equals(snapshot.getEnableLongTermMemory()));
+        snapshot.setCompaction(CompactionPolicy.normalize(snapshot.getCompaction()));
         validateModelEnabled(snapshot.getModelId(), workspaceNum);
         snapshot.setSkillRefs(resolveSkillRefs(snapshot.getSkillNums(), snapshot.getSkillRefs(), workspaceNum));
         snapshot.setToolRefs(resolveToolRefs(snapshot.getToolNums(), snapshot.getToolRefs()));

@@ -5,7 +5,8 @@ import cn.hutool.core.lang.Assert;
 import cn.hutool.core.util.StrUtil;
 import ink.garry.rd.agent.ws.application.agent.AgentQueryService;
 import ink.garry.rd.agent.ws.application.agentrunner.harness.BoundSkillRepository;
-import ink.garry.rd.agent.ws.application.agentrunner.harness.opensandbox.SandboxRunnerOpenSandboxExecBridge;
+import ink.garry.rd.agent.ws.application.agentrunner.harness.HarnessRuntimeOptions;
+import ink.garry.rd.agent.ws.application.agentrunner.harness.HarnessUserMemorySync;
 import ink.garry.rd.agent.ws.application.agentrunner.tool.FunctionCallTool;
 import ink.garry.rd.agent.ws.application.agentrunner.tool.JsonFormatTool;
 import ink.garry.rd.agent.ws.application.agentrunner.tool.ReadAttachmentTool;
@@ -14,10 +15,9 @@ import ink.garry.rd.agent.ws.application.attachment.query.AttachmentQueryService
 import ink.garry.rd.agent.ws.application.common.prompt.SysPromptVariableSubstitutor;
 import ink.garry.rd.agent.ws.application.sandbox.SandboxQueryService;
 import ink.garry.rd.agent.ws.application.sandbox.pool.SandboxPoolService;
-import ink.garry.rd.agent.ws.application.sandbox.runner.SandboxRunner;
-import ink.garry.rd.agent.ws.application.sandbox.runner.SandboxSession;
 import ink.garry.rd.agent.ws.application.tool.ToolQueryService;
 import ink.garry.rd.agent.ws.application.tool.factory.ToolRunnerFactory;
+import ink.garry.rd.agent.ws.infra.agentscope.harness.opensandbox.OpenSandboxExecBridge;
 import ink.garry.rd.agent.ws.infra.agentscope.harness.opensandbox.OpenSandboxFilesystemSpec;
 import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContextHolder;
 import ink.garry.rd.agent.ws.client.agent.dto.AgentDTO;
@@ -32,7 +32,6 @@ import ink.garry.rd.agent.ws.infra.common.util.HttpHeaderUtil;
 import ink.garry.rd.agent.ws.infra.model.gateway.ModelCredential;
 import ink.garry.rd.agent.ws.infra.model.gateway.ModelCredentialResolver;
 import ink.garry.rd.agent.ws.infra.skill.agentscope.AgentScopeSkillRepositoryAdapter;
-import com.alibaba.opensandbox.sandbox.domain.models.execd.executions.RunInSessionRequest;
 import io.a2a.client.transport.jsonrpc.JSONRPCTransport;
 import io.a2a.client.transport.jsonrpc.JSONRPCTransportConfig;
 import io.agentscope.core.a2a.agent.A2aAgent;
@@ -95,9 +94,6 @@ public class AgentRunnerFactory {
     @Resource
     private ModelCredentialResolver modelCredentialResolver;
 
-    @Resource
-    private SandboxRunner sandboxRunner;
-
     /** v4.0：把挂载的 FunctionCall 工具构建为可执行 AgentTool 注册进 Toolkit。 */
     @Resource
     private ToolRunnerFactory toolRunnerFactory;
@@ -114,7 +110,10 @@ public class AgentRunnerFactory {
     private AttachmentQueryService attachmentQueryService;
 
     @Resource
-    private SandboxRunnerOpenSandboxExecBridge openSandboxExecBridge;
+    private OpenSandboxExecBridge openSandboxExecBridge;
+
+    @Resource
+    private HarnessUserMemorySync harnessUserMemorySync;
 
     /**
      * 创建 AgentRunner（生产/默认入口：当前在线版本）。
@@ -232,7 +231,8 @@ public class AgentRunnerFactory {
                 String instanceId = sandboxPoolService.ensureBound(
                         agent.getConfigSnapshot().getSandboxRef(),
                         sessionNum,
-                        "agent-runner");
+                        "agent-runner",
+                        agent.getNum());
                 // 覆盖详情中的 instance，供后续 filesystem / 资源上传使用
                 if (sandboxDetailDTO != null && sandboxDetailDTO.getSandbox() != null) {
                     sandboxDetailDTO.getSandbox().setSandboxInstanceId(instanceId);
@@ -262,6 +262,10 @@ public class AgentRunnerFactory {
             if (sandboxBound && sandboxDetailDTO != null) {
                 String instanceId = sandboxDetailDTO.getSandbox().getSandboxInstanceId();
                 uploadSkillResourcesToSandbox(boundSkills, instanceId, sessionNum);
+            }
+            if (Boolean.TRUE.equals(agent.getConfigSnapshot().getEnableLongTermMemory())) {
+                String operatorId = vars == null ? null : vars.get("OPERATOR_ID");
+                harnessUserMemorySync.hydrate(agent.getNum(), targetVersion, sessionNum, operatorId);
             }
 
             //3.3 注册挂载的工具（FunctionCall 构建可执行工具；MCP 构建客户端连接；按类型各自分流，互不命中返回空/null）
@@ -372,6 +376,12 @@ public class AgentRunnerFactory {
                     .maxIters(agent.getConfigSnapshot().getMaxIters() != null
                             ? agent.getConfigSnapshot().getMaxIters()
                             : 10);
+            if (!HarnessRuntimeOptions.recordLongTermMemory(agent.getConfigSnapshot().getEnableLongTermMemory())) {
+                harnessBuilder.disableMemoryHooks();
+            }
+            harnessBuilder.compaction(HarnessRuntimeOptions.compaction(
+                    agent.getConfigSnapshot().getEnableLongTermMemory(),
+                    agent.getConfigSnapshot().getCompaction()));
             List<String> skillNames = boundSkillRepository.boundNames();
             if (!skillNames.isEmpty()) {
                 harnessBuilder.skillFilter(SkillFilter.only(skillNames.toArray(String[]::new)));
@@ -583,7 +593,7 @@ public class AgentRunnerFactory {
      * @param sessionNum 会话编号
      */
     private void uploadSkillResourcesToSandbox(List<AgentSkill> skills, String instanceId, String sessionNum) {
-        if (CollectionUtil.isEmpty(skills)) {
+        if (CollectionUtil.isEmpty(skills) || StrUtil.isBlank(instanceId)) {
             return;
         }
         for (AgentSkill skill : skills) {
@@ -597,12 +607,9 @@ public class AgentRunnerFactory {
                 continue;
             }
             String skillWorkDir = "/workspace/skills/" + skillId;
-            try (SandboxSession session = sandboxRunner.obtainSession(instanceId, sessionNum, Map.of(), 30)) {
-                session.sandbox().commands()
-                        .runInSession(session.execdSessionId(),
-                                RunInSessionRequest.builder()
-                                        .command("mkdir -p " + skillWorkDir)
-                                        .build());
+            try {
+                openSandboxExecBridge.exec(
+                        instanceId, sessionNum, Map.of(), 30L, "mkdir -p " + skillWorkDir);
                 for (Map.Entry<String, String> entry : resources.entrySet()) {
                     String resourcePath = entry.getKey();
                     String content = entry.getValue();
@@ -610,14 +617,16 @@ public class AgentRunnerFactory {
                         continue;
                     }
                     String targetPath = skillWorkDir + "/" + resourcePath;
+                    String utf8;
                     if (content != null && content.startsWith("base64:")) {
                         String base64Data = content.substring("base64:".length());
                         byte[] decoded = cn.hutool.core.codec.Base64.decode(base64Data);
-                        session.sandbox().files().writeFile(targetPath, new String(decoded,
-                                java.nio.charset.StandardCharsets.ISO_8859_1));
+                        utf8 = new String(decoded, java.nio.charset.StandardCharsets.ISO_8859_1);
                     } else {
-                        session.sandbox().files().writeFile(targetPath, content);
+                        utf8 = content;
                     }
+                    openSandboxExecBridge.writeTextFile(
+                            instanceId, sessionNum, Map.of(), 30L, targetPath, utf8);
                 }
                 log.info("Uploaded {} resource files for skill {} to sandbox {}",
                         resources.size(), skillId, instanceId);

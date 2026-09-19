@@ -1,32 +1,25 @@
 /**
  * 「工具与上下文」交互区块 —— Agent 配置优化（2026-06-11）
  *
- * 把 Skill / 工具 / 沙箱 / 知识库(占位) / 记忆 合并为横向 Tab + 计数徽标 + 右上「+ 添加」，
- * 对齐 PRD §7.6A / §8.1A 目标 UI。受控组件：值与候选资产均由父组件（AgentEditor）透传。
+ * 把 Skill / 工具 / 沙箱 合并为横向 Tab + 计数徽标 + 右上「+ 添加」。
+ * 受控组件：值与候选资产均由父组件（AgentEditor）透传。
  *
  * - Skills / 工具：多选，弹 AssetPickerModal 勾选；Tab 内展示已选项（名称 + 移除）。
  * - 沙箱：单选可空，弹 AssetPickerModal 单选。
- * - 知识库：禁用占位（KB 未上线），计数恒 0，hover 提示。
- * - 记忆：承载短期 / 长期记忆策略 + 限流参数折叠；徽标计数 = 任一策略非 NONE 时为 1。
+ * - 知识库 / 短期长期记忆 / QPS / 每日预算：Harness 装配不读取，界面已去掉。
  * - 已选但失效（不在候选可用列表）的项标红，提示重选。
  */
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   Button,
-  Collapse,
   Empty,
   Select,
-  InputNumber,
   Tooltip,
   Tag,
 } from 'antd';
 import { PlusOutlined, CloseOutlined, DownOutlined, RightOutlined } from '@ant-design/icons';
 import type {
-  LongTermStrategy,
-  MemoryConfig,
   MountableToolItem,
-  ShortTermStrategy,
   SkillRefParam,
   ToolRefParam,
 } from '@/types';
@@ -49,7 +42,6 @@ const COLOR = {
   textSecondary: '#45556C',
   textMuted: '#90A1B9',
   primary: '#2B52D9',
-  bgInfo: '#EFF6FF',
   badgeBg: '#EEF2FF',
   badgeText: '#2B52D9',
   invalidBg: '#FEF2F2',
@@ -57,7 +49,7 @@ const COLOR = {
   invalidText: '#DC2626',
 } as const;
 
-type ContextTabKey = 'skills' | 'tools' | 'sandbox' | 'kb' | 'memory';
+type ContextTabKey = 'skills' | 'tools' | 'sandbox';
 
 export interface ToolsContextValue {
   skillNums: string[];
@@ -72,9 +64,6 @@ export interface ToolsContextValue {
   toolRefs: ToolRefParam[];
   /** 沙箱单选引用，可空 */
   sandboxRef?: string;
-  memoryConfig: MemoryConfig;
-  qps?: number;
-  dailyBudget?: number;
 }
 
 export interface ToolsContextSectionProps {
@@ -104,11 +93,9 @@ const TAB_DESC: Record<ContextTabKey, string> = {
     '按工具组展开勾选：勾选组=整组挂载；只勾组内若干工具=具体工具挂载。列表会标注所属 FunctionCall / MCP 组。',
   sandbox:
     '关联沙箱管理中「在线」的代码沙箱（单选），让 Agent 具备代码执行类能力。',
-  kb: '知识库可提升回复准确性，模块即将上线。',
-  memory: '配置短期 / 长期记忆策略，提升多轮对话的上下文连贯性。',
 };
 
-const MEMORY_GUIDE = '可使用各类工具拓展 Agent 能力，也可接入知识库和记忆提升回复准确性';
+const SECTION_GUIDE = '可挂载 Skills、工具，或关联沙箱，拓展 Agent 能力。';
 
 /**
  * 工具与上下文区块。
@@ -126,10 +113,6 @@ export default function ToolsContextSection({
   const [activeTab, setActiveTab] = useState<ContextTabKey>('skills');
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  const memoryEnabled =
-    (value.memoryConfig.shortTermStrategy ?? 'NONE') !== 'NONE' ||
-    (value.memoryConfig.longTermStrategy ?? 'NONE') !== 'NONE';
-
   const selectedToolKeys = useMemo(
     () => (value.toolRefs ?? []).map(toolBindingKey),
     [value.toolRefs],
@@ -140,32 +123,22 @@ export default function ToolsContextSection({
     skills: value.skillNums.length,
     tools: selectedToolKeys.length,
     sandbox: value.sandboxRef ? 1 : 0,
-    kb: 0,
-    memory: memoryEnabled ? 1 : 0,
   };
 
-  const tabs: { key: ContextTabKey; label: string; disabled?: boolean }[] = [
+  const tabs: { key: ContextTabKey; label: string }[] = [
     { key: 'skills', label: 'Skills' },
     { key: 'tools', label: '工具' },
     { key: 'sandbox', label: '沙箱' },
-    { key: 'kb', label: '知识库', disabled: true },
-    { key: 'memory', label: '记忆' },
   ];
 
-  // 当前 Tab 的「+ 添加」按钮文案 + 是否展示
   const addBtn: Record<ContextTabKey, string | null> = {
     skills: '+ Skills',
     tools: '+ 工具',
     sandbox: '+ 沙箱',
-    kb: null,
-    memory: null,
   };
 
   const patch = (p: Partial<ToolsContextValue>) =>
     onChange({ ...value, ...p });
-
-  const patchMemory = (p: Partial<MemoryConfig>) =>
-    onChange({ ...value, memoryConfig: { ...value.memoryConfig, ...p } });
 
   /**
    * 勾选/取消 Skill 后同步 skillNums 与 skillRefs：
@@ -265,7 +238,7 @@ export default function ToolsContextSection({
           borderBottom: `1px solid ${COLOR.border}`,
         }}
       >
-        {MEMORY_GUIDE}
+        {SECTION_GUIDE}
       </div>
 
       {/* Tab 栏 + 右上添加按钮 */}
@@ -281,12 +254,11 @@ export default function ToolsContextSection({
         <div style={{ display: 'flex', gap: 0 }}>
           {tabs.map((t) => {
             const active = t.key === activeTab;
-            const btn = (
+            return (
               <button
                 key={t.key}
                 type="button"
-                disabled={t.disabled}
-                onClick={() => !t.disabled && setActiveTab(t.key)}
+                onClick={() => setActiveTab(t.key)}
                 style={{
                   padding: '12px 14px',
                   background: 'none',
@@ -294,14 +266,10 @@ export default function ToolsContextSection({
                   borderBottom: `2px solid ${
                     active ? COLOR.primary : 'transparent'
                   }`,
-                  color: t.disabled
-                    ? COLOR.textMuted
-                    : active
-                      ? COLOR.textPrimary
-                      : COLOR.textSecondary,
+                  color: active ? COLOR.textPrimary : COLOR.textSecondary,
                   fontWeight: active ? 500 : 400,
                   fontSize: 14,
-                  cursor: t.disabled ? 'not-allowed' : 'pointer',
+                  cursor: 'pointer',
                   marginBottom: -1,
                   display: 'flex',
                   alignItems: 'center',
@@ -311,13 +279,6 @@ export default function ToolsContextSection({
                 {t.label}
                 <CountBadge count={counts[t.key]} />
               </button>
-            );
-            return t.disabled ? (
-              <Tooltip key={t.key} title="知识库暂未上线">
-                {btn}
-              </Tooltip>
-            ) : (
-              btn
             );
           })}
         </div>
@@ -371,16 +332,6 @@ export default function ToolsContextSection({
             value={value.sandboxRef ? [value.sandboxRef] : []}
             desc={TAB_DESC.sandbox}
             onRemove={() => patch({ sandboxRef: undefined })}
-          />
-        )}
-        {activeTab === 'kb' && (
-          <Empty description="知识库模块即将上线，敬请期待" />
-        )}
-        {activeTab === 'memory' && (
-          <MemoryPanel
-            value={value}
-            onPatchMemory={patchMemory}
-            onPatchLimit={patch}
           />
         )}
       </div>
@@ -873,118 +824,3 @@ function SkillRow({
     </div>
   );
 }
-
-/** 记忆 Tab：短期 / 长期记忆策略 + 限流参数折叠。 */
-function MemoryPanel({
-  value,
-  onPatchMemory,
-  onPatchLimit,
-}: {
-  value: ToolsContextValue;
-  onPatchMemory: (p: Partial<MemoryConfig>) => void;
-  onPatchLimit: (p: Partial<ToolsContextValue>) => void;
-}) {
-  const m = value.memoryConfig;
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <FieldRow label="短期记忆策略">
-        <Select
-          value={m.shortTermStrategy ?? 'NONE'}
-          style={{ width: 240 }}
-          onChange={(v) =>
-            onPatchMemory({ shortTermStrategy: v as ShortTermStrategy })
-          }
-          options={[
-            { value: 'NONE', label: '无' },
-            { value: 'RECENT_N', label: '最近 N 轮' },
-            { value: 'SLIDING_WINDOW', label: '滑动窗口（按 token）' },
-          ]}
-        />
-      </FieldRow>
-      {m.shortTermStrategy && m.shortTermStrategy !== 'NONE' && (
-        <FieldRow label="短期记忆 N（轮 / token）">
-          <InputNumber
-            min={1}
-            max={2000}
-            value={m.shortTermN ?? 10}
-            style={{ width: 240 }}
-            onChange={(v) => onPatchMemory({ shortTermN: v ?? undefined })}
-          />
-        </FieldRow>
-      )}
-      <FieldRow label="长期记忆策略">
-        <Select
-          value={m.longTermStrategy ?? 'NONE'}
-          style={{ width: 240 }}
-          onChange={(v) =>
-            onPatchMemory({ longTermStrategy: v as LongTermStrategy })
-          }
-          options={[
-            { value: 'NONE', label: '无' },
-            { value: 'VECTOR_RECALL', label: '向量召回' },
-            { value: 'FULLTEXT_RECALL', label: '全文召回' },
-          ]}
-        />
-      </FieldRow>
-      <Collapse
-        ghost
-        items={[
-          {
-            key: 'limit',
-            label: '限流参数（可选）',
-            children: (
-              <>
-                <Alert
-                  type="info"
-                  showIcon
-                  message="默认 QPS=10、每日预算=100；如无特殊需求可保持默认"
-                  style={{ marginBottom: 12 }}
-                />
-                <FieldRow label="QPS">
-                  <InputNumber
-                    min={1}
-                    max={1000}
-                    value={value.qps ?? 10}
-                    style={{ width: 240 }}
-                    onChange={(v) => onPatchLimit({ qps: v ?? undefined })}
-                  />
-                </FieldRow>
-                <div style={{ height: 12 }} />
-                <FieldRow label="每日预算（次）">
-                  <InputNumber
-                    min={1}
-                    value={value.dailyBudget ?? 100}
-                    style={{ width: 240 }}
-                    onChange={(v) =>
-                      onPatchLimit({ dailyBudget: v ?? undefined })
-                    }
-                  />
-                </FieldRow>
-              </>
-            ),
-          },
-        ]}
-      />
-    </div>
-  );
-}
-
-function FieldRow({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <span style={{ fontSize: 13, fontWeight: 500, color: COLOR.textSecondary }}>
-        {label}
-      </span>
-      {children}
-    </div>
-  );
-}
-
-// 保留引用避免 tree-shaking 警告
-void COLOR.bgInfo;

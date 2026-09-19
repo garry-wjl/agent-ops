@@ -4,6 +4,7 @@ import cn.hutool.core.collection.CollectionUtil;
 import cn.hutool.core.lang.Assert;
 import cn.hutool.core.util.StrUtil;
 import ink.garry.rd.agent.ws.application.agentrunner.factory.AgentRunnerFactory;
+import ink.garry.rd.agent.ws.application.agentrunner.harness.HarnessUserMemorySync;
 import ink.garry.rd.agent.ws.application.attachment.command.AttachmentCommandService;
 import ink.garry.rd.agent.ws.application.common.prompt.SysPromptVariableSubstitutor;
 import ink.garry.rd.agent.ws.application.debugconsole.SegmentAccumulator;
@@ -55,6 +56,9 @@ public class AgentRunnerService {
 
     @Resource
     private AttachmentCommandService attachmentCommandService;
+
+    @Resource
+    private HarnessUserMemorySync harnessUserMemorySync;
 
     /**
      * 运行 Agent（生产/默认入口：当前在线版本）。
@@ -213,7 +217,9 @@ public class AgentRunnerService {
                     return Flux.just(event);
                 })
                 // AGENT_RESULT 后主动 complete，避免上游 agent.stream 挂起导致 SSE 半关闭、前端 loading 卡死
-                .takeUntil(event -> event.isLast() && EventType.AGENT_RESULT.equals(event.getType()));
+                .takeUntil(event -> event.isLast() && EventType.AGENT_RESULT.equals(event.getType()))
+                .doOnComplete(() -> harnessUserMemorySync.capture(
+                        agentNum, targetVersion, finalSessionNum, operatorId));
     }
 
     private static NormalizedInvokeContent textOnly(String input) {

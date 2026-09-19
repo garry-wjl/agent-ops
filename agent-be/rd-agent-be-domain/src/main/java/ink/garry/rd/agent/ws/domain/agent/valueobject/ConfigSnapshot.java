@@ -72,6 +72,14 @@ public class ConfigSnapshot {
 
     /** 最大迭代轮次（ReAct 循环次数），默认 10 */
     private Integer maxIters;
+
+    /**
+     * 是否记录该用户的长期记忆。缺省 false：不写 MEMORY.md、不入库。
+     */
+    private Boolean enableLongTermMemory;
+
+    /** Harness 上下文压缩策略 */
+    private CompactionPolicy compaction;
     /** 挂载的 Skill 业务编号列表（多选） */
     private List<String> skillNums;
     /** 挂载的工具业务编号列表（v4.0：原 mcpNums 重命名；含 MCP / FunctionCall，多选） */

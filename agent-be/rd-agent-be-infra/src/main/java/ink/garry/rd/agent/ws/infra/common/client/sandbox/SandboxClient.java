@@ -3,6 +3,8 @@ package ink.garry.rd.agent.ws.infra.common.client.sandbox;
 import com.alibaba.opensandbox.sandbox.Sandbox;
 import com.alibaba.opensandbox.sandbox.SandboxManager;
 import com.alibaba.opensandbox.sandbox.config.ConnectionConfig;
+import com.alibaba.opensandbox.sandbox.domain.models.sandboxes.Volume;
+import ink.garry.rd.agent.ws.infra.sandbox.oss.OssWorkspaceVolumeFactory;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.annotation.Resource;
@@ -128,6 +130,43 @@ public class SandboxClient {
                     sandboxId, cpuMillis, memory, aliveMinutes);
             return sandboxId;
         }
+    }
+
+    /**
+     * 按规格创建容器。OSS 会话工作空间开启时，把 {@code workspaceSubPath} 挂到 {@code /workspace}。
+     *
+     * @param workspaceSubPath 会话 OSS 前缀
+     * @return 新建容器的 sandboxId
+     */
+    public String create(BigDecimal cpu, int memoryMb, int aliveMinutes, String workspaceSubPath) {
+        Volume volume = isolatesWorkspaceBySession()
+                ? OssWorkspaceVolumeFactory.build(properties.getOss(), workspaceSubPath)
+                : null;
+        String cpuMillis = cpu.multiply(BigDecimal.valueOf(1000))
+                .setScale(0, RoundingMode.HALF_UP).toPlainString() + "m";
+        String memory = memoryMb + "Mi";
+        Sandbox.Builder builder = Sandbox.builder()
+                .image(properties.getImage())
+                .resource(Map.of("cpu", cpuMillis, "memory", memory))
+                .timeout(Duration.ofMinutes(aliveMinutes))
+                .manualCleanup()
+                .connectionConfig(connectionConfig);
+        if (volume != null) {
+            builder = builder.volume(volume);
+        }
+        try (Sandbox sandbox = builder.build()) {
+            String sandboxId = sandbox.getId();
+            log.info("sandbox created by spec, id={}, cpu={}, memory={}, aliveMinutes={}, workspaceSubPath={}",
+                    sandboxId, cpuMillis, memory, aliveMinutes, workspaceSubPath);
+            return sandboxId;
+        }
+    }
+
+    /**
+     * @return OSS 会话工作空间是否开启
+     */
+    public boolean isolatesWorkspaceBySession() {
+        return properties.getOss() != null && properties.getOss().isEnabled();
     }
 
     /**

@@ -50,6 +50,17 @@ export interface ApiModeConfig {
   getSession?: { path: string; responseMessagesJsonPath?: string };
 }
 
+export interface CompactionSetting {
+  /** 达到该消息数后压缩，默认 50 */
+  triggerMessages?: number;
+  /** 达到该 token 数后压缩；0 表示沿用 Harness 默认 */
+  triggerTokens?: number;
+  /** 压缩后保留的最近消息数，默认 20 */
+  keepMessages?: number;
+  /** 摘要提示词；空则使用 Harness 默认 */
+  summaryPrompt?: string;
+}
+
 /** 通用 ConfigSnapshot — 见 Agent 方案 §3.2.1 */
 export interface ConfigSnapshot {
   /** v3.0：Agent 元信息纳入版本快照；发布时同步到 agent 主表 */
@@ -67,12 +78,15 @@ export interface ConfigSnapshot {
   modelId?: string;
   temperature?: number;
   /**
-   * 2026-06-17 模型管理优化：是否启用 Plan 模式。
-   * <p>本期仅持久化和回显，运行时不消费；缺省按 false 处理。
+   * 开启时运行时打开 Harness 任务列表（enableTaskList）；缺省按 false 处理。
    */
   enablePlan?: boolean;
-  /** 最大迭代轮次（ReAct 循环次数），默认 10 */
+  /** Harness / ReAct 最大迭代轮次，默认 10 */
   maxIters?: number;
+  /** 开启后才把该用户的长期记忆写入数据库 */
+  enableLongTermMemory?: boolean;
+  /** Harness 上下文压缩策略 */
+  compaction?: CompactionSetting;
   skillNums?: string[];
   /**
    * 2026-06-11 Agent 配置优化：工具引用列表（原 mcpNums 重命名，语义含 MCP / FunctionCall）。
@@ -332,10 +346,14 @@ export interface AgentCreateParam {
   /** 模型管理业务编号（num，前缀 MDL）引用；运行时按 modelId 解析模型管理记录装配 LLM */
   modelId?: string;
   temperature?: number;
-  /** 2026-06-17：是否启用 Plan 模式（仅持久化/展示，运行时不消费） */
+  /** 开启时运行时打开 Harness 任务列表（enableTaskList） */
   enablePlan?: boolean;
-  /** 最大迭代轮次（ReAct 循环次数），默认 10 */
+  /** Harness / ReAct 最大迭代轮次，默认 10 */
   maxIters?: number;
+  /** 开启后才把该用户的长期记忆写入数据库 */
+  enableLongTermMemory?: boolean;
+  /** Harness 上下文压缩策略 */
+  compaction?: CompactionSetting;
   skillNums?: string[];
   /** 挂载工具编码列表（原 mcpNums，语义含 MCP / FunctionCall，多选） */
   toolNums?: string[];
