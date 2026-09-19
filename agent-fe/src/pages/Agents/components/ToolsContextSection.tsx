@@ -16,7 +16,6 @@ import {
   Select,
   Tooltip,
   Tag,
-  Space,
 } from 'antd';
 import { PlusOutlined, CloseOutlined, DownOutlined, RightOutlined } from '@ant-design/icons';
 import type {
@@ -557,97 +556,6 @@ function ToolSelectedList({
                 )}
               </div>
             )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-/**
- * 已选项列表。已选 num 在候选中找不到 → 标红「已失效，请重选」。
- */
-function SelectedList({
-  options,
-  value,
-  desc,
-  onRemove,
-}: {
-  options: AssetOption[];
-  value: string[];
-  desc: string;
-  onRemove: (num: string) => void;
-}) {
-  if (value.length === 0) {
-    return (
-      <Empty
-        image={Empty.PRESENTED_IMAGE_SIMPLE}
-        description={<span style={{ color: COLOR.textMuted }}>{desc}</span>}
-      />
-    );
-  }
-  const byNum = new Map(options.map((o) => [o.num, o]));
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {value.map((num) => {
-        const opt = byNum.get(num);
-        const invalid = !opt;
-        return (
-          <div
-            key={num}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              padding: '10px 12px',
-              border: `1px solid ${
-                invalid ? COLOR.invalidBorder : COLOR.border
-              }`,
-              background: invalid ? COLOR.invalidBg : '#fff',
-              borderRadius: 8,
-            }}
-          >
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div
-                style={{
-                  fontSize: 14,
-                  fontWeight: 500,
-                  color: invalid ? COLOR.invalidText : COLOR.textPrimary,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-              >
-                {opt?.name ?? num}
-                {invalid && (
-                  <Tag
-                    color="error"
-                    style={{ marginLeft: 8, fontSize: 12 }}
-                  >
-                    已失效，请重选
-                  </Tag>
-                )}
-              </div>
-              {opt?.meta && (
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: COLOR.textMuted,
-                    marginTop: 2,
-                  }}
-                >
-                  {opt.meta}
-                </div>
-              )}
-            </div>
-            <CloseOutlined
-              onClick={() => onRemove(num)}
-              style={{
-                color: COLOR.textMuted,
-                cursor: 'pointer',
-                fontSize: 13,
-              }}
-            />
           </div>
         );
       })}
