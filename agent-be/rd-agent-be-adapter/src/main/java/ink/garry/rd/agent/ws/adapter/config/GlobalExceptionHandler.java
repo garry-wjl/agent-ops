@@ -7,6 +7,7 @@ import ink.garry.rd.agent.ws.infra.common.util.TraceContext;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -23,21 +24,26 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<Result<Void>> business(BusinessException ex) {
         log.warn("business exception code={} msg={}", ex.getCode(), ex.getMessage());
-        return ResponseEntity.ok(Result.<Void>fail(ex.getCode(), ex.getMessage()).withTraceId(TraceContext.get()));
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Result.<Void>fail(ex.getCode(), ex.getMessage()).withTraceId(TraceContext.get()));
     }
 
     @ExceptionHandler({MethodArgumentNotValidException.class, BindException.class, ConstraintViolationException.class,
             IllegalArgumentException.class})
     public ResponseEntity<Result<Void>> validation(Exception ex) {
         log.warn("validation failed: {}", ex.getMessage());
-        return ResponseEntity.ok(Result.<Void>fail(BizCode.INVALID_PARAM.getCode(), ex.getMessage())
-                .withTraceId(TraceContext.get()));
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Result.<Void>fail(BizCode.INVALID_PARAM.getCode(), ex.getMessage())
+                        .withTraceId(TraceContext.get()));
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Result<Void>> unknown(Exception ex) {
         log.error("uncaught exception", ex);
         return ResponseEntity.status(HttpStatus.OK)
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(Result.<Void>fail(BizCode.SYSTEM_BUSY.getCode(), ex.getMessage())
                         .withTraceId(TraceContext.get()));
     }

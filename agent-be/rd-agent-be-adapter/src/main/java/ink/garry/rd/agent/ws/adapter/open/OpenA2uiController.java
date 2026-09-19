@@ -13,6 +13,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -48,7 +49,10 @@ public class OpenA2uiController {
      * @param req   注入权威归属的请求
      * @return A2UI envelope SSE
      */
-    @PostMapping(value = "/command/a2ui/invoke", produces = "text/event-stream;charset=UTF-8")
+    @PostMapping(value = "/command/a2ui/invoke", produces = {
+            MediaType.TEXT_EVENT_STREAM_VALUE + ";charset=UTF-8",
+            MediaType.APPLICATION_JSON_VALUE
+    })
     public Flux<ServerSentEvent<String>> invoke(@Valid @RequestBody OpenA2uiInvokeParam param,
                                                 HttpServletRequest req) {
         assertAgentMatch(param.getAgentNum(), req);
@@ -62,7 +66,10 @@ public class OpenA2uiController {
      * @param req   注入权威归属的请求
      * @return A2UI envelope SSE
      */
-    @PostMapping(value = "/command/a2ui/action", produces = "text/event-stream;charset=UTF-8")
+    @PostMapping(value = "/command/a2ui/action", produces = {
+            MediaType.TEXT_EVENT_STREAM_VALUE + ";charset=UTF-8",
+            MediaType.APPLICATION_JSON_VALUE
+    })
     public Flux<ServerSentEvent<String>> action(@Valid @RequestBody OpenA2uiActionParam param,
                                                 HttpServletRequest req) {
         assertAgentMatch(param.getAgentNum(), req);

@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -33,7 +34,14 @@ public class DebugInvokeController extends BaseController {
     private final InvokeContentNormalizer invokeContentNormalizer;
     private final ObjectMapper objectMapper;
 
-    @PostMapping(value = "/invoke", produces = "text/event-stream;charset=UTF-8")
+    /**
+     * 成功时 text/event-stream；进入 SSE 前的业务/参数异常须能协商为 application/json，
+     * 否则 {@code produces} 仅 SSE 时全局异常处理返回 JSON 会内容协商失败 → 空 body HTTP 500。
+     */
+    @PostMapping(value = "/invoke", produces = {
+            MediaType.TEXT_EVENT_STREAM_VALUE + ";charset=UTF-8",
+            MediaType.APPLICATION_JSON_VALUE
+    })
     public Flux<ServerSentEvent<String>> invoke(@Valid @RequestBody DebugInvokeRequest req) {
         invokeContentNormalizer.normalize(req.getInput(), req.getAttachments());
         return SseKeepAlive.withHeartbeat(

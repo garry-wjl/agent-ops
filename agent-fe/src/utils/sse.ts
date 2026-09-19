@@ -59,7 +59,8 @@ export async function invokeStream(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Accept: 'text/event-stream',
+        // 同时接受 JSON：进入 SSE 前的业务错误会走 Result JSON，而非空 500
+        Accept: 'text/event-stream, application/json',
         ...(workspaceNum ? { 'X-Workspace-Num': workspaceNum } : {}),
         ...headers,
       },
@@ -67,8 +68,23 @@ export async function invokeStream(
       body: JSON.stringify(body),
       signal,
     });
-    if (!resp.ok || !resp.body) {
+    if (!resp.ok) {
       throw new Error(`SSE HTTP ${resp.status}`);
+    }
+    if (!resp.body) {
+      throw new Error('SSE 响应体为空');
+    }
+    const contentType = resp.headers.get('content-type') || '';
+    if (!contentType.includes('text/event-stream')) {
+      // 进入流之前失败：HTTP 200 + Result JSON（或其它非 SSE）
+      let message = '调用失败';
+      try {
+        const json = (await resp.json()) as { message?: string; code?: number };
+        if (json?.message) message = json.message;
+      } catch {
+        // ignore parse errors
+      }
+      throw new Error(message);
     }
     const reader = resp.body.getReader();
     const decoder = new TextDecoder('utf-8');
