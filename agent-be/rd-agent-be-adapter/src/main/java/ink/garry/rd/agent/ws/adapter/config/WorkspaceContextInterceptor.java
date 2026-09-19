@@ -8,6 +8,7 @@ import ink.garry.rd.agent.ws.infra.common.util.UserContextHolder;
 import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContext;
 import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContextHolder;
 import jakarta.annotation.Resource;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -33,6 +34,11 @@ public class WorkspaceContextInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+        // SSE / 异步派发会再次进入拦截器，但 UserContextFilter 因 OncePerRequest 不会重注身份，
+        // 再校验会误报「未登录」并在已提交的 event-stream 上写出错误状态。
+        if (request.getDispatcherType() == DispatcherType.ASYNC) {
+            return true;
+        }
         String workspaceNum = request.getHeader(WorkspaceConstants.HEADER_X_WORKSPACE_NUM);
         // 请求头为空：不设置上下文，交由下游服务自身按 num 做权限校验
         if (workspaceNum == null || workspaceNum.isBlank()) {

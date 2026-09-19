@@ -14,6 +14,7 @@ import ink.garry.rd.agent.ws.domain.session.valueobject.StepChain;
 import ink.garry.rd.agent.ws.facade.domain.DomainEntity;
 import ink.garry.rd.agent.ws.facade.domain.DomainEventDTO;
 import ink.garry.rd.agent.ws.facade.domain.DomainEventPublisher;
+import ink.garry.rd.agent.ws.facade.exception.BusinessException;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -280,8 +281,13 @@ public class Session extends DomainEntity implements ink.garry.rd.agent.ws.facad
         sessionRepository.save(this);
     }
 
-    /** 校验操作人是否为会话归属人，不通过则抛出权限异常。 */
+    /** 与 client BizCode.FORBIDDEN(1003) 对齐；domain 不依赖 client。 */
+    private static final int BIZ_FORBIDDEN = 1003;
+
+    /** 校验操作人是否为会话归属人，不通过则抛业务异常。 */
     private void assertOwner(String operatorId) {
-        Assert.isTrue(operatorId != null && operatorId.equals(creatorUserId), "无权限操作该会话");
+        if (operatorId == null || !operatorId.equals(creatorUserId)) {
+            throw new BusinessException(BIZ_FORBIDDEN, "无权限操作该会话");
+        }
     }
 }

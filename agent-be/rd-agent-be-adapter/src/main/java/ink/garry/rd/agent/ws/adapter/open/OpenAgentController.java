@@ -27,6 +27,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -85,7 +86,10 @@ public class OpenAgentController {
      * @param req   注入权威归属的请求
      * @return Event 流（text/event-stream）
      */
-    @PostMapping(value = "/command/invoke", produces = "text/event-stream;charset=UTF-8")
+    @PostMapping(value = "/command/invoke", produces = {
+            MediaType.TEXT_EVENT_STREAM_VALUE + ";charset=UTF-8",
+            MediaType.APPLICATION_JSON_VALUE
+    })
     public Flux<ServerSentEvent<String>> invoke(@Valid @RequestBody OpenInvokeParam param, HttpServletRequest req) {
         assertAgentMatch(param.getAgentNum(), req);
         bindOpenWorkspace(req);
