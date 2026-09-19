@@ -8,6 +8,8 @@ import ink.garry.rd.agent.ws.domain.sandbox.repository.SandboxRuntimeInstanceRep
 import ink.garry.rd.agent.ws.domain.sandbox.repository.SandboxRuntimeInstanceRepository.SandboxRuntimeInstanceRecord;
 import ink.garry.rd.agent.ws.domain.sandbox.valueobject.SandboxRuntimeStatus;
 import ink.garry.rd.agent.ws.domain.sandbox.valueobject.SandboxStatus;
+import ink.garry.rd.agent.ws.domain.session.Session;
+import ink.garry.rd.agent.ws.domain.session.repository.SessionRepository;
 import ink.garry.rd.agent.ws.facade.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,6 +27,10 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -36,6 +42,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -58,6 +65,8 @@ class SandboxPoolServiceTest {
     @Mock
     private SandboxRuntimeInstanceRepository runtimeRepository;
     @Mock
+    private SessionRepository sessionRepository;
+    @Mock
     private RedissonClient redissonClient;
     @Mock
     private RLock rLock;
@@ -70,6 +79,9 @@ class SandboxPoolServiceTest {
     @BeforeEach
     void setUp() throws Exception {
         lenient().when(redissonClient.getLock(anyString())).thenReturn(rLock);
+        // 看门狗：tryLock(wait, unit) 无 lease
+        lenient().when(rLock.tryLock(anyLong(), eq(TimeUnit.SECONDS))).thenReturn(true);
+        // 兼容旧签名若误调用
         lenient().when(rLock.tryLock(anyLong(), anyLong(), eq(TimeUnit.SECONDS))).thenReturn(true);
         lenient().when(rLock.isHeldByCurrentThread()).thenReturn(true);
         lenient().when(sandboxGateway.generateRuntimeInstanceNum())
@@ -90,7 +102,6 @@ class SandboxPoolServiceTest {
 
     @Test
     void provisionAsset_poolOn_alsoCreatesNoContainer() {
-        // 热池已下线：即使资产标记 poolOn 也不预创建
         Sandbox asset = onlineAsset(true, 2, 8);
         when(sandboxFactory.buildSandboxByNum("SBX1")).thenReturn(asset);
 
@@ -102,7 +113,9 @@ class SandboxPoolServiceTest {
     }
 
     @Test
-    void ensureBound_reusesSameSession() {
+    void ensureBound_reusesSameSession_andRenews() {
+        Sandbox asset = onlineAsset(false, 1, 8);
+        when(sandboxFactory.buildSandboxByNum("SBX1")).thenReturn(asset);
         SandboxRuntimeInstanceRecord bound = new SandboxRuntimeInstanceRecord(
                 "SRI1", "SBX1", "WS1", "os-bound", SandboxRuntimeStatus.BOUND,
                 "SES1", LocalDateTime.now(), null, "u1", "u1");
@@ -113,6 +126,7 @@ class SandboxPoolServiceTest {
         assertEquals("os-bound", id);
         verify(sandboxContainerGateway, never()).create(any(), anyInt(), anyInt());
         verify(runtimeRepository).update(any());
+        verify(sandboxContainerGateway).renew(eq("os-bound"), eq(30));
     }
 
     @Test
@@ -132,6 +146,7 @@ class SandboxPoolServiceTest {
         verify(runtimeRepository).insert(cap.capture());
         assertEquals(SandboxRuntimeStatus.BOUND, cap.getValue().status());
         assertEquals("SES2", cap.getValue().sessionNum());
+        verify(sandboxContainerGateway).renew(eq("os-new"), eq(30));
     }
 
     @Test
@@ -163,6 +178,76 @@ class SandboxPoolServiceTest {
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> sandboxPoolService.ensureBound("SBX1", "SES3", "u1"));
         assertTrue(ex.getMessage().contains("上限"));
+    }
+
+    @Test
+    void ensureBound_sameSessionConcurrent_createsOnce() throws Exception {
+        Sandbox asset = onlineAsset(false, 1, 8);
+        when(sandboxFactory.buildSandboxByNum("SBX1")).thenReturn(asset);
+        when(runtimeRepository.findBoundBySessionNum("SES-MERGE")).thenReturn(Optional.empty());
+        when(runtimeRepository.countAlive("SBX1")).thenReturn(0L);
+        when(sandboxContainerGateway.create(any(), anyInt(), anyInt())).thenAnswer(inv -> {
+            Thread.sleep(200);
+            return "os-merged";
+        });
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+        Future<String> f1 = pool.submit(() -> {
+            start.await();
+            return sandboxPoolService.ensureBound("SBX1", "SES-MERGE", "u1");
+        });
+        Future<String> f2 = pool.submit(() -> {
+            start.await();
+            return sandboxPoolService.ensureBound("SBX1", "SES-MERGE", "u2");
+        });
+        start.countDown();
+        assertEquals("os-merged", f1.get(5, TimeUnit.SECONDS));
+        assertEquals("os-merged", f2.get(5, TimeUnit.SECONDS));
+        pool.shutdownNow();
+        verify(sandboxContainerGateway, times(1)).create(any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void markSessionActive_touchesAndRenews() {
+        Sandbox asset = onlineAsset(false, 1, 8);
+        when(sandboxFactory.buildSandboxByNum("SBX1")).thenReturn(asset);
+        SandboxRuntimeInstanceRecord bound = new SandboxRuntimeInstanceRecord(
+                "SRI1", "SBX1", "WS1", "os-1", SandboxRuntimeStatus.BOUND,
+                "SES1", LocalDateTime.now().minusMinutes(5), null, "u1", "u1");
+        when(runtimeRepository.findBoundBySessionNum("SES1")).thenReturn(Optional.of(bound));
+
+        sandboxPoolService.markSessionActive("SES1");
+
+        verify(runtimeRepository).update(any());
+        verify(sandboxContainerGateway).renew(eq("os-1"), eq(30));
+    }
+
+    @Test
+    void ensureAliveOrRebind_dead_rebuilds() {
+        Sandbox asset = onlineAsset(false, 1, 8);
+        when(sandboxFactory.buildSandboxByNum("SBX1")).thenReturn(asset);
+        SandboxRuntimeInstanceRecord dead = new SandboxRuntimeInstanceRecord(
+                "SRI1", "SBX1", "WS1", "os-dead", SandboxRuntimeStatus.BOUND,
+                "SES1", LocalDateTime.now(), null, "u1", "u1");
+        when(runtimeRepository.findBoundBySessionNum("SES1"))
+                .thenReturn(Optional.of(dead))
+                .thenReturn(Optional.empty());
+        when(sandboxContainerGateway.isAlive("os-dead")).thenReturn(false);
+        when(runtimeRepository.countAlive("SBX1")).thenReturn(0L);
+        when(sandboxContainerGateway.create(any(), anyInt(), anyInt())).thenReturn("os-new");
+        Session session = new Session();
+        session.setNum("SES1");
+        session.setAgentNum("AGT1");
+        when(sessionRepository.findByNum("SES1")).thenReturn(session);
+
+        String id = sandboxPoolService.ensureAliveOrRebind(
+                "SES1", "os-dead", "SBX1", "AGT1", "u1");
+
+        assertEquals("os-new", id);
+        verify(sandboxContainerGateway).kill("os-dead");
+        verify(runtimeRepository).softDelete("SRI1");
+        verify(sandboxContainerGateway).create(any(), anyInt(), anyInt());
     }
 
     @Test
@@ -231,6 +316,7 @@ class SandboxPoolServiceTest {
         assertEquals("os-iso", id);
         verify(runtimeRepository, never()).listBySandboxAndStatus(anyString(), any());
         verify(sandboxContainerGateway, never()).create(any(), anyInt(), anyInt());
+        verify(sandboxContainerGateway, atLeastOnce()).renew(eq("os-iso"), anyInt());
     }
 
     private static Sandbox onlineAsset(boolean pool, int poolSize, int max) {

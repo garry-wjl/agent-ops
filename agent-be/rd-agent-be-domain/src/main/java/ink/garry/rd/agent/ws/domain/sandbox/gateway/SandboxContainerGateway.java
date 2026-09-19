@@ -54,4 +54,16 @@ public interface SandboxContainerGateway {
      * @return 是否存活
      */
     boolean isAlive(String instanceId);
+
+    /**
+     * 滑动续期远程容器 TTL（会话活动时调用）。
+     * <p>
+     * 本地 Docker 等不支持续期的实现可为 no-op。
+     *
+     * @param instanceId   远程 id
+     * @param aliveMinutes 续期后的存活窗口（分钟）
+     */
+    default void renew(String instanceId, int aliveMinutes) {
+        // 默认不支持续期
+    }
 }

@@ -12,6 +12,22 @@ import java.util.Map;
 public interface OpenSandboxExecBridge {
 
     /**
+     * 执行前解析可用 instanceId：探活续期，死亡则按资产重建。
+     * <p>
+     * 默认原样返回 {@code instanceId}；生产桥接会走会话绑定服务。
+     *
+     * @param instanceId 调用方持有的实例 id
+     * @param sessionNum 平台会话编号
+     * @param sandboxNum 沙箱资产编号（重建用，可空）
+     * @param agentNum   Agent 编号（会话卷挂载用，可空）
+     * @return 可用 instanceId（可能已换成新容器）
+     */
+    default String resolveInstanceId(
+            String instanceId, String sessionNum, String sandboxNum, String agentNum) {
+        return instanceId;
+    }
+
+    /**
      * 在指定容器的会话级 bash 中执行一条命令。
      *
      * @param instanceId OpenSandbox 容器实例 id

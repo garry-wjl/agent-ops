@@ -99,6 +99,8 @@ public class OpenSandboxClient implements SandboxClient<OpenSandboxClientOptions
         state.setSessionNum(options.getSessionNum());
         state.setEnv(copyEnv(options.getEnv()));
         state.setTtlMinutes(options.getTtlMinutes());
+        state.setSandboxNum(options.getSandboxNum());
+        state.setAgentNum(options.getAgentNum());
         state.setWorkspaceRoot(
                 options.getWorkspaceRoot() != null ? options.getWorkspaceRoot() : "/workspace");
         state.setContainerOwned(false);

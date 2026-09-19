@@ -81,19 +81,24 @@ public class OpenSandboxHarnessSandbox extends AbstractBaseSandbox {
     protected ExecResult doExec(RuntimeContext runtimeContext, String command, int timeoutSeconds)
             throws Exception {
         String wrapped = wrapWithWorkspaceCd(command);
-        OpenSandboxCommandResult raw =
-                execBridge.exec(
-                        openState.getInstanceId(),
-                        openState.getSessionNum(),
-                        openState.getEnv(),
-                        openState.getTtlMinutes(),
-                        wrapped);
-        String stdout = truncate(raw.safeStdout());
-        String stderr = truncate(raw.safeStderr());
-        boolean truncated =
-                raw.safeStdout().length() > OUTPUT_TRUNCATE_CHARS
-                        || raw.safeStderr().length() > OUTPUT_TRUNCATE_CHARS;
-        return new ExecResult(raw.normalizedExitCode(), stdout, stderr, truncated);
+        String instanceId = resolveLiveInstanceId();
+        try {
+            OpenSandboxCommandResult raw =
+                    execBridge.exec(
+                            instanceId,
+                            openState.getSessionNum(),
+                            openState.getEnv(),
+                            openState.getTtlMinutes(),
+                            wrapped);
+            String stdout = truncate(raw.safeStdout());
+            String stderr = truncate(raw.safeStderr());
+            boolean truncated =
+                    raw.safeStdout().length() > OUTPUT_TRUNCATE_CHARS
+                            || raw.safeStderr().length() > OUTPUT_TRUNCATE_CHARS;
+            return new ExecResult(raw.normalizedExitCode(), stdout, stderr, truncated);
+        } catch (Exception e) {
+            throw wrapDeadContainer(e);
+        }
     }
 
     /**
@@ -111,9 +116,10 @@ public class OpenSandboxHarnessSandbox extends AbstractBaseSandbox {
                         + " . 2>/dev/null | base64 -w0 2>/dev/null || tar -cf - -C "
                         + shellSingleQuote(root)
                         + " . 2>/dev/null | base64";
+        String instanceId = resolveLiveInstanceId();
         OpenSandboxCommandResult raw =
                 execBridge.exec(
-                        openState.getInstanceId(),
+                        instanceId,
                         openState.getSessionNum(),
                         openState.getEnv(),
                         openState.getTtlMinutes(),
@@ -157,8 +163,9 @@ public class OpenSandboxHarnessSandbox extends AbstractBaseSandbox {
         String b64 = Base64.getEncoder().encodeToString(tarBytes);
         String tmpPath =
                 "/tmp/as_ws_hydrate_" + UUID.randomUUID().toString().replace("-", "") + ".b64";
+        String instanceId = resolveLiveInstanceId();
         execBridge.writeTextFile(
-                openState.getInstanceId(),
+                instanceId,
                 openState.getSessionNum(),
                 openState.getEnv(),
                 openState.getTtlMinutes(),
@@ -173,7 +180,7 @@ public class OpenSandboxHarnessSandbox extends AbstractBaseSandbox {
                         + shellSingleQuote(tmpPath);
         OpenSandboxCommandResult raw =
                 execBridge.exec(
-                        openState.getInstanceId(),
+                        instanceId,
                         openState.getSessionNum(),
                         openState.getEnv(),
                         openState.getTtlMinutes(),
@@ -194,9 +201,10 @@ public class OpenSandboxHarnessSandbox extends AbstractBaseSandbox {
     @Override
     protected void doSetupWorkspace() throws Exception {
         String root = getWorkspaceRoot();
+        String instanceId = resolveLiveInstanceId();
         OpenSandboxCommandResult raw =
                 execBridge.exec(
-                        openState.getInstanceId(),
+                        instanceId,
                         openState.getSessionNum(),
                         openState.getEnv(),
                         openState.getTtlMinutes(),
@@ -217,8 +225,9 @@ public class OpenSandboxHarnessSandbox extends AbstractBaseSandbox {
         if (root == null || root.isBlank() || "/".equals(root.trim())) {
             return;
         }
+        String instanceId = resolveLiveInstanceId();
         execBridge.exec(
-                openState.getInstanceId(),
+                instanceId,
                 openState.getSessionNum(),
                 openState.getEnv(),
                 openState.getTtlMinutes(),
@@ -243,6 +252,52 @@ public class OpenSandboxHarnessSandbox extends AbstractBaseSandbox {
     private String wrapWithWorkspaceCd(String command) {
         String root = getWorkspaceRoot();
         return "cd " + shellSingleQuote(root) + " && " + command;
+    }
+
+    /**
+     * 执行前解析可用实例，若重建则回写状态。
+     *
+     * @return 可用 instanceId
+     */
+    private String resolveLiveInstanceId() {
+        String live =
+                execBridge.resolveInstanceId(
+                        openState.getInstanceId(),
+                        openState.getSessionNum(),
+                        openState.getSandboxNum(),
+                        openState.getAgentNum());
+        if (live != null && !live.equals(openState.getInstanceId())) {
+            log.warn(
+                    "[sandbox-opensandbox] instance rebound sessionNum={} old={} new={}",
+                    openState.getSessionNum(),
+                    openState.getInstanceId(),
+                    live);
+            openState.setInstanceId(live);
+        }
+        return live != null ? live : openState.getInstanceId();
+    }
+
+    private Exception wrapDeadContainer(Exception e) {
+        String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+        if (looksLikeDeadContainer(msg)) {
+            return new SandboxException.SandboxRuntimeException(
+                    SandboxErrorCode.CONFIGURATION_ERROR,
+                    "沙箱实例已到期或不可用，已尝试重建；若仍失败请重试本步"
+                            + "（会话工作区在 PVC 上可保留）。原因: "
+                            + msg,
+                    e);
+        }
+        return e;
+    }
+
+    private static boolean looksLikeDeadContainer(String msg) {
+        String m = msg.toLowerCase();
+        return m.contains("not found")
+                || m.contains("no such")
+                || m.contains("dead")
+                || m.contains("502")
+                || m.contains("connection refused")
+                || m.contains("unavailable");
     }
 
     private static String truncate(String s) {

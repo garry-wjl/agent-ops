@@ -117,6 +117,13 @@ public final class LockKeyConstant {
     public static final String SANDBOX_SESSION_LOCK_PREFIX = "sandbox:session:lock:";
 
     /**
+     * 会话级沙箱绑定锁（ensureBound 预热与首条消息合并）：
+     * {@code sandbox:pool:bind:{sessionNum}}。使用 Redisson 看门狗（不设 lease），
+     * 避免 OpenSandbox create 耗时期间锁过期。
+     */
+    public static final String SANDBOX_POOL_BIND_LOCK_PREFIX = "sandbox:pool:bind:";
+
+    /**
      * 沙箱资产仓储写互斥锁前缀;拼接沙箱 num 后守护 {@code SandboxRepositoryImpl} 的
      * save / deleteByNum 临界区,防止前端重试 / 并发请求在 num 唯一索引兜底前先撞 insert。
      */
