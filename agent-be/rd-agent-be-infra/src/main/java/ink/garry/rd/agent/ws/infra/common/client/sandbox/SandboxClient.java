@@ -191,7 +191,19 @@ public class SandboxClient {
      * @param sandboxId 目标容器 id
      */
     public void renew(String sandboxId) {
-        sandboxManager.renewSandbox(sandboxId, ttl());
+        renew(sandboxId, (int) properties.getTtlMinutes());
+    }
+
+    /**
+     * 按指定分钟数滑动续期容器 TTL。
+     *
+     * @param sandboxId    目标容器 id
+     * @param aliveMinutes 续期窗口（分钟），≤0 时回退到配置默认 TTL
+     */
+    public void renew(String sandboxId, int aliveMinutes) {
+        int minutes = aliveMinutes > 0 ? aliveMinutes : (int) properties.getTtlMinutes();
+        sandboxManager.renewSandbox(sandboxId, Duration.ofMinutes(minutes));
+        log.debug("sandbox renewed, id={}, aliveMinutes={}", sandboxId, minutes);
     }
 
     /**

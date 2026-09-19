@@ -46,4 +46,9 @@ public class OpenSandboxContainerGateway implements SandboxContainerGateway {
     public boolean isAlive(String instanceId) {
         return sandboxClient.isAlive(instanceId);
     }
+
+    @Override
+    public void renew(String instanceId, int aliveMinutes) {
+        sandboxClient.renew(instanceId, aliveMinutes);
+    }
 }

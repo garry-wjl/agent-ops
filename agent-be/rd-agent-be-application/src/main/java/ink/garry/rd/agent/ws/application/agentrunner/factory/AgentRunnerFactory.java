@@ -399,6 +399,8 @@ public class AgentRunnerFactory {
                         .sessionRunner(openSandboxExecBridge)
                         .instanceId(sandboxDetailDTO.getSandbox().getSandboxInstanceId())
                         .sessionNum(sessionNum)
+                        .sandboxNum(agent.getConfigSnapshot().getSandboxRef())
+                        .agentNum(agent.getNum())
                         .env(env)
                         .ttlMinutes(ttl));
             } else {

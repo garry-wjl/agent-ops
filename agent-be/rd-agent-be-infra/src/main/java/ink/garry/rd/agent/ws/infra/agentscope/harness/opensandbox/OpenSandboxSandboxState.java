@@ -22,6 +22,12 @@ public class OpenSandboxSandboxState extends SandboxState {
     /** session 映射滑动 TTL（分钟）。 */
     private long ttlMinutes = 30L;
 
+    /** 沙箱资产编号（执行期重建用）。 */
+    private String sandboxNum;
+
+    /** Agent 编号（会话卷 subPath 重建用）。 */
+    private String agentNum;
+
     /** 容器内 workspace 根路径，默认 {@code /workspace}。 */
     private String workspaceRoot = "/workspace";
 
@@ -86,6 +92,34 @@ public class OpenSandboxSandboxState extends SandboxState {
      */
     public void setTtlMinutes(long ttlMinutes) {
         this.ttlMinutes = ttlMinutes;
+    }
+
+    /**
+     * @return 沙箱资产编号
+     */
+    public String getSandboxNum() {
+        return sandboxNum;
+    }
+
+    /**
+     * @param sandboxNum 沙箱资产编号
+     */
+    public void setSandboxNum(String sandboxNum) {
+        this.sandboxNum = sandboxNum;
+    }
+
+    /**
+     * @return Agent 编号
+     */
+    public String getAgentNum() {
+        return agentNum;
+    }
+
+    /**
+     * @param agentNum Agent 编号
+     */
+    public void setAgentNum(String agentNum) {
+        this.agentNum = agentNum;
     }
 
     /**

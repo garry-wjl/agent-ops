@@ -103,6 +103,24 @@ public class OpenSandboxFilesystemSpec extends SandboxFilesystemSpec {
     }
 
     /**
+     * @param sandboxNum 沙箱资产编号（执行期重建）
+     * @return this
+     */
+    public OpenSandboxFilesystemSpec sandboxNum(String sandboxNum) {
+        options.sandboxNum(sandboxNum);
+        return this;
+    }
+
+    /**
+     * @param agentNum Agent 编号（会话卷重建）
+     * @return this
+     */
+    public OpenSandboxFilesystemSpec agentNum(String agentNum) {
+        options.agentNum(agentNum);
+        return this;
+    }
+
+    /**
      * @param workspaceRoot 容器内 workspace 根
      * @return this
      */
