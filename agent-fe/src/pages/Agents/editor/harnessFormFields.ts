@@ -15,7 +15,7 @@ export type HarnessDroppedConfigField =
   (typeof HARNESS_DROPPED_CONFIG_FIELDS)[number];
 
 export function omitUnusedHarnessConfig<T extends object>(payload: T): T {
-  const next: Record<string, unknown> = { ...payload };
+  const next: Record<string, unknown> = { ...(payload as Record<string, unknown>) };
   for (const key of HARNESS_DROPPED_CONFIG_FIELDS) {
     delete next[key];
   }
