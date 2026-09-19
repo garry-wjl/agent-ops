@@ -30,4 +30,16 @@ public class SandboxUpdateParamDTO {
 
     /** 备注（任意非删除态可改，≤100 字）。 */
     private String remark;
+
+    /** 是否启用热池（任意非删除态可改）。 */
+    private Boolean poolEnabled;
+
+    /** 热池常驻数。 */
+    private Integer poolSize;
+
+    /** 最大并发实例。 */
+    private Integer maxConcurrent;
+
+    /** 会话空闲 TTL 分钟。 */
+    private Integer sessionIdleTtlMinutes;
 }

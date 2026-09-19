@@ -139,6 +139,8 @@ sandbox:
   # 容器存活 / Redis 映射 / 滑动续期窗口（分钟），默认 10
   ttl-minutes: ${SANDBOX_TTL_MINUTES:10}
   request-timeout-seconds: ${SANDBOX_REQUEST_TIMEOUT_SECONDS:30}
+  # 本地/自动化测试可设 true，走 MockSandboxContainerGateway，不连真实 OpenSandbox
+  mock: ${SANDBOX_MOCK:false}
 
 # rd-agent Control Plane 自有配置
 # 历史:v2.x 曾接入 spring-ai-alibaba-starter-a2a-nacos 做 A2A AgentCard 同步,

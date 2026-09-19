@@ -3,6 +3,7 @@ package ink.garry.rd.agent.ws.application.sandbox.runner;
 import cn.hutool.core.util.StrUtil;
 import com.alibaba.opensandbox.sandbox.Sandbox;
 import ink.garry.rd.agent.ws.application.sandbox.SandboxCommandService;
+import ink.garry.rd.agent.ws.application.sandbox.pool.SandboxPoolService;
 import ink.garry.rd.agent.ws.client.common.BizCode;
 import ink.garry.rd.agent.ws.domain.common.DomainEventConstant;
 import ink.garry.rd.agent.ws.domain.sandbox.dto.SandboxDomainEventDTO;
@@ -82,6 +83,8 @@ public class SandboxRunner {
     private SandboxClient sandboxClient;
     @Resource
     private SandboxCommandService sandboxCommandService;
+    @Resource
+    private SandboxPoolService sandboxPoolService;
 
     @Resource
     private RedissonClient redissonClient;
@@ -111,21 +114,16 @@ public class SandboxRunner {
         log.info("[sandbox-provision] start num={}, cpu={}, memoryMb={}, aliveMinutes={}",
                 num, payload.getCpu(), payload.getMemoryMb(), payload.getAliveMinutes());
 
-        String instanceId = null;
         try {
-            // 1. 按规格建容器
-            instanceId = sandboxClient.create(payload.getCpu(), payload.getMemoryMb(), payload.getAliveMinutes());
-            // 2. 健康检查（connect 探活，用完即关；关闭仅释放 HTTP 句柄不销毁容器）
-            probeReady(instanceId);
-            // 3. 供给成功：回写上线
-            sandboxCommandService.onlineSandbox(num, instanceId, operatorId);
-            log.info("[sandbox-provision] online num={}, instanceId={}", num, instanceId);
+            // 1. 热池 / 按需：委托 SandboxPoolService
+            String representative = sandboxPoolService.provisionAsset(num, operatorId);
+            // 2. 上线（instanceId 可空）
+            sandboxCommandService.onlineSandbox(num, representative, operatorId);
+            log.info("[sandbox-provision] online num={}, representativeInstanceId={}",
+                    num, representative);
         } catch (Exception ex) {
-            log.error("[sandbox-provision] failed num={}, instanceId={}, reason={}",
-                    num, instanceId, ex.getMessage(), ex);
-            // 已建容器则尝试 kill 回收，避免泄漏（失败仅 WARN，TTL 兜底）
-            safeKill(instanceId);
-            // 回写失败态（携带原因）；非初始化态由聚合拦截，这里再吞一次异常仅记日志
+            log.error("[sandbox-provision] failed num={}, reason={}",
+                    num, ex.getMessage(), ex);
             try {
                 sandboxCommandService.markProvisionFailed(num, truncateReason(ex.getMessage()), operatorId);
             } catch (Exception inner) {
@@ -156,15 +154,13 @@ public class SandboxRunner {
         if (payload == null) {
             return;
         }
-        String instanceId = payload.getSandboxInstanceId();
-        if (StrUtil.isBlank(instanceId)) {
-            log.info("[sandbox-destroy] no instanceId, skip kill. type={}, num={}",
-                    event.getType(), payload.getNum());
-            return;
+        log.info("[sandbox-destroy] destroy all runtime type={}, num={}",
+                event.getType(), payload.getNum());
+        sandboxPoolService.destroyAllForAsset(payload.getNum());
+        // 兼容资产表上残留的代表 instanceId
+        if (StrUtil.isNotBlank(payload.getSandboxInstanceId())) {
+            safeKill(payload.getSandboxInstanceId());
         }
-        log.info("[sandbox-destroy] kill container type={}, num={}, instanceId={}",
-                event.getType(), payload.getNum(), instanceId);
-        safeKill(instanceId);
     }
 
     // ============================================================
@@ -172,27 +168,32 @@ public class SandboxRunner {
     // ============================================================
 
     /**
-     * 脏态对账：判定在线沙箱的底层容器是否仍存活，不存活则回写下线。
+     * 脏态对账：清理资产下已死亡的会话/池实例。
      * <p>
-     * 由 {@code adapter.sandbox.scheduler.SandboxReconcileScheduler} 在持有全局对账锁后逐一调用；
-     * 判活经 {@link SandboxClient#isAlive(String)}，判定不存活后回调
-     * {@link SandboxCommandService#reconcileToOffline}（在线→下线）。单沙箱异常不上抛，由调度方继续下一个。
+     * 会话隔离模型下，资产 ONLINE 表示「规格就绪」，不以资产表 {@code sandboxInstanceId}
+     * （可为空或仅为代表 id）判活下线；仅清 runtime 表中远程已死的行。
+     * 由 {@code adapter.sandbox.scheduler.SandboxReconcileScheduler} 持锁后逐一调用。
      *
      * @param num        沙箱业务编号
-     * @param instanceId 当前容器实例 id（为空视为不存活）
+     * @param instanceId 资产代表 instanceId（兼容旧签名，不再作为下线依据）
      * @param operatorId 对账系统操作账号
      */
     public void reconcile(String num, String instanceId, String operatorId) {
         if (StrUtil.isBlank(num)) {
             return;
         }
-        boolean alive = StrUtil.isNotBlank(instanceId) && sandboxClient.isAlive(instanceId);
-        if (alive) {
-            return;
+        int cleaned = sandboxPoolService.cleanupDeadInstances(num);
+        if (cleaned > 0) {
+            log.info("[sandbox-reconcile] cleaned dead runtimes num={} count={} representativeId={}",
+                    num, cleaned, instanceId);
         }
-        log.warn("[sandbox-reconcile] container not alive, correct to OFFLINE. num={}, instanceId={}",
-                num, instanceId);
-        sandboxCommandService.reconcileToOffline(num, operatorId);
+        // 开池资产清理后补水位（关池无操作）
+        try {
+            sandboxPoolService.replenish(num, StrUtil.blankToDefault(operatorId, "system"));
+        } catch (Exception e) {
+            log.warn("[sandbox-reconcile] replenish after cleanup failed num={}: {}",
+                    num, e.getMessage());
+        }
     }
 
     /**

@@ -17,4 +17,11 @@ public interface SandboxGateway {
      * @return 形如 SBX+yyyyMMddHHmm+4 位序号
      */
     String generateSandboxNum();
+
+    /**
+     * 生成运行时实例业务编号（前缀 SRI）。
+     *
+     * @return 业务编号
+     */
+    String generateRuntimeInstanceNum();
 }

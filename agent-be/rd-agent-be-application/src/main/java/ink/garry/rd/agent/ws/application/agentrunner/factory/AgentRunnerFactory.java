@@ -4,6 +4,8 @@ import cn.hutool.core.collection.CollectionUtil;
 import cn.hutool.core.lang.Assert;
 import cn.hutool.core.util.StrUtil;
 import ink.garry.rd.agent.ws.application.agent.AgentQueryService;
+import ink.garry.rd.agent.ws.application.agentrunner.harness.BoundSkillRepository;
+import ink.garry.rd.agent.ws.application.agentrunner.harness.opensandbox.SandboxRunnerOpenSandboxExecBridge;
 import ink.garry.rd.agent.ws.application.agentrunner.tool.FunctionCallTool;
 import ink.garry.rd.agent.ws.application.agentrunner.tool.JsonFormatTool;
 import ink.garry.rd.agent.ws.application.agentrunner.tool.ReadAttachmentTool;
@@ -11,10 +13,12 @@ import ink.garry.rd.agent.ws.application.agentrunner.tool.SandboxTool;
 import ink.garry.rd.agent.ws.application.attachment.query.AttachmentQueryService;
 import ink.garry.rd.agent.ws.application.common.prompt.SysPromptVariableSubstitutor;
 import ink.garry.rd.agent.ws.application.sandbox.SandboxQueryService;
+import ink.garry.rd.agent.ws.application.sandbox.pool.SandboxPoolService;
 import ink.garry.rd.agent.ws.application.sandbox.runner.SandboxRunner;
 import ink.garry.rd.agent.ws.application.sandbox.runner.SandboxSession;
 import ink.garry.rd.agent.ws.application.tool.ToolQueryService;
 import ink.garry.rd.agent.ws.application.tool.factory.ToolRunnerFactory;
+import ink.garry.rd.agent.ws.infra.agentscope.harness.opensandbox.OpenSandboxFilesystemSpec;
 import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContextHolder;
 import ink.garry.rd.agent.ws.client.agent.dto.AgentDTO;
 import ink.garry.rd.agent.ws.client.sandbox.dto.SandboxDetailDTO;
@@ -31,25 +35,27 @@ import ink.garry.rd.agent.ws.infra.skill.agentscope.AgentScopeSkillRepositoryAda
 import com.alibaba.opensandbox.sandbox.domain.models.execd.executions.RunInSessionRequest;
 import io.a2a.client.transport.jsonrpc.JSONRPCTransport;
 import io.a2a.client.transport.jsonrpc.JSONRPCTransportConfig;
-import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.agent.A2aAgent;
 import io.agentscope.core.a2a.agent.A2aAgentConfig;
-import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.skill.AgentSkill;
-import io.agentscope.core.skill.SkillBox;
+import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
+import io.agentscope.harness.agent.HarnessAgent;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -66,7 +72,7 @@ import java.util.stream.Collectors;
  *   <li>A2A — 用 {@link LocalAgentCardResolver} 从 MySQL 中保存的 AgentCard JSON 原文直接构造,
  *       绕开 agentscope 1.0.12 {@code NacosAgentCardResolver} 拉不到 endpoint 的缺陷
  *       (详见 {@link LocalAgentCardResolver} 类注释)。</li>
- *   <li>CONFIG — 用当前在线版本的 ConfigSnapshot 拼装 {@code ReActAgent}。</li>
+ *   <li>CONFIG — 用当前在线版本的 ConfigSnapshot 拼装 {@code HarnessAgent}（内含 ReAct 循环）。</li>
  * </ul>
  */
 @Slf4j
@@ -81,6 +87,9 @@ public class AgentRunnerFactory {
 
     @Resource
     private SandboxQueryService sandboxQueryService;
+
+    @Resource
+    private SandboxPoolService sandboxPoolService;
 
     /** v4.0：按 ConfigSnapshot.modelId（模型管理 num）解析运行时凭证（modelId/baseUrl/解密 apiKey）。 */
     @Resource
@@ -104,6 +113,9 @@ public class AgentRunnerFactory {
     @Resource
     private AttachmentQueryService attachmentQueryService;
 
+    @Resource
+    private SandboxRunnerOpenSandboxExecBridge openSandboxExecBridge;
+
     /**
      * 创建 AgentRunner（生产/默认入口：当前在线版本）。
      *
@@ -111,7 +123,7 @@ public class AgentRunnerFactory {
      * @param sessionNum 会话编号;用于把 {@link SandboxTool} 绑定到该会话复用的沙箱容器
      * @return AgentRunner
      */
-    public AgentBase build(String agentNum, String sessionNum) {
+    public Agent build(String agentNum, String sessionNum) {
         return build(agentNum, sessionNum, null, null, false);
     }
 
@@ -133,7 +145,7 @@ public class AgentRunnerFactory {
      * @param targetVersion 目标版本（空 / DRAFT / vX.Y.Z）
      * @return AgentRunner
      */
-    public AgentBase build(String agentNum, String sessionNum, String targetVersion) {
+    public Agent build(String agentNum, String sessionNum, String targetVersion) {
         return build(agentNum, sessionNum, targetVersion, null, false);
     }
 
@@ -145,7 +157,7 @@ public class AgentRunnerFactory {
      *
      * @param vars 已合并的变量表（内置 + 会话 + 本轮）；可空
      */
-    public AgentBase build(String agentNum, String sessionNum, String targetVersion,
+    public Agent build(String agentNum, String sessionNum, String targetVersion,
                            java.util.Map<String, String> vars) {
         return build(agentNum, sessionNum, targetVersion, vars, false);
     }
@@ -155,7 +167,7 @@ public class AgentRunnerFactory {
      *
      * @param registerReadAttachment 本轮含附件时为 true，注入平台内置 Tool
      */
-    public AgentBase build(String agentNum, String sessionNum, String targetVersion,
+    public Agent build(String agentNum, String sessionNum, String targetVersion,
                            java.util.Map<String, String> vars, boolean registerReadAttachment) {
         Assert.notBlank(agentNum, "Agent编号不能为空");
         //1. 获取Agent信息（按目标版本解析快照；空→当前在线镜像）
@@ -211,19 +223,22 @@ public class AgentRunnerFactory {
             //2.构建环境变量:后续迁移到创建沙箱的时候
             Map<String, String> env = new HashMap<>();
 
-            //3. 构建工具集和技能
+            //3. 构建工具集（FC/MCP/内置）；沙箱走 Harness filesystem，不再注册 SandboxTool
             Toolkit toolkit = new Toolkit();
-            SkillBox skillBox = new SkillBox(toolkit);
-            // 注册 SkillBox 内置的"从路径动态加载技能"工具，使 Agent 可在运行时按需加载技能（如按文件名从工作目录读取 SKILL.md 与资源）。
-            skillBox.registerSkillLoadTool();
-            //3.1 如果启用沙箱，则注册沙箱工具
-            if (StrUtil.isNotBlank(agent.getConfigSnapshot().getSandboxRef())) {
-                //获取沙箱信息
-                SandboxDetailDTO sandboxDetailDTO = sandboxQueryService.getDetail(agent.getConfigSnapshot().getSandboxRef());
-                toolkit.registerTool(new SandboxTool(sandboxDetailDTO.getSandbox().getSandboxInstanceId(),sessionNum, env,sandboxRunner, sandboxDetailDTO.getSandbox().getAliveMinutes()));
+            boolean sandboxBound = StrUtil.isNotBlank(agent.getConfigSnapshot().getSandboxRef());
+            SandboxDetailDTO sandboxDetailDTO = null;
+            if (sandboxBound) {
+                sandboxDetailDTO = sandboxQueryService.getDetail(agent.getConfigSnapshot().getSandboxRef());
+                String instanceId = sandboxPoolService.ensureBound(
+                        agent.getConfigSnapshot().getSandboxRef(),
+                        sessionNum,
+                        "agent-runner");
+                // 覆盖详情中的 instance，供后续 filesystem / 资源上传使用
+                if (sandboxDetailDTO != null && sandboxDetailDTO.getSandbox() != null) {
+                    sandboxDetailDTO.getSandbox().setSandboxInstanceId(instanceId);
+                }
             } else {
-                // 启动本地命令工具：AgentScope 2.0.0 中 codeExecution() 已移除，
-                // 改用直接注册 ShellCommandTool / ReadFileTool / WriteFileTool
+                // 未绑沙箱：禁用 Harness 默认文件系统工具，沿用本机 Shell/文件工具
                 toolkit.registerTool(new io.agentscope.core.tool.coding.ShellCommandTool());
                 toolkit.registerTool(new io.agentscope.core.tool.file.ReadFileTool());
                 toolkit.registerTool(new io.agentscope.core.tool.file.WriteFileTool());
@@ -239,14 +254,14 @@ public class AgentRunnerFactory {
                 toolkit.registerTool(new ReadAttachmentTool(attachmentQueryService, ws));
             }
 
-            //3.2 注册技能：优先按快照钉住版本解析，旧 skillNums 兜底取当前发布版本。
-            registerSkills(agent.getConfigSnapshot(), skillBox);
+            //3.2 按快照勾选预加载 Skill → BoundSkillRepository（Harness skillRepository）
+            List<AgentSkill> boundSkills = loadBoundSkills(agent.getConfigSnapshot());
+            BoundSkillRepository boundSkillRepository = new BoundSkillRepository(boundSkills);
 
-            //3.2.1 若绑定了沙箱，将技能资源文件写入沙箱容器。
-            // 技能脚本（如 shell / python 文件）注册在 AgentSkill.resources 中，仅存在于 JVM 内存；
-            // 若不写入沙箱文件系统，Agent 无法通过 execute_command / execute_python 执行这些脚本。
-            if (StrUtil.isNotBlank(agent.getConfigSnapshot().getSandboxRef())) {
-                uploadSkillResourcesToSandbox(skillBox, agent.getConfigSnapshot().getSandboxRef(), sessionNum);
+            //3.2.1 若绑定了沙箱，将技能资源文件写入沙箱容器
+            if (sandboxBound && sandboxDetailDTO != null) {
+                String instanceId = sandboxDetailDTO.getSandbox().getSandboxInstanceId();
+                uploadSkillResourcesToSandbox(boundSkills, instanceId, sessionNum);
             }
 
             //3.3 注册挂载的工具（FunctionCall 构建可执行工具；MCP 构建客户端连接；按类型各自分流，互不命中返回空/null）
@@ -282,7 +297,7 @@ public class AgentRunnerFactory {
                                         toolNum, toolDTO.getCreationMode(), toolDTO.getPackageMode());
                                 continue;
                             }
-                            // 不入 tool group（ungrouped）：ReActAgent 每轮会按 session 的
+                            // 不入 tool group（ungrouped）：ReAct 循环每轮会按 session 的
                             // activatedGroups 做 setActiveGroups 全量覆盖，EXTERNAL 分组也会被关掉，
                             // 导致 maps_* 虽已注册却报 Unauthorized tool call / is not available。
                             // ungrouped 工具不受该覆盖影响，与 FC / 文件类工具行为一致。
@@ -330,37 +345,18 @@ public class AgentRunnerFactory {
             // 让 Agent 知晓已预装的运行时并遵循「先探测后安装」,避免重复初始化环境。
             String effectiveSysPrompt = buildSandboxAwareSysPrompt(
                     substitutedSysPrompt,
-                    StrUtil.isNotBlank(agent.getConfigSnapshot().getSandboxRef()));
+                    sandboxBound);
             // 挂载工具清单写入系统提示：避免模型只看 reset_equipped_tools（仅 META 分组）后误答「没有工具」。
             effectiveSysPrompt = appendMountedToolsSysPrompt(effectiveSysPrompt, toolkit);
-            // 创建 BYPASS 权限上下文：允许所有工具调用（包括 SkillBox 内置的 load_skill_through_path），
+            // 创建 BYPASS 权限上下文：允许所有工具调用（包括 Skill 加载工具），
             // 避免因缺少 allow 规则导致 PermissionEngine 拒绝工具调用。
             PermissionContextState permissionCtx = PermissionContextState.builder()
                     .mode(PermissionMode.BYPASS)
                     .build();
-            if (Boolean.TRUE.equals(agent.getConfigSnapshot().getEnablePlan())) {
-                // 创建带计划模式的 Config Agent
-                // AgentScope 2.0.0 中使用 enableTaskList(true) 替代旧的 PlanNotebook
-                return ReActAgent.builder()
-                        .name(agent.getName())
-                        .description(agent.getConfigSnapshot().getDescription())
-                        .sysPrompt(effectiveSysPrompt)
-                        .defaultSessionId(resolveSessionId(sessionNum, agent.getName()))
-                        .model(model)
-                        .stateStore(agentStateStore)
-                        .toolkit(toolkit)
-                        .skillBox(skillBox)
-                        .enableTaskList(true)
-                        .enableMetaTool(true)
-                        .permissionContext(permissionCtx)
-                        .maxIters(agent.getConfigSnapshot().getMaxIters() != null
-                                ? agent.getConfigSnapshot().getMaxIters()
-                                : 10)
-                        .build();
-            }
 
-            // 创建不含计划模式的 Config Agent
-            return ReActAgent.builder()
+            Path workspacePath = Path.of(System.getProperty("java.io.tmpdir"),
+                    "rd-agent-harness", agent.getNum());
+            HarnessAgent.Builder harnessBuilder = HarnessAgent.builder()
                     .name(agent.getName())
                     .description(agent.getConfigSnapshot().getDescription())
                     .sysPrompt(effectiveSysPrompt)
@@ -368,13 +364,37 @@ public class AgentRunnerFactory {
                     .model(model)
                     .stateStore(agentStateStore)
                     .toolkit(toolkit)
-                    .skillBox(skillBox)
+                    .skillRepository(boundSkillRepository)
+                    .disableDefaultWorkspaceSkills()
                     .enableMetaTool(true)
                     .permissionContext(permissionCtx)
+                    .workspace(workspacePath)
                     .maxIters(agent.getConfigSnapshot().getMaxIters() != null
                             ? agent.getConfigSnapshot().getMaxIters()
-                            : 10)
-                    .build();
+                            : 10);
+            List<String> skillNames = boundSkillRepository.boundNames();
+            if (!skillNames.isEmpty()) {
+                harnessBuilder.skillFilter(SkillFilter.only(skillNames.toArray(String[]::new)));
+            } else {
+                harnessBuilder.skillFilter(SkillFilter.none());
+            }
+            if (Boolean.TRUE.equals(agent.getConfigSnapshot().getEnablePlan())) {
+                harnessBuilder.enableTaskList(true);
+            }
+            if (sandboxBound && sandboxDetailDTO != null) {
+                long ttl = sandboxDetailDTO.getSandbox().getAliveMinutes() != null
+                        ? sandboxDetailDTO.getSandbox().getAliveMinutes()
+                        : 10L;
+                harnessBuilder.filesystem(new OpenSandboxFilesystemSpec()
+                        .sessionRunner(openSandboxExecBridge)
+                        .instanceId(sandboxDetailDTO.getSandbox().getSandboxInstanceId())
+                        .sessionNum(sessionNum)
+                        .env(env)
+                        .ttlMinutes(ttl));
+            } else {
+                harnessBuilder.disableFilesystemTools();
+            }
+            return harnessBuilder.build();
         } else {
             log.error("Agent创建模式错误：{}", agent.getCreationMode());
             throw new IllegalArgumentException("Agent创建模式错误");
@@ -418,94 +438,6 @@ public class AgentRunnerFactory {
      */
     static String resolveSessionId(String sessionNum, String fallbackName) {
         return StrUtil.isNotBlank(sessionNum) ? sessionNum : fallbackName;
-    }
-
-    /**
-     * 是否以「MCP server 连接」方式构建工具。
-     * <p>
-     * 仅 {@link ToolType#MCP} + 远程连接（creationMode=REMOTE）走 {@code buildMcpClient}。
-     * API 打包（EXISTING_API / OPENAPI_PASTE）走 {@code buildTools} 或另行处理，避免误进 MCP 客户端路径后被静默丢弃。
-     *
-     * @param tool 工具 DTO
-     * @return true 走 {@code buildMcpClient}（MCP 远程连接）；false 走 {@code buildTools}（FunctionCall）
-     */
-    private boolean isMcpServerConnection(ToolDTO tool) {
-        return tool != null
-                && ToolType.MCP.name().equals(tool.getType())
-                && "REMOTE".equals(tool.getCreationMode());
-    }
-
-    /**
-     * 将已挂载、对模型可见的业务工具名写入系统提示，避免「问有没有工具」时模型只看
-     * {@code reset_equipped_tools}（仅描述 META 分组）后误答没有。
-     */
-    static String appendMountedToolsSysPrompt(String userSysPrompt, Toolkit toolkit) {
-        if (toolkit == null) {
-            return userSysPrompt;
-        }
-        Set<String> builtin = Set.of(
-                "execute_shell_command",
-                "read_file",
-                "write_file",
-                "reset_equipped_tools",
-                "load_skill_through_path",
-                "todo_write");
-        List<String> mounted = toolkit.getToolSchemas().stream()
-                .map(s -> s.getName())
-                .filter(StrUtil::isNotBlank)
-                .filter(name -> !builtin.contains(name))
-                .filter(name -> !name.startsWith("load_skill"))
-                .collect(Collectors.toCollection(LinkedHashSet::new))
-                .stream()
-                .toList();
-        if (mounted.isEmpty()) {
-            return userSysPrompt;
-        }
-        String inventory = "【已挂载可调用工具】" + String.join("、", mounted)
-                + "。当用户询问你具备哪些工具时，请据此如实回答；需要时直接调用这些工具，不要声称未挂载。";
-        if (StrUtil.isBlank(userSysPrompt)) {
-            return inventory;
-        }
-        return userSysPrompt + "\n\n" + inventory;
-    }
-
-    private void registerSkills(AgentDTO.ConfigSnapshot snapshot, SkillBox skillBox) {
-        if (snapshot == null) {
-            return;
-        }
-        if (CollectionUtil.isNotEmpty(snapshot.getSkillRefs())) {
-            for (AgentDTO.ConfigSnapshot.SkillRef ref : snapshot.getSkillRefs()) {
-                if (ref == null || StrUtil.isBlank(ref.getSkillNum()) || StrUtil.isBlank(ref.getVersionNum())) {
-                    continue;
-                }
-                AgentSkill agentSkill = agentScopeSkillRepositoryAdapter.getSkillByVersion(
-                        ref.getSkillNum(), ref.getVersionNum());
-                if (agentSkill != null) {
-                    skillBox.registerSkill(agentSkill);
-                }
-            }
-            return;
-        }
-        if (CollectionUtil.isNotEmpty(snapshot.getSkillNums())) {
-            // legacy 兼容：快照仅有 skillNums（无 versionRefs），运行时按当前发布版本兜底。
-            // 该分支仅过渡期存在，记录 warning 以便监控存量数据迁移到 refs 的进度（方案 §6.4.1 / §14.1）。
-            log.warn("Agent 快照未携带 skillRefs，回退到 legacy skillNums 兜底加载 skillNums={}",
-                    snapshot.getSkillNums());
-            for (String skillNum : snapshot.getSkillNums()) {
-                AgentSkill agentSkill = agentScopeSkillRepositoryAdapter.getSkill(skillNum);
-                if (agentSkill != null) {
-                    skillBox.registerSkill(agentSkill);
-                }
-            }
-        }
-    }
-
-    private List<String> resolveToolNums(AgentDTO.ConfigSnapshot snapshot) {
-        return resolveToolRefs(snapshot).stream()
-                .map(AgentDTO.ConfigSnapshot.ToolRef::getToolNum)
-                .filter(StrUtil::isNotBlank)
-                .distinct()
-                .toList();
     }
 
     /**
@@ -561,61 +493,137 @@ public class AgentRunnerFactory {
     }
 
     /**
-     * 将注册在 SkillBox 中的技能资源文件写入沙箱容器文件系统。
+     * 是否以「MCP server 连接」方式构建工具。
      * <p>
-     * Skill 的资源文件（如 shell/Python 脚本等）通过 {@link AgentSkill#getResources()} 存在于 JVM 内存中，
-     * 但沙箱容器内文件系统看不到这些文件。Agent 通过 {@code execute_command} / {@code execute_python} 执行脚本时
-     * 会找不到文件。本方法在 Agent 装配时，将每个技能的资源文件逐一写入沙箱工作目录 {@code /workspace/skills/<skillNum>/}，
-     * 使技能脚本在沙箱中可执行。
+     * 仅 {@link ToolType#MCP} + 远程连接（creationMode=REMOTE）走 {@code buildMcpClient}。
+     * API 打包（EXISTING_API / OPENAPI_PASTE）走 {@code buildTools} 或另行处理，避免误进 MCP 客户端路径后被静默丢弃。
      *
-     * @param skillBox         已注册技能的 SkillBox（非 null）
-     * @param sandboxRef       沙箱引用（沙箱 instanceId，非空）
-     * @param sessionNum       会话编号（用于复用 bash session）
+     * @param tool 工具 DTO
+     * @return true 走 {@code buildMcpClient}（MCP 远程连接）；false 走 {@code buildTools}（FunctionCall）
      */
-    private void uploadSkillResourcesToSandbox(SkillBox skillBox, String sandboxRef, String sessionNum) {
-        for (String skillId : skillBox.getAllSkillIds()) {
-            AgentSkill skill = skillBox.getSkill(skillId);
+    private boolean isMcpServerConnection(ToolDTO tool) {
+        return tool != null
+                && ToolType.MCP.name().equals(tool.getType())
+                && "REMOTE".equals(tool.getCreationMode());
+    }
+
+    /**
+     * 将已挂载、对模型可见的业务工具名写入系统提示，避免「问有没有工具」时模型只看
+     * {@code reset_equipped_tools}（仅描述 META 分组）后误答没有。
+     */
+    static String appendMountedToolsSysPrompt(String userSysPrompt, Toolkit toolkit) {
+        if (toolkit == null) {
+            return userSysPrompt;
+        }
+        Set<String> builtin = Set.of(
+                "execute_shell_command",
+                "read_file",
+                "write_file",
+                "reset_equipped_tools",
+                "load_skill_through_path",
+                "todo_write");
+        List<String> mounted = toolkit.getToolSchemas().stream()
+                .map(s -> s.getName())
+                .filter(StrUtil::isNotBlank)
+                .filter(name -> !builtin.contains(name))
+                .filter(name -> !name.startsWith("load_skill"))
+                .collect(Collectors.toCollection(LinkedHashSet::new))
+                .stream()
+                .toList();
+        if (mounted.isEmpty()) {
+            return userSysPrompt;
+        }
+        String inventory = "【已挂载可调用工具】" + String.join("、", mounted)
+                + "。当用户询问你具备哪些工具时，请据此如实回答；需要时直接调用这些工具，不要声称未挂载。";
+        if (StrUtil.isBlank(userSysPrompt)) {
+            return inventory;
+        }
+        return userSysPrompt + "\n\n" + inventory;
+    }
+
+    /**
+     * 按快照 skillRefs（或 legacy skillNums）从平台 DB 解析出本轮要暴露的 AgentSkill 列表。
+     */
+    private List<AgentSkill> loadBoundSkills(AgentDTO.ConfigSnapshot snapshot) {
+        List<AgentSkill> skills = new ArrayList<>();
+        if (snapshot == null) {
+            return skills;
+        }
+        if (CollectionUtil.isNotEmpty(snapshot.getSkillRefs())) {
+            for (AgentDTO.ConfigSnapshot.SkillRef ref : snapshot.getSkillRefs()) {
+                if (ref == null || StrUtil.isBlank(ref.getSkillNum()) || StrUtil.isBlank(ref.getVersionNum())) {
+                    continue;
+                }
+                AgentSkill agentSkill = agentScopeSkillRepositoryAdapter.getSkillByVersion(
+                        ref.getSkillNum(), ref.getVersionNum());
+                if (agentSkill != null) {
+                    skills.add(agentSkill);
+                }
+            }
+            return skills;
+        }
+        if (CollectionUtil.isNotEmpty(snapshot.getSkillNums())) {
+            log.warn("Agent 快照未携带 skillRefs，回退到 legacy skillNums 兜底加载 skillNums={}",
+                    snapshot.getSkillNums());
+            for (String skillNum : snapshot.getSkillNums()) {
+                AgentSkill agentSkill = agentScopeSkillRepositoryAdapter.getSkill(skillNum);
+                if (agentSkill != null) {
+                    skills.add(agentSkill);
+                }
+            }
+        }
+        return skills;
+    }
+
+    /**
+     * 将已绑定技能的资源文件写入沙箱容器文件系统。
+     *
+     * @param skills     已解析的 AgentSkill 列表
+     * @param instanceId OpenSandbox 容器实例 ID
+     * @param sessionNum 会话编号
+     */
+    private void uploadSkillResourcesToSandbox(List<AgentSkill> skills, String instanceId, String sessionNum) {
+        if (CollectionUtil.isEmpty(skills)) {
+            return;
+        }
+        for (AgentSkill skill : skills) {
             if (skill == null) {
                 continue;
             }
+            String skillId = skill.getName();
             Map<String, String> resources = skill.getResources();
             if (resources == null || resources.isEmpty()) {
                 log.debug("Skill {} has no resources to upload", skillId);
                 continue;
             }
             String skillWorkDir = "/workspace/skills/" + skillId;
-            try (SandboxSession session = sandboxRunner.obtainSession(sandboxRef, sessionNum, Map.of(), 30)) {
-                // 先创建技能工作目录（mkdir -p 幂等）
+            try (SandboxSession session = sandboxRunner.obtainSession(instanceId, sessionNum, Map.of(), 30)) {
                 session.sandbox().commands()
                         .runInSession(session.execdSessionId(),
                                 RunInSessionRequest.builder()
                                         .command("mkdir -p " + skillWorkDir)
                                         .build());
-                // 逐个写入资源文件
                 for (Map.Entry<String, String> entry : resources.entrySet()) {
                     String resourcePath = entry.getKey();
                     String content = entry.getValue();
-                    // 只上传文件（跳过目录项，dir 会以 "/" 结尾或 resources 中无对应 key）
                     if (resourcePath.endsWith("/")) {
                         continue;
                     }
                     String targetPath = skillWorkDir + "/" + resourcePath;
-                    // 处理 base64 编码的二进制文件（content 以 "base64:" 开头）
                     if (content != null && content.startsWith("base64:")) {
                         String base64Data = content.substring("base64:".length());
                         byte[] decoded = cn.hutool.core.codec.Base64.decode(base64Data);
                         session.sandbox().files().writeFile(targetPath, new String(decoded,
                                 java.nio.charset.StandardCharsets.ISO_8859_1));
                     } else {
-                        // 文本文件直接写入
                         session.sandbox().files().writeFile(targetPath, content);
                     }
                 }
-                log.info("Uploaded {} resource files for skill {} to sandbox {}", resources.size(), skillId, sandboxRef);
+                log.info("Uploaded {} resource files for skill {} to sandbox {}",
+                        resources.size(), skillId, instanceId);
             } catch (Exception e) {
-                log.warn("Failed to upload skill resources for skill {} to sandbox {}, skip and continue. reason={}",
-                        skillId, sandboxRef, e.getMessage());
-                // 单个技能资源上传失败不影响 Agent 启动，容错继续
+                log.warn("Failed to upload skill resources for skill {} to sandbox {}, skip. reason={}",
+                        skillId, instanceId, e.getMessage());
             }
         }
     }

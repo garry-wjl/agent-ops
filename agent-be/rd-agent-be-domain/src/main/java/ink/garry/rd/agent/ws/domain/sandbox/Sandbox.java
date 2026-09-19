@@ -104,6 +104,18 @@ public class Sandbox extends DomainEntity {
     /** OpenSandbox 容器实例 id；草稿 / 失败态为空，供给成功后由应用层回写。 */
     private String sandboxInstanceId;
 
+    /** 是否启用热池；默认 false（按会话现开）。 */
+    private Boolean poolEnabled;
+
+    /** 热池常驻 IDLE 目标数量；仅 poolEnabled 时有效，默认 1。 */
+    private Integer poolSize;
+
+    /** 该资产最大活实例数（IDLE+BOUND），默认 8。 */
+    private Integer maxConcurrent;
+
+    /** 会话空闲后回收等待分钟数，默认 10。 */
+    private Integer sessionIdleTtlMinutes;
+
     // ---- 装配依赖（由 SandboxFactory 在创建时装配） ----
 
     /** 装配依赖：Sandbox 仓储，承担 save / findByNum / deleteByNum 三方法。 */
@@ -191,6 +203,20 @@ public class Sandbox extends DomainEntity {
                 "备注不超过 100 字");
         // 状态
         Assert.notNull(status, "沙箱状态不能为空");
+        // 热池配置兜底 + 校验
+        if (poolEnabled == null) {
+            poolEnabled = Boolean.FALSE;
+        }
+        if (poolSize == null || poolSize < 1) {
+            poolSize = 1;
+        }
+        if (maxConcurrent == null || maxConcurrent < 1) {
+            maxConcurrent = 8;
+        }
+        if (sessionIdleTtlMinutes == null || sessionIdleTtlMinutes < 1) {
+            sessionIdleTtlMinutes = 10;
+        }
+        Assert.isTrue(poolSize <= maxConcurrent, "常驻池大小不能超过最大并发实例数");
     }
 
     /**
@@ -300,9 +326,9 @@ public class Sandbox extends DomainEntity {
     public void online(String sandboxInstanceId, String operatorId) {
         // 1. 初始化审计字段
         this.initialize(operatorId);
-        // 2. 领域规则校验：仅初始化态可上线；实例 id 必填
+        // 2. 领域规则校验：仅初始化态可上线
+        //    instanceId 允许为空：关池时无预创建；开池时实例落在 runtime 表，本字段仅作兼容快照
         Assert.isTrue(this.status == SandboxStatus.INITIALIZED, "仅初始化态可上线");
-        Assert.notBlank(sandboxInstanceId, "容器实例未创建，不能上线");
         // 3. 赋值：绑定实例 + 状态流转
         this.sandboxInstanceId = sandboxInstanceId;
         this.status = SandboxStatus.ONLINE;

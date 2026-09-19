@@ -4,6 +4,8 @@ import cn.hutool.core.util.StrUtil;
 import com.alibaba.fastjson2.JSON;
 import ink.garry.rd.agent.ws.application.agent.AgentQueryService;
 import ink.garry.rd.agent.ws.application.common.prompt.SysPromptVariableSubstitutor;
+import ink.garry.rd.agent.ws.application.sandbox.pool.SandboxPoolService;
+import ink.garry.rd.agent.ws.application.sandbox.pool.SandboxSessionPrewarmService;
 import ink.garry.rd.agent.ws.client.agent.dto.AgentDTO;
 import ink.garry.rd.agent.ws.client.common.BizCode;
 import ink.garry.rd.agent.ws.client.session.dto.MessageDTO;
@@ -18,6 +20,7 @@ import ink.garry.rd.agent.ws.domain.session.valueobject.AssistantSegment;
 import ink.garry.rd.agent.ws.domain.session.valueobject.StepChain;
 import ink.garry.rd.agent.ws.facade.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,6 +45,7 @@ import java.util.Map;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class SessionCommandService {
 
     /** A2A 模式下远端版本号缺失时的占位符（v2.6 PRD：A2A 不参与平台 Semver） */
@@ -52,6 +56,8 @@ public class SessionCommandService {
 
     private final SessionFactory sessionFactory;
     private final AgentQueryService agentQueryService;
+    private final SandboxSessionPrewarmService sandboxSessionPrewarmService;
+    private final SandboxPoolService sandboxPoolService;
 
     /**
      * 创建会话：校验 Agent 状态后落库；A2A / CONFIG 分支由 {@link #resolveSessionVersionNum} 内化。
@@ -91,7 +97,9 @@ public class SessionCommandService {
                 agentNum, sessionVersionNum, skillHint, operatorId, title, origin,
                 SysPromptVariableSubstitutor.toJson(context));
         session.save(operatorId);
-        return toDTO(session);
+        SessionDTO dto = toDTO(session);
+        sandboxSessionPrewarmService.prewarmIfNeeded(agentNum, dto.getNum(), operatorId);
+        return dto;
     }
 
     /**
@@ -155,6 +163,14 @@ public class SessionCommandService {
     public void delete(String sessionNum, String operatorId) {
         Session session = requireSession(sessionNum);
         session.delete(operatorId);
+        // 解绑会话沙箱容器（开池回 IDLE / 关池 kill）
+        try {
+            sandboxPoolService.releaseBySession(sessionNum, operatorId);
+        } catch (Exception e) {
+            // 不阻断会话删除；TTL 调度会兜底回收
+            log.warn("[session-delete] release sandbox failed sessionNum={}: {}",
+                    sessionNum, e.getMessage());
+        }
     }
 
     /**

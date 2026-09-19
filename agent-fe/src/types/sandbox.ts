@@ -47,6 +47,14 @@ export interface SandboxVO {
   remark?: string;
   /** OpenSandbox 容器实例 id；草稿 / 失败态为空 */
   sandboxInstanceId?: string;
+  /** 是否启用热池 */
+  poolEnabled?: boolean;
+  /** 热池常驻数 */
+  poolSize?: number;
+  /** 最大并发实例 */
+  maxConcurrent?: number;
+  /** 会话空闲 TTL（分钟） */
+  sessionIdleTtlMinutes?: number;
   /** 创建人工号 */
   createNo: string;
   /** 更新人工号 */
@@ -92,11 +100,19 @@ export interface SandboxCreateParam {
   aliveMinutes: number;
   /** 备注（可空，≤100 字） */
   remark?: string;
+  /** 是否启用热池 */
+  poolEnabled?: boolean;
+  /** 热池常驻数 */
+  poolSize?: number;
+  /** 最大并发实例 */
+  maxConcurrent?: number;
+  /** 会话空闲 TTL（分钟） */
+  sessionIdleTtlMinutes?: number;
 }
 
 /**
  * 编辑沙箱入参（与后端 SandboxUpdateParam 对齐）。
- * 草稿 / 失败态可改规格字段，其余态后端仅写入备注。
+ * 草稿 / 失败态可改规格字段，其余态后端写入备注；池策略任意态可改。
  */
 export interface SandboxUpdateParam {
   /** 沙箱业务编号（必填） */
@@ -111,6 +127,14 @@ export interface SandboxUpdateParam {
   aliveMinutes?: number;
   /** 备注（任意非删除态可改，≤100 字） */
   remark?: string;
+  /** 是否启用热池 */
+  poolEnabled?: boolean;
+  /** 热池常驻数 */
+  poolSize?: number;
+  /** 最大并发实例 */
+  maxConcurrent?: number;
+  /** 会话空闲 TTL（分钟） */
+  sessionIdleTtlMinutes?: number;
 }
 
 /** 单编号操作入参（delete / submit / offline / reonline 复用，与后端 SandboxOperateParam 对齐）。 */

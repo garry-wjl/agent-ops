@@ -61,6 +61,22 @@ public class SandboxEntity {
     @TableField("sandbox_instance_id")
     private String sandboxInstanceId;
 
+    /** 是否启用热池 */
+    @TableField("pool_enabled")
+    private Boolean poolEnabled;
+
+    /** 热池常驻数 */
+    @TableField("pool_size")
+    private Integer poolSize;
+
+    /** 最大并发实例 */
+    @TableField("max_concurrent")
+    private Integer maxConcurrent;
+
+    /** 会话空闲 TTL 分钟 */
+    @TableField("session_idle_ttl_minutes")
+    private Integer sessionIdleTtlMinutes;
+
     /** 创建人工号 */
     @TableField("create_no")
     private String createNo;
@@ -103,6 +119,10 @@ public class SandboxEntity {
         s.setStatus(e.getStatus() == null ? null : SandboxStatus.valueOf(e.getStatus()));
         s.setRemark(e.getRemark());
         s.setSandboxInstanceId(e.getSandboxInstanceId());
+        s.setPoolEnabled(e.getPoolEnabled());
+        s.setPoolSize(e.getPoolSize());
+        s.setMaxConcurrent(e.getMaxConcurrent());
+        s.setSessionIdleTtlMinutes(e.getSessionIdleTtlMinutes());
         s.setCreateNo(e.getCreateNo());
         s.setUpdateNo(e.getUpdateNo());
         s.setDeleted(e.getDeleted());
@@ -131,6 +151,10 @@ public class SandboxEntity {
         e.setStatus(s.getStatus() == null ? null : s.getStatus().name());
         e.setRemark(s.getRemark());
         e.setSandboxInstanceId(s.getSandboxInstanceId());
+        e.setPoolEnabled(s.getPoolEnabled());
+        e.setPoolSize(s.getPoolSize());
+        e.setMaxConcurrent(s.getMaxConcurrent());
+        e.setSessionIdleTtlMinutes(s.getSessionIdleTtlMinutes());
         e.setCreateNo(s.getCreateNo());
         e.setUpdateNo(s.getUpdateNo());
         e.setDeleted(s.getDeleted() == null ? 0 : s.getDeleted());

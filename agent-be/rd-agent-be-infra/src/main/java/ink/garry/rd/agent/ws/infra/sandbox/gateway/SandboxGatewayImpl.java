@@ -25,4 +25,9 @@ public class SandboxGatewayImpl implements SandboxGateway {
     public String generateSandboxNum() {
         return bizNumGenerator.generate(PREFIX);
     }
+
+    @Override
+    public String generateRuntimeInstanceNum() {
+        return bizNumGenerator.generate("SRI");
+    }
 }

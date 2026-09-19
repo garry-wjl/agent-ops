@@ -34,4 +34,10 @@ public class SandboxProperties {
 
     /** SDK HTTP 请求超时（秒），默认 30。 */
     private int requestTimeoutSeconds = 30;
+
+    /**
+     * 是否 Mock 远程沙箱（不连真实 OpenSandbox）。
+     * <p>本地/单测设 {@code sandbox.mock=true}；生产必须为 false。
+     */
+    private boolean mock = false;
 }

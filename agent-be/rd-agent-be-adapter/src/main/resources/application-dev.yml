@@ -19,6 +19,9 @@ spring:
     # host/port/库名沿用 application.yml：127.0.0.1:3306 / rd_agent
     username: ${DB_USER:root}
     password: ${DB_PASSWORD:123456}
+  flyway:
+    # 本地库可能含其他分支已应用、本分支尚未合入的迁移（如 V45 knowledge base）
+    ignore-missing-migrations: true
 
 app:
   auth:
