@@ -13,9 +13,13 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Button,
   Empty,
+  InputNumber,
   Select,
+  Switch,
   Tooltip,
   Tag,
+  Space,
+  Typography,
 } from 'antd';
 import { PlusOutlined, CloseOutlined, DownOutlined, RightOutlined } from '@ant-design/icons';
 import type {
@@ -62,8 +66,18 @@ export interface ToolsContextValue {
   toolNums: string[];
   /** 具体工具绑定（FC 端点 / MCP tool） */
   toolRefs: ToolRefParam[];
-  /** 沙箱单选引用，可空 */
+  /** 沙箱单选引用，可空（保存后由后端回写） */
   sandboxRef?: string;
+  /** 是否启用沙箱 */
+  sandboxEnabled?: boolean;
+  /** CPU 核数 */
+  sandboxCpu?: number;
+  /** 内存 MB */
+  sandboxMemoryMb?: number;
+  /** 存活分钟 */
+  sandboxAliveMinutes?: number;
+  /** 最大并发 */
+  sandboxMaxConcurrent?: number;
 }
 
 export interface ToolsContextSectionProps {
@@ -92,7 +106,7 @@ const TAB_DESC: Record<ContextTabKey, string> = {
   tools:
     '按工具组展开勾选：勾选组=整组挂载；只勾组内若干工具=具体工具挂载。列表会标注所属 FunctionCall / MCP 组。',
   sandbox:
-    '关联沙箱管理中「在线」的代码沙箱（单选），让 Agent 具备代码执行类能力。',
+    '为本 Agent 独占配置沙箱规格（存元数据）。真正容器在创建会话时启动；可在沙箱管理只读查看。',
 };
 
 const SECTION_GUIDE = '可挂载 Skills、工具，或关联沙箱，拓展 Agent 能力。';
@@ -122,7 +136,7 @@ export default function ToolsContextSection({
   const counts: Record<ContextTabKey, number> = {
     skills: value.skillNums.length,
     tools: selectedToolKeys.length,
-    sandbox: value.sandboxRef ? 1 : 0,
+    sandbox: value.sandboxEnabled ? 1 : 0,
   };
 
   const tabs: { key: ContextTabKey; label: string }[] = [
@@ -134,7 +148,7 @@ export default function ToolsContextSection({
   const addBtn: Record<ContextTabKey, string | null> = {
     skills: '+ Skills',
     tools: '+ 工具',
-    sandbox: '+ 沙箱',
+    sandbox: null,
   };
 
   const patch = (p: Partial<ToolsContextValue>) =>
@@ -327,12 +341,86 @@ export default function ToolsContextSection({
           />
         )}
         {activeTab === 'sandbox' && (
-          <SelectedList
-            options={sandboxOptions}
-            value={value.sandboxRef ? [value.sandboxRef] : []}
-            desc={TAB_DESC.sandbox}
-            onRemove={() => patch({ sandboxRef: undefined })}
-          />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+              {TAB_DESC.sandbox}
+            </Typography.Text>
+            <Space align="center">
+              <span style={{ color: COLOR.textSecondary }}>启用沙箱</span>
+              <Switch
+                checked={Boolean(value.sandboxEnabled)}
+                onChange={(checked) =>
+                  patch({
+                    sandboxEnabled: checked,
+                    sandboxCpu: value.sandboxCpu ?? 1,
+                    sandboxMemoryMb: value.sandboxMemoryMb ?? 2048,
+                    sandboxAliveMinutes: value.sandboxAliveMinutes ?? 10,
+                    sandboxMaxConcurrent: value.sandboxMaxConcurrent ?? 8,
+                  })
+                }
+              />
+              {value.sandboxRef ? (
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  资产 {value.sandboxRef}
+                </Typography.Text>
+              ) : null}
+            </Space>
+            {value.sandboxEnabled ? (
+              <Space wrap size="middle">
+                <span>
+                  CPU（核）{' '}
+                  <InputNumber
+                    min={0.5}
+                    max={16}
+                    step={0.5}
+                    value={value.sandboxCpu ?? 1}
+                    onChange={(v) => patch({ sandboxCpu: Number(v) || 1 })}
+                  />
+                </span>
+                <span>
+                  内存（MB）{' '}
+                  <InputNumber
+                    min={128}
+                    max={65536}
+                    step={128}
+                    value={value.sandboxMemoryMb ?? 2048}
+                    onChange={(v) => patch({ sandboxMemoryMb: Number(v) || 2048 })}
+                  />
+                </span>
+                <span>
+                  存活（分钟）{' '}
+                  <InputNumber
+                    min={1}
+                    max={1440}
+                    value={value.sandboxAliveMinutes ?? 10}
+                    onChange={(v) =>
+                      patch({ sandboxAliveMinutes: Number(v) || 10 })
+                    }
+                  />
+                </span>
+                <span>
+                  最大并发{' '}
+                  <InputNumber
+                    min={1}
+                    max={64}
+                    value={value.sandboxMaxConcurrent ?? 8}
+                    onChange={(v) =>
+                      patch({ sandboxMaxConcurrent: Number(v) || 8 })
+                    }
+                  />
+                </span>
+              </Space>
+            ) : (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={
+                  <span style={{ color: COLOR.textMuted }}>
+                    未启用沙箱时，Agent 不挂载远程代码执行环境
+                  </span>
+                }
+              />
+            )}
+          </div>
         )}
       </div>
 

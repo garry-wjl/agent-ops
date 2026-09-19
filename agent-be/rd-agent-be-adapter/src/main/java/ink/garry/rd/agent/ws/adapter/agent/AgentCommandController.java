@@ -101,7 +101,8 @@ public class AgentCommandController extends BaseController {
      */
     @PostMapping("/version/edit")
     public Result<Void> editDraftVersion(@Valid @RequestBody EditDraftVersionParam param) {
-        commandService.editDraftVersion(param.getVersionId(), param.getConfigDraft(), getCurrentUserId());
+        commandService.editDraftVersion(
+                param.getVersionId(), param.getConfigDraft(), param.getSandboxSpec(), getCurrentUserId());
         return ok(null);
     }
 

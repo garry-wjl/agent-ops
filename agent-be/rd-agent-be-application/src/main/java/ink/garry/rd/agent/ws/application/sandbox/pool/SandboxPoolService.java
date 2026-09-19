@@ -55,24 +55,11 @@ public class SandboxPoolService {
      * @return 代表 instanceId（可为 null 或首台 IDLE）
      */
     public String provisionAsset(String sandboxNum, String operatorId) {
-        Sandbox asset = requireOnlineCandidate(sandboxNum);
-        boolean poolOn = Boolean.TRUE.equals(asset.getPoolEnabled());
-        int poolSize = asset.getPoolSize() != null ? asset.getPoolSize() : 1;
-        int maxConcurrent = asset.getMaxConcurrent() != null ? asset.getMaxConcurrent() : 8;
-        String representative = null;
-        if (poolOn) {
-            int toCreate = Math.min(poolSize, maxConcurrent);
-            for (int i = 0; i < toCreate; i++) {
-                String id = createIdleInstance(asset, operatorId);
-                if (representative == null) {
-                    representative = id;
-                }
-            }
-            log.info("[sandbox-pool] provisioned pool sandboxNum={} size={}", sandboxNum, toCreate);
-        } else {
-            log.info("[sandbox-pool] provision without pre-create (pool off) sandboxNum={}", sandboxNum);
-        }
-        return representative;
+        requireOnlineCandidate(sandboxNum);
+        // 热池已下线：提交/上线只表示规格可用，不预创建容器
+        log.info("[sandbox-pool] provision without pre-create sandboxNum={} operator={}",
+                sandboxNum, operatorId);
+        return null;
     }
 
     /**
@@ -119,35 +106,7 @@ public class SandboxPoolService {
             }
 
             Sandbox asset = requireOnlineAsset(sandboxNum);
-            // claim IDLE（跳过已死实例）
-            List<SandboxRuntimeInstanceRecord> idles =
-                    runtimeRepository.listBySandboxAndStatus(sandboxNum, SandboxRuntimeStatus.IDLE);
-            for (SandboxRuntimeInstanceRecord idle : idles) {
-                if (!sandboxContainerGateway.isAlive(idle.opensandboxInstanceId())) {
-                    log.warn("[sandbox-pool] drop dead idle num={} instanceId={}",
-                            idle.num(), idle.opensandboxInstanceId());
-                    safeKill(idle.opensandboxInstanceId());
-                    runtimeRepository.softDelete(idle.num());
-                    continue;
-                }
-                SandboxRuntimeInstanceRecord bound = new SandboxRuntimeInstanceRecord(
-                        idle.num(),
-                        idle.sandboxNum(),
-                        idle.workspaceNum(),
-                        idle.opensandboxInstanceId(),
-                        SandboxRuntimeStatus.BOUND,
-                        sessionNum,
-                        LocalDateTime.now(),
-                        null,
-                        idle.createNo(),
-                        op);
-                runtimeRepository.update(bound);
-                replenishAsyncHint(asset, op);
-                log.info("[sandbox-pool] claim idle sandboxNum={} sessionNum={} instanceId={}",
-                        sandboxNum, sessionNum, bound.opensandboxInstanceId());
-                return bound.opensandboxInstanceId();
-            }
-
+            // 热池已下线：不再 claim IDLE，一律按会话新建
             long alive = runtimeRepository.countAlive(sandboxNum);
             int maxConcurrent = asset.getMaxConcurrent() != null ? asset.getMaxConcurrent() : 8;
             if (alive >= maxConcurrent) {
@@ -369,25 +328,7 @@ public class SandboxPoolService {
      * @param operatorId 操作人
      */
     public void replenish(String sandboxNum, String operatorId) {
-        Sandbox asset = sandboxFactory.buildSandboxByNum(sandboxNum);
-        if (asset == null || asset.getStatus() != SandboxStatus.ONLINE) {
-            return;
-        }
-        if (!Boolean.TRUE.equals(asset.getPoolEnabled())) {
-            return;
-        }
-        if (sandboxContainerGateway.isolatesWorkspaceBySession()) {
-            return;
-        }
-        int poolSize = asset.getPoolSize() != null ? asset.getPoolSize() : 1;
-        int maxConcurrent = asset.getMaxConcurrent() != null ? asset.getMaxConcurrent() : 8;
-        long idle = runtimeRepository.countIdle(sandboxNum);
-        long alive = runtimeRepository.countAlive(sandboxNum);
-        while (idle < poolSize && alive < maxConcurrent) {
-            createIdleInstance(asset, operatorId);
-            idle++;
-            alive++;
-        }
+        // 热池已下线
     }
 
     private void replenishAsyncHint(Sandbox asset, String operatorId) {
@@ -421,32 +362,7 @@ public class SandboxPoolService {
     }
 
     private void releaseOrDestroy(SandboxRuntimeInstanceRecord r, String operatorId, boolean preferIdle) {
-        if (sandboxContainerGateway.isolatesWorkspaceBySession()) {
-            preferIdle = false;
-        }
-        if (preferIdle) {
-            Sandbox asset = sandboxFactory.buildSandboxByNum(r.sandboxNum());
-            int poolSize = asset != null && asset.getPoolSize() != null ? asset.getPoolSize() : 1;
-            long idle = runtimeRepository.countIdle(r.sandboxNum());
-            // 当前这条仍是 BOUND，释放后若 idle+1 <= poolSize 则回池
-            if (idle < poolSize) {
-                SandboxRuntimeInstanceRecord idleRec = new SandboxRuntimeInstanceRecord(
-                        r.num(),
-                        r.sandboxNum(),
-                        r.workspaceNum(),
-                        r.opensandboxInstanceId(),
-                        SandboxRuntimeStatus.IDLE,
-                        null,
-                        r.lastActiveAt(),
-                        LocalDateTime.now(),
-                        r.createNo(),
-                        operatorId);
-                runtimeRepository.update(idleRec);
-                log.info("[sandbox-pool] release to idle num={} instanceId={}",
-                        r.num(), r.opensandboxInstanceId());
-                return;
-            }
-        }
+        // 热池已下线：会话结束一律销毁，不回 IDLE
         safeKill(r.opensandboxInstanceId());
         runtimeRepository.softDelete(r.num());
         log.info("[sandbox-pool] destroy runtime num={} instanceId={}",

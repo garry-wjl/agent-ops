@@ -20,18 +20,13 @@ import {
   Modal,
   Space,
   Table,
-  Tooltip,
   Typography,
   message,
 } from "antd";
 import type { TableColumnsType } from "antd";
-import { PlusOutlined, SearchOutlined } from "@ant-design/icons";
+import { SearchOutlined } from "@ant-design/icons";
 import {
   useSandboxPageQuery,
-  useSandboxDeleteMutation,
-  useSandboxSubmitMutation,
-  useSandboxOfflineMutation,
-  useSandboxReonlineMutation,
 } from "@/services/sandbox";
 import type {
   SandboxPageQueryParam,
@@ -42,11 +37,8 @@ import type {
 import {
   SANDBOX_STATUS_META,
   SANDBOX_TYPE_LABEL,
-  isSpecEditable,
 } from "../constants";
-import SandboxFormDrawer from "./SandboxFormDrawer";
 import SandboxDetailDrawer from "./SandboxDetailDrawer";
-import PermissionGate from "@/components/PermissionGate";
 import UserName from "@/components/UserName";
 
 const { Title, Text } = Typography;
@@ -65,8 +57,6 @@ export default function SandboxListPage() {
   const [keyword, setKeyword] = useState<string>("");
   const [keywordInput, setKeywordInput] = useState<string>("");
 
-  const [formOpen, setFormOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<SandboxVO | undefined>();
   const [detailNum, setDetailNum] = useState<string | undefined>();
 
   const query: SandboxPageQueryParam = useMemo(
@@ -82,67 +72,14 @@ export default function SandboxListPage() {
   const list = page?.list ?? [];
   const total = page?.total ?? 0;
 
-  const submitMut = useSandboxSubmitMutation();
-  const offlineMut = useSandboxOfflineMutation();
-  const reonlineMut = useSandboxReonlineMutation();
-  const deleteMut = useSandboxDeleteMutation();
-
-  const openCreate = () => {
-    setEditTarget(undefined);
-    setFormOpen(true);
-  };
-  const openEdit = (r: SandboxVO) => {
-    setEditTarget(r);
-    setFormOpen(true);
-  };
-
   const doSearch = () => {
     setPageNo(1);
     setKeyword(keywordInput.trim());
   };
 
-  const handleSubmit = async (r: SandboxVO) => {
-    await submitMut.mutateAsync({ num: r.num });
-    message.success("已提交，正在初始化容器…");
-  };
 
-  const handleReonline = async (r: SandboxVO) => {
-    await reonlineMut.mutateAsync({ num: r.num });
-    message.success("已触发重新上线，正在初始化容器…");
-  };
 
-  const handleOffline = (r: SandboxVO) => {
-    Modal.confirm({
-      title: "下线沙箱",
-      content: `确认下线「${r.name}」？将停止并释放底层 OpenSandbox 容器。`,
-      okText: "下线",
-      okButtonProps: { danger: true },
-      cancelText: "取消",
-      onOk: async () => {
-        await offlineMut.mutateAsync({ num: r.num });
-        message.success("已下线");
-      },
-    });
-  };
 
-  const handleDelete = (r: SandboxVO) => {
-    // 初始化 / 下线态删除会联动释放底层实例，文案提示
-    const willReleaseInstance =
-      r.status === "OFFLINE" || r.status === "INITIALIZED";
-    Modal.confirm({
-      title: "删除沙箱",
-      content: willReleaseInstance
-        ? `确认删除「${r.name}」？将同时释放底层 OpenSandbox 实例。`
-        : `确认删除「${r.name}」？`,
-      okText: "删除",
-      okButtonProps: { danger: true },
-      cancelText: "取消",
-      onOk: async () => {
-        await deleteMut.mutateAsync({ num: r.num });
-        message.success("已删除");
-      },
-    });
-  };
 
   const columns: TableColumnsType<SandboxVO> = useMemo(
     () => [
@@ -265,46 +202,10 @@ export default function SandboxListPage() {
         render: (_: unknown, r: SandboxVO) => (
           <Space size={12} wrap>
             <a onClick={() => setDetailNum(r.num)}>详情</a>
-            <PermissionGate anyOf={['sandbox:update']}>
-              <a onClick={() => openEdit(r)}>编辑</a>
-            </PermissionGate>
-            {isSpecEditable(r.status) && (
-              <PermissionGate anyOf={['sandbox:update']}>
-                <a onClick={() => handleSubmit(r)}>
-                  {r.status === "FAILED" ? "重新提交" : "提交"}
-                </a>
-              </PermissionGate>
-            )}
-            {r.status === "ONLINE" && (
-              <PermissionGate anyOf={['sandbox:update']}>
-                <a onClick={() => handleOffline(r)}>下线</a>
-              </PermissionGate>
-            )}
-            {r.status === "OFFLINE" && (
-              <PermissionGate anyOf={['sandbox:update']}>
-                <a onClick={() => handleReonline(r)}>重新上线</a>
-              </PermissionGate>
-            )}
-            {r.status === "ONLINE" ? (
-              <Tooltip title="请先下线后再删除">
-                <span style={{ color: COLOR.textMuted, cursor: "not-allowed" }}>
-                  删除
-                </span>
-              </Tooltip>
-            ) : (
-              r.status !== "INITIALIZED" && (
-                <PermissionGate anyOf={['sandbox:delete']}>
-                  <a style={{ color: "#DC2626" }} onClick={() => handleDelete(r)}>
-                    删除
-                  </a>
-                </PermissionGate>
-              )
-            )}
           </Space>
         ),
       },
     ],
-    // 依赖闭包内 handler，handler 由稳定 hook 提供，无需额外依赖
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
@@ -339,14 +240,9 @@ export default function SandboxListPage() {
               display: "block",
             }}
           >
-            基于 OpenSandbox 的代码执行沙箱；草稿 → 初始化 → 在线 → 下线 生命周期管理，供 Agent 安全运行代码
+            只读查看 Agent 独占的沙箱规格；请在 Agent 编辑页维护。真正容器在创建会话时启动。
           </Text>
         </div>
-        <PermissionGate anyOf={['sandbox:create']}>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            新建沙箱
-          </Button>
-        </PermissionGate>
       </div>
 
       {/* 筛选行：仅关键字搜索，靠右 */}
@@ -406,12 +302,6 @@ export default function SandboxListPage() {
         />
       </div>
 
-      <SandboxFormDrawer
-        open={formOpen}
-        target={editTarget}
-        onClose={() => setFormOpen(false)}
-        onSaved={() => setFormOpen(false)}
-      />
       <SandboxDetailDrawer
         num={detailNum}
         open={!!detailNum}

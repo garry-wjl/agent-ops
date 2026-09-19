@@ -326,6 +326,20 @@ export interface AgentDraftVO {
 }
 
 /**
+ * Agent 内嵌沙箱规格（只存元数据，会话时再起容器）。
+ */
+export interface SandboxSpecParam {
+  enabled?: boolean;
+  name?: string;
+  cpu?: number;
+  memoryMb?: number;
+  aliveMinutes?: number;
+  maxConcurrent?: number;
+  sessionIdleTtlMinutes?: number;
+  remark?: string;
+}
+
+/**
  * 创建 Agent 入参（v2.4 简化 + v2.5 扩展 + 2026-06-11 资产化改造 + 2026-06-17 资源版本钉住）
  * - 后端 v2.0 起 creationMode 由 server 固定为 CONFIG，前端不再传
  * - modeConfig 已下线（ACP/MCP/A2A/API 接入式整体移除）
@@ -361,8 +375,10 @@ export interface AgentCreateParam {
   skillRefs?: SkillRefParam[];
   /** 2026-06-17：工具版本引用（统一契约） */
   toolRefs?: ToolRefParam[];
-  /** 沙箱引用（单选可空，来自沙箱管理「在线」沙箱 num） */
+  /** 沙箱引用（由 sandboxSpec 维护后回写） */
   sandboxRef?: string;
+  /** Agent 内嵌沙箱规格 */
+  sandboxSpec?: SandboxSpecParam;
   childAgentNums?: string[];
   memoryConfig?: MemoryConfig;
   qps?: number;

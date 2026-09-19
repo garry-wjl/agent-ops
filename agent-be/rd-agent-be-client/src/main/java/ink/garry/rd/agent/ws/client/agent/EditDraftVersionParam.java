@@ -1,5 +1,6 @@
 package ink.garry.rd.agent.ws.client.agent;
 
+import ink.garry.rd.agent.ws.client.sandbox.dto.SandboxSpecParam;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
@@ -18,4 +19,7 @@ public class EditDraftVersionParam {
     /** 草稿配置（结构同 AgentCreateParam / 已发布版本 ConfigSnapshot） */
     @NotNull(message = "configDraft 不能为空")
     private Map<String, Object> configDraft;
+
+    /** 可选：内嵌沙箱规格；优先于 configDraft.sandboxRef 手填 */
+    private SandboxSpecParam sandboxSpec;
 }

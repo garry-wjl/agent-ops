@@ -31,6 +31,7 @@ import type {
   AgentApiKeyVO,
   AgentApiKeyCreatedVO,
   AgentApiKeyPlainVO,
+  SandboxSpecParam,
 } from '@/types';
 
 /** 后端 AgentCommandController / AgentQueryController 共享路径前缀 */
@@ -69,8 +70,16 @@ export const agentApi = {
   /**
    * 编辑草稿：覆盖 DRAFT 版本的 configDraft；DRAFT 之外的状态不可调用。
    */
-  editDraftVersion: (versionId: string, configDraft: ConfigSnapshot) =>
-    post<void>(`${AGENT_BASE}/version/edit`, { versionId, configDraft }),
+  editDraftVersion: (
+    versionId: string,
+    configDraft: ConfigSnapshot,
+    sandboxSpec?: SandboxSpecParam,
+  ) =>
+    post<void>(`${AGENT_BASE}/version/edit`, {
+      versionId,
+      configDraft,
+      sandboxSpec,
+    }),
   /**
    * 删除草稿：仅可删 DRAFT 版本；PUBLISHED / ARCHIVED 不可删。
    */

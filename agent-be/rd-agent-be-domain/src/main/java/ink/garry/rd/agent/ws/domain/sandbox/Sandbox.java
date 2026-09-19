@@ -80,6 +80,12 @@ public class Sandbox extends DomainEntity {
     /** 归属工作空间业务编号。 */
     private String workspaceNum;
 
+    /**
+     * 归属 Agent 业务编号。
+     * <p>禁止多 Agent 共享；空表示存量未归属。版本复制会产生同 owner 多行历史资产。
+     */
+    private String ownerAgentNum;
+
     /** 沙箱名称；同一工作空间内不重复（应用层经唯一性预检 + DB 唯一索引兜底）。 */
     private String name;
 
@@ -104,13 +110,16 @@ public class Sandbox extends DomainEntity {
     /** OpenSandbox 容器实例 id；草稿 / 失败态为空，供给成功后由应用层回写。 */
     private String sandboxInstanceId;
 
-    /** 是否启用热池；默认 false（按会话现开）。 */
+    /**
+     * 热池开关（已废弃，恒为 false）。
+     * <p>保留字段兼容旧数据与 API；供给侧不再预创建 IDLE。
+     */
     private Boolean poolEnabled;
 
-    /** 热池常驻 IDLE 目标数量；仅 poolEnabled 时有效，默认 1。 */
+    /** 热池常驻数（已废弃，忽略）。 */
     private Integer poolSize;
 
-    /** 该资产最大活实例数（IDLE+BOUND），默认 8。 */
+    /** 该资产最大活实例数（BOUND），默认 8。 */
     private Integer maxConcurrent;
 
     /** 会话空闲后回收等待分钟数，默认 10。 */
@@ -203,10 +212,8 @@ public class Sandbox extends DomainEntity {
                 "备注不超过 100 字");
         // 状态
         Assert.notNull(status, "沙箱状态不能为空");
-        // 热池配置兜底 + 校验
-        if (poolEnabled == null) {
-            poolEnabled = Boolean.FALSE;
-        }
+        // 热池已下线：强制关闭；仅保留并发与空闲 TTL
+        poolEnabled = Boolean.FALSE;
         if (poolSize == null || poolSize < 1) {
             poolSize = 1;
         }
@@ -216,7 +223,25 @@ public class Sandbox extends DomainEntity {
         if (sessionIdleTtlMinutes == null || sessionIdleTtlMinutes < 1) {
             sessionIdleTtlMinutes = 10;
         }
-        Assert.isTrue(poolSize <= maxConcurrent, "常驻池大小不能超过最大并发实例数");
+    }
+
+    /**
+     * 将资产直接置为 ONLINE（规格可用），不创建真实容器、不发 SUBMITTED。
+     * <p>供 Agent 内嵌维护入口：沙箱资产只存元数据，会话 prewarm 时再起容器。
+     *
+     * @param operatorId 操作人
+     */
+    public void activateAsSpec(String operatorId) {
+        this.initialize(operatorId);
+        this.poolEnabled = Boolean.FALSE;
+        this.sandboxInstanceId = null;
+        this.status = SandboxStatus.ONLINE;
+        if (StrUtil.isBlank(this.num)) {
+            this.num = sandboxGateway.generateSandboxNum();
+        }
+        this.validate();
+        sandboxRepository.save(this);
+        publishEvent(DomainEventConstant.SANDBOX_ONLINED, operatorId, null);
     }
 
     /**

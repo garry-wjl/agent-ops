@@ -1,5 +1,6 @@
 package ink.garry.rd.agent.ws.client.agent;
 
+import ink.garry.rd.agent.ws.client.sandbox.dto.SandboxSpecParam;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
@@ -65,8 +66,11 @@ public class AgentCreateParam {
     /** 挂载工具的版本引用；工具具备版本后按 versionNum 解析 */
     private List<ToolRefParam> toolRefs;
 
-    /** v4.0 - 关联沙箱引用标识（沙箱管理引用，单选可空） */
+    /** v4.0 - 关联沙箱引用标识（由 sandboxSpec 维护时可不传） */
     private String sandboxRef;
+
+    /** Agent 内嵌沙箱规格；优先于直接传 sandboxRef */
+    private SandboxSpecParam sandboxSpec;
 
     /** 配置模式 - 子 Agent 业务编号列表（监督者/路由强制选） */
     private List<String> childAgentNums;
