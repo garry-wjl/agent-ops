@@ -20,6 +20,9 @@ public class SandboxVO {
     /** 归属工作空间业务编号。 */
     private String workspaceNum;
 
+    /** 归属 Agent 业务编号。 */
+    private String ownerAgentNum;
+
     /** 沙箱名称。 */
     private String name;
 

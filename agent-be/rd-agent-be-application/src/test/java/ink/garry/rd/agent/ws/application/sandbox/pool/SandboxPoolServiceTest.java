@@ -89,16 +89,16 @@ class SandboxPoolServiceTest {
     }
 
     @Test
-    void provisionAsset_poolOn_createsIdlePool() {
+    void provisionAsset_poolOn_alsoCreatesNoContainer() {
+        // 热池已下线：即使资产标记 poolOn 也不预创建
         Sandbox asset = onlineAsset(true, 2, 8);
         when(sandboxFactory.buildSandboxByNum("SBX1")).thenReturn(asset);
-        when(sandboxContainerGateway.create(any(), anyInt(), anyInt()))
-                .thenReturn("os-1", "os-2");
 
         String rep = sandboxPoolService.provisionAsset("SBX1", "u1");
 
-        assertEquals("os-1", rep);
-        verify(runtimeRepository, times(2)).insert(any());
+        assertEquals(null, rep);
+        verify(sandboxContainerGateway, never()).create(any(), anyInt(), anyInt());
+        verify(runtimeRepository, never()).insert(any());
     }
 
     @Test
@@ -116,49 +116,22 @@ class SandboxPoolServiceTest {
     }
 
     @Test
-    void ensureBound_claimsIdleWhenAvailable() {
+    void ensureBound_ignoresIdleAndCreatesFresh() {
         Sandbox asset = onlineAsset(true, 1, 8);
         when(sandboxFactory.buildSandboxByNum("SBX1")).thenReturn(asset);
         when(runtimeRepository.findBoundBySessionNum("SES2")).thenReturn(Optional.empty());
-        SandboxRuntimeInstanceRecord idle = new SandboxRuntimeInstanceRecord(
-                "SRI-IDLE", "SBX1", "WS1", "os-idle", SandboxRuntimeStatus.IDLE,
-                null, LocalDateTime.now(), LocalDateTime.now(), "u1", "u1");
-        when(runtimeRepository.listBySandboxAndStatus("SBX1", SandboxRuntimeStatus.IDLE))
-                .thenReturn(List.of(idle));
-        // claim 后 replenish：已有 1 活实例且 poolSize=1 → 不再 create
-        when(runtimeRepository.countIdle("SBX1")).thenReturn(1L);
-        when(runtimeRepository.countAlive("SBX1")).thenReturn(1L);
+        when(runtimeRepository.countAlive("SBX1")).thenReturn(0L);
+        when(sandboxContainerGateway.create(any(), anyInt(), anyInt())).thenReturn("os-new");
 
         String id = sandboxPoolService.ensureBound("SBX1", "SES2", "u1");
 
-        assertEquals("os-idle", id);
+        assertEquals("os-new", id);
+        verify(runtimeRepository, never()).listBySandboxAndStatus(anyString(), any());
         ArgumentCaptor<SandboxRuntimeInstanceRecord> cap =
                 ArgumentCaptor.forClass(SandboxRuntimeInstanceRecord.class);
-        verify(runtimeRepository).update(cap.capture());
+        verify(runtimeRepository).insert(cap.capture());
         assertEquals(SandboxRuntimeStatus.BOUND, cap.getValue().status());
         assertEquals("SES2", cap.getValue().sessionNum());
-        verify(sandboxContainerGateway, never()).create(any(), anyInt(), anyInt());
-    }
-
-    @Test
-    void ensureBound_skipsDeadIdleAndCreates() {
-        Sandbox asset = onlineAsset(false, 1, 8);
-        when(sandboxFactory.buildSandboxByNum("SBX1")).thenReturn(asset);
-        when(runtimeRepository.findBoundBySessionNum("SES-D")).thenReturn(Optional.empty());
-        SandboxRuntimeInstanceRecord deadIdle = new SandboxRuntimeInstanceRecord(
-                "SRI-DEAD", "SBX1", "WS1", "os-dead", SandboxRuntimeStatus.IDLE,
-                null, LocalDateTime.now(), LocalDateTime.now(), "u1", "u1");
-        when(runtimeRepository.listBySandboxAndStatus("SBX1", SandboxRuntimeStatus.IDLE))
-                .thenReturn(List.of(deadIdle));
-        when(sandboxContainerGateway.isAlive("os-dead")).thenReturn(false);
-        when(runtimeRepository.countAlive("SBX1")).thenReturn(0L);
-        when(sandboxContainerGateway.create(any(), anyInt(), anyInt())).thenReturn("os-fresh");
-
-        String id = sandboxPoolService.ensureBound("SBX1", "SES-D", "u1");
-
-        assertEquals("os-fresh", id);
-        verify(runtimeRepository).softDelete("SRI-DEAD");
-        verify(sandboxContainerGateway).kill("os-dead");
     }
 
     @Test
@@ -166,8 +139,6 @@ class SandboxPoolServiceTest {
         Sandbox asset = onlineAsset(true, 1, 8);
         when(sandboxFactory.buildSandboxByNum("SBX1")).thenReturn(asset);
         when(runtimeRepository.findBoundBySessionNum("SES2")).thenReturn(Optional.empty());
-        when(runtimeRepository.listBySandboxAndStatus("SBX1", SandboxRuntimeStatus.IDLE))
-                .thenReturn(List.of());
         when(runtimeRepository.countAlive("SBX1")).thenReturn(0L);
         when(sandboxContainerGateway.create(any(), anyInt(), anyInt()))
                 .thenReturn("os-new");
@@ -187,8 +158,6 @@ class SandboxPoolServiceTest {
         Sandbox asset = onlineAsset(false, 1, 1);
         when(sandboxFactory.buildSandboxByNum("SBX1")).thenReturn(asset);
         when(runtimeRepository.findBoundBySessionNum("SES3")).thenReturn(Optional.empty());
-        when(runtimeRepository.listBySandboxAndStatus("SBX1", SandboxRuntimeStatus.IDLE))
-                .thenReturn(List.of());
         when(runtimeRepository.countAlive("SBX1")).thenReturn(1L);
 
         BusinessException ex = assertThrows(BusinessException.class,
@@ -197,22 +166,19 @@ class SandboxPoolServiceTest {
     }
 
     @Test
-    void releaseBySession_poolOn_returnsToIdle() {
+    void releaseBySession_alwaysKills_noIdleReturn() {
         Sandbox asset = onlineAsset(true, 2, 8);
         when(sandboxFactory.buildSandboxByNum("SBX1")).thenReturn(asset);
         SandboxRuntimeInstanceRecord bound = new SandboxRuntimeInstanceRecord(
                 "SRI1", "SBX1", "WS1", "os-1", SandboxRuntimeStatus.BOUND,
                 "SES1", LocalDateTime.now(), null, "u1", "u1");
         when(runtimeRepository.findBoundBySessionNum("SES1")).thenReturn(Optional.of(bound));
-        when(runtimeRepository.countIdle("SBX1")).thenReturn(0L);
 
         sandboxPoolService.releaseBySession("SES1", "u1");
 
-        ArgumentCaptor<SandboxRuntimeInstanceRecord> cap =
-                ArgumentCaptor.forClass(SandboxRuntimeInstanceRecord.class);
-        verify(runtimeRepository).update(cap.capture());
-        assertEquals(SandboxRuntimeStatus.IDLE, cap.getValue().status());
-        verify(sandboxContainerGateway, never()).kill(anyString());
+        verify(sandboxContainerGateway).kill("os-1");
+        verify(runtimeRepository).softDelete("SRI1");
+        verify(runtimeRepository, never()).update(any());
     }
 
     @Test

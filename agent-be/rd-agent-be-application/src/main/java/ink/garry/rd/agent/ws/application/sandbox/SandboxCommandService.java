@@ -398,6 +398,7 @@ public class SandboxCommandService {
         return SandboxDTO.builder()
                 .num(s.getNum())
                 .workspaceNum(s.getWorkspaceNum())
+                .ownerAgentNum(s.getOwnerAgentNum())
                 .name(s.getName())
                 .type(s.getType() == null ? null : s.getType().name())
                 .cpu(s.getCpu())
@@ -422,9 +423,8 @@ public class SandboxCommandService {
                                         Integer poolSize,
                                         Integer maxConcurrent,
                                         Integer sessionIdleTtlMinutes) {
-        if (poolEnabled != null) {
-            sandbox.setPoolEnabled(poolEnabled);
-        }
+        // 热池已下线：忽略入参，强制关闭
+        sandbox.setPoolEnabled(Boolean.FALSE);
         if (poolSize != null) {
             sandbox.setPoolSize(poolSize);
         }

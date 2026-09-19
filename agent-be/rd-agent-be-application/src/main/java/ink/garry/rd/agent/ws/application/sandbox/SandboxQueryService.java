@@ -166,6 +166,7 @@ public class SandboxQueryService {
         return SandboxDTO.builder()
                 .num(e.getNum())
                 .workspaceNum(e.getWorkspaceNum())
+                .ownerAgentNum(e.getOwnerAgentNum())
                 .name(e.getName())
                 .type(e.getType())
                 .cpu(e.getCpu())

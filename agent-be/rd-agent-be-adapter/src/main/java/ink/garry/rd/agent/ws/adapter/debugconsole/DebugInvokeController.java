@@ -1,6 +1,7 @@
 package ink.garry.rd.agent.ws.adapter.debugconsole;
 
 import ink.garry.rd.agent.ws.adapter.common.SseEventTransformer;
+import ink.garry.rd.agent.ws.adapter.common.SseKeepAlive;
 import ink.garry.rd.agent.ws.adapter.config.BaseController;
 import ink.garry.rd.agent.ws.application.agentrunner.InvokeContentNormalizer;
 import ink.garry.rd.agent.ws.application.debugconsole.AgentInvokeService;
@@ -35,22 +36,23 @@ public class DebugInvokeController extends BaseController {
     @PostMapping(value = "/invoke", produces = "text/event-stream;charset=UTF-8")
     public Flux<ServerSentEvent<String>> invoke(@Valid @RequestBody DebugInvokeRequest req) {
         invokeContentNormalizer.normalize(req.getInput(), req.getAttachments());
-        return agentInvokeService.invokeStream(
-                        req.getAgentNum(), req.getInput(), req.getAttachments(),
-                        req.getSessionNum(), getCurrentUserId(), req.getTargetVersion(), req.getContext())
-                .map(event -> {
-                    try {
-                        JsonNode root = objectMapper.valueToTree(event);
-                        SseEventTransformer.transformFormatJsonResults(root);
-                        return ServerSentEvent.<String>builder()
-                                .data(objectMapper.writeValueAsString(root))
-                                .build();
-                    } catch (Exception e) {
-                        log.error("SSE 事件变换失败", e);
-                        return ServerSentEvent.<String>builder()
-                                .data("{}")
-                                .build();
-                    }
-                });
+        return SseKeepAlive.withHeartbeat(
+                agentInvokeService.invokeStream(
+                                req.getAgentNum(), req.getInput(), req.getAttachments(),
+                                req.getSessionNum(), getCurrentUserId(), req.getTargetVersion(), req.getContext())
+                        .map(event -> {
+                            try {
+                                JsonNode root = objectMapper.valueToTree(event);
+                                SseEventTransformer.transformFormatJsonResults(root);
+                                return ServerSentEvent.<String>builder()
+                                        .data(objectMapper.writeValueAsString(root))
+                                        .build();
+                            } catch (Exception e) {
+                                log.error("SSE 事件变换失败", e);
+                                return ServerSentEvent.<String>builder()
+                                        .data("{}")
+                                        .build();
+                            }
+                        }));
     }
 }

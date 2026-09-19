@@ -15,7 +15,7 @@
  *  - sandboxRef（单选可空，在线沙箱 num）
  *  - skillNums（多选，已发布 Skill num）
  *
- * 分区：基本信息 → 关联模型 → 工具与上下文（Skills / 工具 / 沙箱）。
+ * 分区：基本信息 → 关联模型 → 系统提示词 → 沙箱 → 工具与上下文（Skills / 工具）。
  * 详见 PRD §7 / §8.1、技术方案 §9 fe。
  */
 import { useEffect, useMemo, useState } from 'react';
@@ -44,7 +44,7 @@ import { useBreadcrumbName } from '@/hooks/useBreadcrumbName';
 import { useModelSelectableQuery } from '@/services/model';
 import { useSkillPageQuery } from '@/services/skill';
 import { useToolMountableItemsQuery, useToolMountableQuery } from '@/services/tool';
-import { useSandboxPageQuery } from '@/services/sandbox';
+import { sandboxApi } from '@/services/sandbox';
 import type {
   AgentCreateParam,
   AgentType,
@@ -57,6 +57,9 @@ import ToolsContextSection, {
   toolBindingKey,
   type ToolsContextValue,
 } from '../components/ToolsContextSection';
+import SandboxSpecSection, {
+  DEFAULT_SANDBOX_SPEC,
+} from '../components/SandboxSpecSection';
 import type { AssetOption } from '../components/AssetPickerModal';
 import PromptPickerModal from '../components/PromptPickerModal';
 import A2aCreateForm from '../components/A2aCreateForm';
@@ -119,6 +122,7 @@ function emptyDraft(): AgentDraft {
       toolNums: [],
       toolRefs: [],
       sandboxRef: undefined,
+      ...DEFAULT_SANDBOX_SPEC,
     },
   };
 }
@@ -159,11 +163,6 @@ export default function AgentEditorPage() {
   });
   const { data: mountableGroups } = useToolMountableQuery();
   const { data: mountableItems } = useToolMountableItemsQuery();
-  const { data: sandboxPage } = useSandboxPageQuery({
-    pageNo: 1,
-    pageSize: 200,
-    status: 'ONLINE',
-  });
 
   const models: ModelSelectableVO[] = selectableModels ?? [];
   const skillOptions: AssetOption[] = useMemo(
@@ -219,15 +218,6 @@ export default function AgentEditorPage() {
       })),
     [mountableGroups],
   );
-  const sandboxOptions: AssetOption[] = useMemo(
-    () =>
-      (sandboxPage?.list ?? []).map((s) => ({
-        num: s.num,
-        name: s.name,
-        meta: `${s.type} · ${s.cpu}核 / ${s.memoryMb}MB`,
-      })),
-    [sandboxPage],
-  );
 
   // —— 编辑态：拉取草稿版本快照回填 ——
   useEffect(() => {
@@ -278,8 +268,35 @@ export default function AgentEditorPage() {
                 ? snap.toolRefs
                 : (snap?.toolNums ?? []).map((n) => ({ toolNum: n })),
             sandboxRef: snap?.sandboxRef,
+            sandboxEnabled: Boolean(snap?.sandboxRef),
+            sandboxCpu: 1,
+            sandboxMemoryMb: 2048,
+            sandboxAliveMinutes: 10,
+            sandboxMaxConcurrent: 8,
           },
         });
+        if (snap?.sandboxRef) {
+          try {
+            const sb = await sandboxApi.detail(snap.sandboxRef);
+            const s = sb?.sandbox;
+            if (!cancelled && s) {
+              setDraft((d) => ({
+                ...d,
+                ctx: {
+                  ...d.ctx,
+                  sandboxEnabled: true,
+                  sandboxRef: s.num,
+                  sandboxCpu: s.cpu ?? 1,
+                  sandboxMemoryMb: s.memoryMb ?? 2048,
+                  sandboxAliveMinutes: s.aliveMinutes ?? 10,
+                  sandboxMaxConcurrent: s.maxConcurrent ?? 8,
+                },
+              }));
+            }
+          } catch {
+            // 规格回填失败不阻断编辑
+          }
+        }
       } catch {
         // 拦截器已 toast
       } finally {
@@ -302,6 +319,14 @@ export default function AgentEditorPage() {
     if (!draft.modelId) return '请选择关联模型';
     return null;
   };
+
+  const buildSandboxSpec = () => ({
+    enabled: Boolean(draft.ctx.sandboxEnabled),
+    cpu: draft.ctx.sandboxCpu ?? 1,
+    memoryMb: draft.ctx.sandboxMemoryMb ?? 2048,
+    aliveMinutes: draft.ctx.sandboxAliveMinutes ?? 10,
+    maxConcurrent: draft.ctx.sandboxMaxConcurrent ?? 8,
+  });
 
   /** 组装提交快照 / 入参。Harness 不消费的字段在此剥掉。 */
   const buildSnapshot = (): ConfigSnapshot =>
@@ -341,6 +366,7 @@ export default function AgentEditorPage() {
       toolNums: draft.ctx.toolNums,
       toolRefs: draft.ctx.toolRefs,
       sandboxRef: draft.ctx.sandboxRef,
+      sandboxSpec: buildSandboxSpec(),
     });
 
   /** 新建：create → 跳详情。编辑：editDraftVersion → 跳详情。 */
@@ -361,7 +387,7 @@ export default function AgentEditorPage() {
           message.error('缺少 versionId（DRAFT 版本 id），无法保存草稿');
           return;
         }
-        await agentApi.editDraftVersion(versionId, buildSnapshot());
+        await agentApi.editDraftVersion(versionId, buildSnapshot(), buildSandboxSpec());
         message.success('草稿已保存');
         navigate(`/agent/manage/detail/${agentNum}?tab=versions`);
       }
@@ -389,7 +415,7 @@ export default function AgentEditorPage() {
     }
     setSaving(true);
     try {
-      await agentApi.editDraftVersion(versionId, buildSnapshot());
+      await agentApi.editDraftVersion(versionId, buildSnapshot(), buildSandboxSpec());
       await agentApi.publish({ versionId, agentNum, remark: publishRemark.trim() });
       message.success('已发布新版本');
       setPublishOpen(false);
@@ -794,6 +820,12 @@ export default function AgentEditorPage() {
               </Form.Item>
             </Form>
 
+            <SectionTitle>沙箱</SectionTitle>
+            <SandboxSpecSection
+              value={draft.ctx}
+              onChange={(ctx) => patch({ ctx })}
+            />
+
             {/* ▣ 工具与上下文 */}
             <SectionTitle>工具与上下文</SectionTitle>
             <div style={{ maxWidth: 880 }}>
@@ -805,7 +837,6 @@ export default function AgentEditorPage() {
                 toolGroups={toolGroups}
                 toolRefByKey={toolRefByKey}
                 mountableItems={mountableItems}
-                sandboxOptions={sandboxOptions}
               />
             </div>
           </>

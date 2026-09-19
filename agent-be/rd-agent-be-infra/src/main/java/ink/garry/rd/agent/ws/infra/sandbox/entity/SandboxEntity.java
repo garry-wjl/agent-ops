@@ -34,6 +34,10 @@ public class SandboxEntity {
     @TableField("workspace_num")
     private String workspaceNum;
 
+    /** 归属 Agent 业务编号 */
+    @TableField("owner_agent_num")
+    private String ownerAgentNum;
+
     /** 沙箱名称；同工作空间内唯一 */
     private String name;
 
@@ -111,6 +115,7 @@ public class SandboxEntity {
         s.setId(e.getId());
         s.setNum(e.getNum());
         s.setWorkspaceNum(e.getWorkspaceNum());
+        s.setOwnerAgentNum(e.getOwnerAgentNum());
         s.setName(e.getName());
         s.setType(e.getType() == null ? null : SandboxType.valueOf(e.getType()));
         s.setCpu(e.getCpu());
@@ -143,6 +148,7 @@ public class SandboxEntity {
         e.setId(s.getId());
         e.setNum(s.getNum());
         e.setWorkspaceNum(s.getWorkspaceNum());
+        e.setOwnerAgentNum(s.getOwnerAgentNum());
         e.setName(s.getName());
         e.setType(s.getType() == null ? null : s.getType().name());
         e.setCpu(s.getCpu());

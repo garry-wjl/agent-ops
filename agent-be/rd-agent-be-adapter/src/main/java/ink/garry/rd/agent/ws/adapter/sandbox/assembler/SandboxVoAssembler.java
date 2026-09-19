@@ -93,6 +93,7 @@ public class SandboxVoAssembler {
         SandboxVO vo = new SandboxVO();
         vo.setNum(dto.getNum());
         vo.setWorkspaceNum(dto.getWorkspaceNum());
+        vo.setOwnerAgentNum(dto.getOwnerAgentNum());
         vo.setName(dto.getName());
         vo.setType(dto.getType());
         vo.setCpu(dto.getCpu());

@@ -30,6 +30,8 @@ import ink.garry.rd.agent.ws.domain.agent.valueobject.Version;
 import ink.garry.rd.agent.ws.domain.skill.valueobject.SkillStatus;
 import ink.garry.rd.agent.ws.domain.tool.valueobject.ToolStatus;
 import ink.garry.rd.agent.ws.facade.exception.BusinessException;
+import ink.garry.rd.agent.ws.application.sandbox.SandboxSpecService;
+import ink.garry.rd.agent.ws.client.sandbox.dto.SandboxSpecParam;
 import ink.garry.rd.agent.ws.application.skill.SkillQueryService;
 import ink.garry.rd.agent.ws.application.tool.ToolQueryService;
 import ink.garry.rd.agent.ws.application.evaluation.task.EvalPublishGateService;
@@ -118,6 +120,8 @@ public class AgentCommandService {
     private EvalPublishGateService evalPublishGateService;
     @Resource
     private ink.garry.rd.agent.ws.application.agent.A2aSyncApplicationService a2aSyncApplicationService;
+    @Resource
+    private SandboxSpecService sandboxSpecService;
 
     // ============================================================
     // create
@@ -156,8 +160,18 @@ public class AgentCommandService {
                     param.getName(), param.getDescription(), type, operatorId, param.getTags());
             agent.save(operatorId);
 
+            // 2.1 独占沙箱规格（元数据 ONLINE，不起容器）
+            String sandboxRef = param.getSandboxRef();
+            if (param.getSandboxSpec() != null) {
+                sandboxRef = sandboxSpecService.ensureExclusive(
+                        resolveWorkspaceNum(), agent.getNum(), null, param.getSandboxSpec(), operatorId);
+            } else if (StrUtil.isNotBlank(sandboxRef)) {
+                sandboxSpecService.assertRefOwnedByAgent(sandboxRef, agent.getNum());
+            }
+
             // 3. 首版 v1.0.0：构造 PUBLISHED 版本 + 翻转 agent 主表镜像
             ConfigSnapshot snapshot = buildSnapshotFromParam(param, type);
+            snapshot.setSandboxRef(sandboxRef);
             Version initial = Version.initial();
             AgentVersion firstVersion = agentVersionFactory.create(
                     agent.getNum(), initial, snapshot, "首次发布 v1.0.0（自动）", operatorId);
@@ -209,6 +223,12 @@ public class AgentCommandService {
                 AgentVersion current = agentVersionFactory.createByNum(currentVersionNum);
                 baseSnapshot = current.getConfigSnapshot();
             }
+            // 2.1 复制沙箱资产，草稿与已发布版本各持一份
+            if (baseSnapshot != null && StrUtil.isNotBlank(baseSnapshot.getSandboxRef())) {
+                String cloned = sandboxSpecService.cloneForAgentVersion(
+                        baseSnapshot.getSandboxRef(), agentNum, operatorId);
+                baseSnapshot.setSandboxRef(cloned);
+            }
 
             // 3. 构造 DRAFT 行 + 落库
             AgentVersion draft = agentVersionFactory.create(agentNum, null, baseSnapshot, null, null);
@@ -234,10 +254,14 @@ public class AgentCommandService {
      *
      * @param versionId   草稿版本业务编号
      * @param configDraft 新配置快照（Map → ConfigSnapshot）
+     * @param sandboxSpec 可选内嵌沙箱规格
      * @param operatorId  操作人 userId
      */
     @Transactional(rollbackFor = Exception.class)
-    public void editDraftVersion(String versionId, Map<String, Object> configDraft, String operatorId) {
+    public void editDraftVersion(String versionId,
+                                 Map<String, Object> configDraft,
+                                 SandboxSpecParam sandboxSpec,
+                                 String operatorId) {
         Assert.notBlank(versionId, "版本业务编号不能为空");
         Assert.notBlank(operatorId, "操作人不能为空");
 
@@ -249,12 +273,34 @@ public class AgentCommandService {
                 throw new BusinessException(BizCode.DRAFT_LOCKED.getCode(),
                         "草稿被锁定: holder=" + draftLockGateway.currentHolder(draft.getAgentNum()));
             }
-            draft.setConfigSnapshot(mapToSnapshot(configDraft));
+            ConfigSnapshot snapshot = mapToSnapshot(configDraft);
+            if (sandboxSpec != null) {
+                String ref = sandboxSpecService.ensureExclusive(
+                        resolveWorkspaceNum(),
+                        draft.getAgentNum(),
+                        snapshot != null ? snapshot.getSandboxRef() : null,
+                        sandboxSpec,
+                        operatorId);
+                if (snapshot == null) {
+                    snapshot = ConfigSnapshot.builder().build();
+                }
+                snapshot.setSandboxRef(ref);
+            } else if (snapshot != null && StrUtil.isNotBlank(snapshot.getSandboxRef())) {
+                sandboxSpecService.assertRefOwnedByAgent(snapshot.getSandboxRef(), draft.getAgentNum());
+            }
+            draft.setConfigSnapshot(snapshot);
             draft.setEditorUserId(operatorId);
             draft.setLockUntil(LocalDateTime.now().plusSeconds(DRAFT_LOCK_TTL_SECONDS));
             draft.save(operatorId);
             log.info("[AgentCommandService] editDraftVersion ok versionId={} operator={}", versionId, operatorId);
+            return null;
         });
+    }
+
+    /** 兼容旧调用：无 sandboxSpec。 */
+    @Transactional(rollbackFor = Exception.class)
+    public void editDraftVersion(String versionId, Map<String, Object> configDraft, String operatorId) {
+        editDraftVersion(versionId, configDraft, null, operatorId);
     }
 
     // ============================================================

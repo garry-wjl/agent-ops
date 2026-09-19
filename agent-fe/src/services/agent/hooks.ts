@@ -105,8 +105,16 @@ export function useCreateVersionMutation() {
  */
 export function useEditDraftVersionMutation() {
   return useMutation({
-    mutationFn: (param: { versionId: string; configDraft: ConfigSnapshot }) =>
-      agentApi.editDraftVersion(param.versionId, param.configDraft),
+    mutationFn: (param: {
+      versionId: string;
+      configDraft: ConfigSnapshot;
+      sandboxSpec?: import('@/types').SandboxSpecParam;
+    }) =>
+      agentApi.editDraftVersion(
+        param.versionId,
+        param.configDraft,
+        param.sandboxSpec,
+      ),
   });
 }
 
