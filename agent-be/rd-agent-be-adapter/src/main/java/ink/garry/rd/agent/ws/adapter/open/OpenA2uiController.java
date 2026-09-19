@@ -1,6 +1,7 @@
 package ink.garry.rd.agent.ws.adapter.open;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import ink.garry.rd.agent.ws.adapter.common.SseKeepAlive;
 import ink.garry.rd.agent.ws.adapter.security.ApiKeyAuthenticationFilter;
 import ink.garry.rd.agent.ws.application.a2ui.A2uiV091Encoder;
 import ink.garry.rd.agent.ws.application.a2ui.OpenA2uiInvokeService;
@@ -69,7 +70,7 @@ public class OpenA2uiController {
     }
 
     private Flux<ServerSentEvent<String>> toSse(Flux<Map<String, Object>> messages) {
-        return messages.map(envelope -> {
+        return SseKeepAlive.withHeartbeat(messages.map(envelope -> {
             try {
                 return ServerSentEvent.<String>builder()
                         .data(objectMapper.writeValueAsString(envelope))
@@ -82,7 +83,7 @@ public class OpenA2uiController {
                                 "error", Map.of("message", "serialize_failed"))))
                         .build();
             }
-        });
+        }));
     }
 
     /**

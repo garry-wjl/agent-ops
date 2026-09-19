@@ -1,6 +1,7 @@
 package ink.garry.rd.agent.ws.adapter.open;
 
 import ink.garry.rd.agent.ws.adapter.common.SseEventTransformer;
+import ink.garry.rd.agent.ws.adapter.common.SseKeepAlive;
 import ink.garry.rd.agent.ws.adapter.config.BaseController;
 import ink.garry.rd.agent.ws.adapter.security.ApiKeyAuthenticationFilter;
 import ink.garry.rd.agent.ws.application.agent.OpenAgentInvokeService;
@@ -89,23 +90,24 @@ public class OpenAgentController {
         assertAgentMatch(param.getAgentNum(), req);
         bindOpenWorkspace(req);
         invokeContentNormalizer.normalize(param.getInput(), param.getAttachments());
-        return openAgentInvokeService.invoke(
-                        param.getAgentNum(), param.getInput(), param.getAttachments(),
-                        param.getSessionNum(), param.getOperatorId(), param.getContext())
-                .map(event -> {
-                    try {
-                        JsonNode root = objectMapper.valueToTree(event);
-                        SseEventTransformer.transformFormatJsonResults(root);
-                        return ServerSentEvent.<String>builder()
-                                .data(objectMapper.writeValueAsString(root))
-                                .build();
-                    } catch (Exception e) {
-                        log.error("SSE 事件变换失败", e);
-                        return ServerSentEvent.<String>builder()
-                                .data("{}")
-                                .build();
-                    }
-                });
+        return SseKeepAlive.withHeartbeat(
+                openAgentInvokeService.invoke(
+                                param.getAgentNum(), param.getInput(), param.getAttachments(),
+                                param.getSessionNum(), param.getOperatorId(), param.getContext())
+                        .map(event -> {
+                            try {
+                                JsonNode root = objectMapper.valueToTree(event);
+                                SseEventTransformer.transformFormatJsonResults(root);
+                                return ServerSentEvent.<String>builder()
+                                        .data(objectMapper.writeValueAsString(root))
+                                        .build();
+                            } catch (Exception e) {
+                                log.error("SSE 事件变换失败", e);
+                                return ServerSentEvent.<String>builder()
+                                        .data("{}")
+                                        .build();
+                            }
+                        }));
     }
 
     /**

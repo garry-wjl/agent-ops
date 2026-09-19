@@ -10,4 +10,4 @@
 - [x] SandboxSpecService + Agent 编排（含 createVersion 复制）
 - [x] FE Agent 内嵌规格表单
 - [x] FE 沙箱管理只读
-- [ ] 测试 / commit / push
+- [x] 测试 / commit / push
