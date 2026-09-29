@@ -15,6 +15,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -124,6 +125,12 @@ public class Sandbox extends DomainEntity {
 
     /** 会话空闲后回收等待分钟数，默认 10。 */
     private Integer sessionIdleTtlMinutes;
+
+    /**
+     * 创建容器时注入的环境变量（key→value）。
+     * <p>可空或空表表示不注入；约束见 {@link ink.garry.rd.agent.ws.domain.sandbox.valueobject.SandboxEnvVars}。
+     */
+    private Map<String, String> env;
 
     // ---- 装配依赖（由 SandboxFactory 在创建时装配） ----
 

@@ -106,6 +106,7 @@ public class SandboxVoAssembler {
         vo.setPoolSize(dto.getPoolSize());
         vo.setMaxConcurrent(dto.getMaxConcurrent());
         vo.setSessionIdleTtlMinutes(dto.getSessionIdleTtlMinutes());
+        vo.setEnv(dto.getEnv());
         vo.setCreateNo(dto.getCreateNo());
         vo.setUpdateNo(dto.getUpdateNo());
         vo.setCreateTime(dto.getCreateTime());

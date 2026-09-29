@@ -3,6 +3,7 @@ package ink.garry.rd.agent.ws.client.sandbox.dto;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.util.Map;
 
 /**
  * Agent 内嵌维护的沙箱规格（只存元数据，不起真实容器）。
@@ -33,6 +34,12 @@ public class SandboxSpecParam {
 
     /** 会话空闲回收等待分钟 */
     private Integer sessionIdleTtlMinutes;
+
+    /**
+     * 创建容器时注入的环境变量。
+     * <p>key 须匹配 {@code [A-Za-z_][A-Za-z0-9_]*}；最多 50 条。
+     */
+    private Map<String, String> env;
 
     /** 备注 */
     private String remark;

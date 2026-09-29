@@ -74,6 +74,8 @@ export interface ToolsContextValue {
   sandboxAliveMinutes?: number;
   /** 最大并发 */
   sandboxMaxConcurrent?: number;
+  /** 沙箱环境变量编辑行 */
+  sandboxEnv?: { key: string; value: string }[];
 }
 
 export interface ToolsContextSectionProps {

@@ -4,6 +4,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Map;
 
 /**
  * 沙箱 Vo（列表项 / 命令返回，adapter 层出参）。
@@ -58,6 +59,9 @@ public class SandboxVO {
 
     /** 会话空闲 TTL 分钟。 */
     private Integer sessionIdleTtlMinutes;
+
+    /** 创建容器时注入的环境变量（明文回传；前端展示时对 value 打码）。 */
+    private Map<String, String> env;
 
     /** 创建人工号。 */
     private String createNo;

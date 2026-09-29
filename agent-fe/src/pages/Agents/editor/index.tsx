@@ -59,6 +59,8 @@ import ToolsContextSection, {
 } from '../components/ToolsContextSection';
 import SandboxSpecSection, {
   DEFAULT_SANDBOX_SPEC,
+  envRecordToRows,
+  envRowsToRecord,
 } from '../components/SandboxSpecSection';
 import type { AssetOption } from '../components/AssetPickerModal';
 import PromptPickerModal from '../components/PromptPickerModal';
@@ -273,6 +275,7 @@ export default function AgentEditorPage() {
             sandboxMemoryMb: 2048,
             sandboxAliveMinutes: 10,
             sandboxMaxConcurrent: 8,
+            sandboxEnv: [],
           },
         });
         if (snap?.sandboxRef) {
@@ -290,6 +293,7 @@ export default function AgentEditorPage() {
                   sandboxMemoryMb: s.memoryMb ?? 2048,
                   sandboxAliveMinutes: s.aliveMinutes ?? 10,
                   sandboxMaxConcurrent: s.maxConcurrent ?? 8,
+                  sandboxEnv: envRecordToRows(s.env),
                 },
               }));
             }
@@ -326,6 +330,7 @@ export default function AgentEditorPage() {
     memoryMb: draft.ctx.sandboxMemoryMb ?? 2048,
     aliveMinutes: draft.ctx.sandboxAliveMinutes ?? 10,
     maxConcurrent: draft.ctx.sandboxMaxConcurrent ?? 8,
+    env: envRowsToRecord(draft.ctx.sandboxEnv) ?? {},
   });
 
   /** 组装提交快照 / 入参。Harness 不消费的字段在此剥掉。 */

@@ -336,6 +336,8 @@ export interface SandboxSpecParam {
   aliveMinutes?: number;
   maxConcurrent?: number;
   sessionIdleTtlMinutes?: number;
+  /** 创建容器时注入的环境变量 */
+  env?: Record<string, string>;
   remark?: string;
 }
 

@@ -411,6 +411,7 @@ public class SandboxCommandService {
                 .poolSize(s.getPoolSize())
                 .maxConcurrent(s.getMaxConcurrent())
                 .sessionIdleTtlMinutes(s.getSessionIdleTtlMinutes())
+                .env(s.getEnv())
                 .createNo(s.getCreateNo())
                 .updateNo(s.getUpdateNo())
                 .createTime(s.getCreateTime())

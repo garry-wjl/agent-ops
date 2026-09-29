@@ -2,6 +2,8 @@ package ink.garry.rd.agent.ws.application.sandbox;
 
 import cn.hutool.core.lang.Assert;
 import cn.hutool.core.util.StrUtil;
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.TypeReference;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
@@ -20,7 +22,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -179,10 +184,23 @@ public class SandboxQueryService {
                 .poolSize(e.getPoolSize())
                 .maxConcurrent(e.getMaxConcurrent())
                 .sessionIdleTtlMinutes(e.getSessionIdleTtlMinutes())
+                .env(copyEnv(e.getEnvJson()))
                 .createNo(e.getCreateNo())
                 .updateNo(e.getUpdateNo())
                 .createTime(e.getCreateTime())
                 .updateTime(e.getUpdateTime())
                 .build();
+    }
+
+    private static Map<String, String> copyEnv(String envJson) {
+        if (envJson == null || envJson.isBlank()) {
+            return Collections.emptyMap();
+        }
+        try {
+            Map<String, String> map = JSON.parseObject(envJson, new TypeReference<LinkedHashMap<String, String>>() {});
+            return map == null ? Collections.emptyMap() : map;
+        } catch (Exception ex) {
+            return Collections.emptyMap();
+        }
     }
 }

@@ -40,7 +40,7 @@ app:
       cookie-same-site: Lax
   cors:
     # 本地前端常见 dev 端口（rd-agent-fe 实际跑在 8001：8000 被占用时 vite 自动顺延）
-    allowed-origins: http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://localhost:8001,http://localhost:8081
+    allowed-origins: http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://localhost:8001,http://127.0.0.1:8000,http://127.0.0.1:8001,http://localhost:8081
 
 logging:
   level:

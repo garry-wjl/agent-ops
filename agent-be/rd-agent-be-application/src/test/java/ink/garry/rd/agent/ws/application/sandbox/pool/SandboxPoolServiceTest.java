@@ -26,6 +26,7 @@ import org.redisson.api.RedissonClient;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -42,6 +43,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -97,7 +99,7 @@ class SandboxPoolServiceTest {
         String rep = sandboxPoolService.provisionAsset("SBX1", "u1");
 
         assertEquals(null, rep);
-        verify(sandboxContainerGateway, never()).create(any(), anyInt(), anyInt());
+        verify(sandboxContainerGateway, never()).create(any(), anyInt(), anyInt(), nullable(String.class), nullable(Map.class));
     }
 
     @Test
@@ -108,7 +110,7 @@ class SandboxPoolServiceTest {
         String rep = sandboxPoolService.provisionAsset("SBX1", "u1");
 
         assertEquals(null, rep);
-        verify(sandboxContainerGateway, never()).create(any(), anyInt(), anyInt());
+        verify(sandboxContainerGateway, never()).create(any(), anyInt(), anyInt(), nullable(String.class), nullable(Map.class));
         verify(runtimeRepository, never()).insert(any());
     }
 
@@ -124,7 +126,7 @@ class SandboxPoolServiceTest {
         String id = sandboxPoolService.ensureBound("SBX1", "SES1", "u1");
 
         assertEquals("os-bound", id);
-        verify(sandboxContainerGateway, never()).create(any(), anyInt(), anyInt());
+        verify(sandboxContainerGateway, never()).create(any(), anyInt(), anyInt(), nullable(String.class), nullable(Map.class));
         verify(runtimeRepository).update(any());
         verify(sandboxContainerGateway).renew(eq("os-bound"), eq(30));
     }
@@ -135,7 +137,7 @@ class SandboxPoolServiceTest {
         when(sandboxFactory.buildSandboxByNum("SBX1")).thenReturn(asset);
         when(runtimeRepository.findBoundBySessionNum("SES2")).thenReturn(Optional.empty());
         when(runtimeRepository.countAlive("SBX1")).thenReturn(0L);
-        when(sandboxContainerGateway.create(any(), anyInt(), anyInt())).thenReturn("os-new");
+        when(sandboxContainerGateway.create(any(), anyInt(), anyInt(), nullable(String.class), nullable(Map.class))).thenReturn("os-new");
 
         String id = sandboxPoolService.ensureBound("SBX1", "SES2", "u1");
 
@@ -155,7 +157,7 @@ class SandboxPoolServiceTest {
         when(sandboxFactory.buildSandboxByNum("SBX1")).thenReturn(asset);
         when(runtimeRepository.findBoundBySessionNum("SES2")).thenReturn(Optional.empty());
         when(runtimeRepository.countAlive("SBX1")).thenReturn(0L);
-        when(sandboxContainerGateway.create(any(), anyInt(), anyInt()))
+        when(sandboxContainerGateway.create(any(), anyInt(), anyInt(), nullable(String.class), nullable(Map.class)))
                 .thenReturn("os-new");
 
         String id = sandboxPoolService.ensureBound("SBX1", "SES2", "u1");
@@ -166,6 +168,26 @@ class SandboxPoolServiceTest {
         verify(runtimeRepository).insert(cap.capture());
         assertEquals(SandboxRuntimeStatus.BOUND, cap.getValue().status());
         assertEquals("SES2", cap.getValue().sessionNum());
+    }
+
+    @Test
+    void ensureBound_passesAssetEnvToGateway() {
+        Sandbox asset = onlineAsset(false, 1, 8);
+        asset.setEnv(Map.of("API_KEY", "secret", "MODE", "prod"));
+        when(sandboxFactory.buildSandboxByNum("SBX1")).thenReturn(asset);
+        when(runtimeRepository.findBoundBySessionNum("SES-ENV")).thenReturn(Optional.empty());
+        when(runtimeRepository.countAlive("SBX1")).thenReturn(0L);
+        when(sandboxContainerGateway.create(any(), anyInt(), anyInt(), nullable(String.class), nullable(Map.class)))
+                .thenReturn("os-env");
+
+        String id = sandboxPoolService.ensureBound("SBX1", "SES-ENV", "u1");
+
+        assertEquals("os-env", id);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> envCap = ArgumentCaptor.forClass(Map.class);
+        verify(sandboxContainerGateway).create(any(), anyInt(), anyInt(), nullable(String.class), envCap.capture());
+        assertEquals("secret", envCap.getValue().get("API_KEY"));
+        assertEquals("prod", envCap.getValue().get("MODE"));
     }
 
     @Test
@@ -186,7 +208,7 @@ class SandboxPoolServiceTest {
         when(sandboxFactory.buildSandboxByNum("SBX1")).thenReturn(asset);
         when(runtimeRepository.findBoundBySessionNum("SES-MERGE")).thenReturn(Optional.empty());
         when(runtimeRepository.countAlive("SBX1")).thenReturn(0L);
-        when(sandboxContainerGateway.create(any(), anyInt(), anyInt())).thenAnswer(inv -> {
+        when(sandboxContainerGateway.create(any(), anyInt(), anyInt(), nullable(String.class), nullable(Map.class))).thenAnswer(inv -> {
             Thread.sleep(200);
             return "os-merged";
         });
@@ -205,7 +227,7 @@ class SandboxPoolServiceTest {
         assertEquals("os-merged", f1.get(5, TimeUnit.SECONDS));
         assertEquals("os-merged", f2.get(5, TimeUnit.SECONDS));
         pool.shutdownNow();
-        verify(sandboxContainerGateway, times(1)).create(any(), anyInt(), anyInt());
+        verify(sandboxContainerGateway, times(1)).create(any(), anyInt(), anyInt(), nullable(String.class), nullable(Map.class));
     }
 
     @Test
@@ -235,7 +257,7 @@ class SandboxPoolServiceTest {
                 .thenReturn(Optional.empty());
         when(sandboxContainerGateway.isAlive("os-dead")).thenReturn(false);
         when(runtimeRepository.countAlive("SBX1")).thenReturn(0L);
-        when(sandboxContainerGateway.create(any(), anyInt(), anyInt())).thenReturn("os-new");
+        when(sandboxContainerGateway.create(any(), anyInt(), anyInt(), nullable(String.class), nullable(Map.class))).thenReturn("os-new");
         Session session = new Session();
         session.setNum("SES1");
         session.setAgentNum("AGT1");
@@ -247,7 +269,7 @@ class SandboxPoolServiceTest {
         assertEquals("os-new", id);
         verify(sandboxContainerGateway).kill("os-dead");
         verify(runtimeRepository).softDelete("SRI1");
-        verify(sandboxContainerGateway).create(any(), anyInt(), anyInt());
+        verify(sandboxContainerGateway).create(any(), anyInt(), anyInt(), nullable(String.class), nullable(Map.class));
     }
 
     @Test
@@ -308,14 +330,15 @@ class SandboxPoolServiceTest {
         when(sandboxFactory.buildSandboxByNum("SBX1")).thenReturn(asset);
         when(runtimeRepository.findBoundBySessionNum("SES9")).thenReturn(Optional.empty());
         when(runtimeRepository.countAlive("SBX1")).thenReturn(0L);
-        when(sandboxContainerGateway.create(any(), anyInt(), anyInt(), eq("WS1/AGT9/SES9")))
+        when(sandboxContainerGateway.create(any(), anyInt(), anyInt(), eq("WS1/AGT9/SES9"), nullable(Map.class)))
                 .thenReturn("os-iso");
 
         String id = sandboxPoolService.ensureBound("SBX1", "SES9", "u1", "AGT9");
 
         assertEquals("os-iso", id);
         verify(runtimeRepository, never()).listBySandboxAndStatus(anyString(), any());
-        verify(sandboxContainerGateway, never()).create(any(), anyInt(), anyInt());
+        verify(sandboxContainerGateway).create(
+                any(), anyInt(), anyInt(), eq("WS1/AGT9/SES9"), nullable(Map.class));
         verify(sandboxContainerGateway, atLeastOnce()).renew(eq("os-iso"), anyInt());
     }
 

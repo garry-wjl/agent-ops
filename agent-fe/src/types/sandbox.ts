@@ -55,6 +55,8 @@ export interface SandboxVO {
   maxConcurrent?: number;
   /** 会话空闲 TTL（分钟） */
   sessionIdleTtlMinutes?: number;
+  /** 创建容器时注入的环境变量（后端明文；前端展示打码） */
+  env?: Record<string, string>;
   /** 创建人工号 */
   createNo: string;
   /** 更新人工号 */
