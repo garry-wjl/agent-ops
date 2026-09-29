@@ -40,7 +40,7 @@ public class DockerCli {
      * @return 容器 ID（短/长均可）
      */
     public String runDetached(String name, String image, String cpu, int memoryMb, Map<String, String> labels) {
-        return runDetached(name, image, cpu, memoryMb, labels, null);
+        return runDetached(name, image, cpu, memoryMb, labels, null, null);
     }
 
     /**
@@ -49,6 +49,16 @@ public class DockerCli {
      */
     public String runDetached(String name, String image, String cpu, int memoryMb,
                                Map<String, String> labels, String hostWorkspace) {
+        return runDetached(name, image, cpu, memoryMb, labels, hostWorkspace, null);
+    }
+
+    /**
+     * @param hostWorkspace 宿主机目录，非空时绑定到容器 {@code /workspace}
+     * @param env           注入容器的环境变量（可空）
+     * @return 容器 ID
+     */
+    public String runDetached(String name, String image, String cpu, int memoryMb,
+                               Map<String, String> labels, String hostWorkspace, Map<String, String> env) {
         List<String> cmd = new ArrayList<>();
         cmd.add("docker");
         cmd.add("run");
@@ -69,6 +79,15 @@ public class DockerCli {
         if (hostWorkspace != null && !hostWorkspace.isBlank()) {
             cmd.add("-v");
             cmd.add(hostWorkspace + ":/workspace");
+        }
+        if (env != null) {
+            for (Map.Entry<String, String> e : env.entrySet()) {
+                if (e.getKey() == null || e.getKey().isBlank()) {
+                    continue;
+                }
+                cmd.add("-e");
+                cmd.add(e.getKey() + "=" + (e.getValue() == null ? "" : e.getValue()));
+            }
         }
         if (labels != null) {
             for (Map.Entry<String, String> e : labels.entrySet()) {

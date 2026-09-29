@@ -8,6 +8,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.util.Map;
 
 /**
  * 真实 OpenSandbox 容器网关（默认启用）。
@@ -23,18 +24,19 @@ public class OpenSandboxContainerGateway implements SandboxContainerGateway {
     private SandboxProperties sandboxProperties;
 
     @Override
-    public String create(BigDecimal cpu, int memoryMb, int aliveMinutes) {
-        return sandboxClient.create(cpu, memoryMb, aliveMinutes);
+    public String create(BigDecimal cpu, int memoryMb, int aliveMinutes,
+                         String workspaceSubPath, Map<String, String> env) {
+        if (isolatesWorkspaceBySession()
+                && workspaceSubPath != null
+                && !workspaceSubPath.isBlank()) {
+            return sandboxClient.create(cpu, memoryMb, aliveMinutes, workspaceSubPath, env);
+        }
+        return sandboxClient.create(cpu, memoryMb, aliveMinutes, env);
     }
 
     @Override
     public boolean isolatesWorkspaceBySession() {
         return sandboxProperties.getOss() != null && sandboxProperties.getOss().isEnabled();
-    }
-
-    @Override
-    public String create(BigDecimal cpu, int memoryMb, int aliveMinutes, String workspaceSubPath) {
-        return sandboxClient.create(cpu, memoryMb, aliveMinutes, workspaceSubPath);
     }
 
     @Override

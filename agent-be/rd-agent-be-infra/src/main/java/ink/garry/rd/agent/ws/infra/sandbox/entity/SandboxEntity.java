@@ -7,10 +7,15 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import ink.garry.rd.agent.ws.domain.sandbox.Sandbox;
 import ink.garry.rd.agent.ws.domain.sandbox.valueobject.SandboxStatus;
 import ink.garry.rd.agent.ws.domain.sandbox.valueobject.SandboxType;
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.TypeReference;
 import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * 沙箱资产持久化实体（对应表 {@code sandbox}）。
@@ -81,6 +86,10 @@ public class SandboxEntity {
     @TableField("session_idle_ttl_minutes")
     private Integer sessionIdleTtlMinutes;
 
+    /** 容器环境变量 JSON object&lt;string,string&gt; */
+    @TableField("env_json")
+    private String envJson;
+
     /** 创建人工号 */
     @TableField("create_no")
     private String createNo;
@@ -128,6 +137,7 @@ public class SandboxEntity {
         s.setPoolSize(e.getPoolSize());
         s.setMaxConcurrent(e.getMaxConcurrent());
         s.setSessionIdleTtlMinutes(e.getSessionIdleTtlMinutes());
+        s.setEnv(parseEnvJson(e.getEnvJson()));
         s.setCreateNo(e.getCreateNo());
         s.setUpdateNo(e.getUpdateNo());
         s.setDeleted(e.getDeleted());
@@ -161,11 +171,31 @@ public class SandboxEntity {
         e.setPoolSize(s.getPoolSize());
         e.setMaxConcurrent(s.getMaxConcurrent());
         e.setSessionIdleTtlMinutes(s.getSessionIdleTtlMinutes());
+        e.setEnvJson(serializeEnv(s.getEnv()));
         e.setCreateNo(s.getCreateNo());
         e.setUpdateNo(s.getUpdateNo());
         e.setDeleted(s.getDeleted() == null ? 0 : s.getDeleted());
         e.setCreateTime(s.getCreateTime());
         e.setUpdateTime(s.getUpdateTime());
         return e;
+    }
+
+    private static Map<String, String> parseEnvJson(String json) {
+        if (json == null || json.isBlank()) {
+            return Collections.emptyMap();
+        }
+        try {
+            Map<String, String> map = JSON.parseObject(json, new TypeReference<LinkedHashMap<String, String>>() {});
+            return map == null ? Collections.emptyMap() : map;
+        } catch (Exception ex) {
+            return Collections.emptyMap();
+        }
+    }
+
+    private static String serializeEnv(Map<String, String> env) {
+        if (env == null || env.isEmpty()) {
+            return null;
+        }
+        return JSON.toJSONString(env);
     }
 }

@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Map;
 
 /**
  * 沙箱 DTO（列表项 / 命令返回，application 层边界）。
@@ -62,6 +63,9 @@ public class SandboxDTO {
 
     /** 会话空闲 TTL（分钟） */
     private Integer sessionIdleTtlMinutes;
+
+    /** 创建容器时注入的环境变量 */
+    private Map<String, String> env;
 
     /** 创建人工号 */
     private String createNo;

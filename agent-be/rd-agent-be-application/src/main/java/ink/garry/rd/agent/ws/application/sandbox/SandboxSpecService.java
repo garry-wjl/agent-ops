@@ -7,6 +7,7 @@ import ink.garry.rd.agent.ws.client.sandbox.constant.SandboxConstants;
 import ink.garry.rd.agent.ws.client.sandbox.dto.SandboxSpecParam;
 import ink.garry.rd.agent.ws.domain.sandbox.Sandbox;
 import ink.garry.rd.agent.ws.domain.sandbox.factory.SandboxFactory;
+import ink.garry.rd.agent.ws.domain.sandbox.valueobject.SandboxEnvVars;
 import ink.garry.rd.agent.ws.domain.sandbox.valueobject.SandboxType;
 import ink.garry.rd.agent.ws.facade.exception.BusinessException;
 import ink.garry.rd.agent.ws.infra.common.constant.LockKeyConstant;
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -68,6 +70,15 @@ public class SandboxSpecService {
         int maxConcurrent = spec.getMaxConcurrent() != null ? spec.getMaxConcurrent() : 8;
         int idleTtl = spec.getSessionIdleTtlMinutes() != null ? spec.getSessionIdleTtlMinutes() : 10;
         validateSpec(cpu, memoryMb, aliveMinutes);
+        final boolean envProvided = spec.getEnv() != null;
+        Map<String, String> envNormalized = Map.of();
+        if (envProvided) {
+            try {
+                envNormalized = SandboxEnvVars.normalize(spec.getEnv());
+            } catch (IllegalArgumentException ex) {
+                throw new BusinessException(BizCode.INVALID_PARAM.getCode(), ex.getMessage());
+            }
+        }
 
         String lockKey = LockKeyConstant.SANDBOX_COMMAND_LOCK_PREFIX
                 + "agent:" + agentNum;
@@ -95,6 +106,9 @@ public class SandboxSpecService {
                 existing.setAliveMinutes(aliveMinutes);
                 existing.setMaxConcurrent(maxConcurrent);
                 existing.setSessionIdleTtlMinutes(idleTtl);
+                if (envProvided) {
+                    existing.setEnv(envNormalized);
+                }
                 existing.setRemark(spec.getRemark());
                 existing.setPoolEnabled(Boolean.FALSE);
                 existing.setOwnerAgentNum(agentNum);
@@ -109,6 +123,7 @@ public class SandboxSpecService {
             created.setPoolEnabled(Boolean.FALSE);
             created.setMaxConcurrent(maxConcurrent);
             created.setSessionIdleTtlMinutes(idleTtl);
+            created.setEnv(envProvided ? envNormalized : Map.of());
             created.activateAsSpec(operatorId);
             log.info("[sandbox-spec] created ref={} agentNum={}", created.getNum(), agentNum);
             return created.getNum();
@@ -152,6 +167,7 @@ public class SandboxSpecService {
         copy.setPoolEnabled(Boolean.FALSE);
         copy.setMaxConcurrent(source.getMaxConcurrent());
         copy.setSessionIdleTtlMinutes(source.getSessionIdleTtlMinutes());
+        copy.setEnv(source.getEnv());
         copy.activateAsSpec(operatorId);
         log.info("[sandbox-spec] cloned from={} to={} agentNum={}", sourceRef, copy.getNum(), agentNum);
         return copy.getNum();

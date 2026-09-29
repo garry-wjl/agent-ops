@@ -23,6 +23,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -394,16 +395,17 @@ public class SandboxPoolService {
                         "沙箱并发实例已达上限（" + maxConcurrent + "），请稍后重试或扩大 maxConcurrent");
             }
             String osId;
+            Map<String, String> env = asset.getEnv();
             if (isolate) {
                 osId = sandboxContainerGateway.create(
-                        asset.getCpu(), asset.getMemoryMb(), asset.getAliveMinutes(), subPath);
-                log.info("[sandbox-pool] session workspace sandboxNum={} sessionNum={} subPath={} instanceId={}",
-                        sandboxNum, sessionNum, subPath, osId);
+                        asset.getCpu(), asset.getMemoryMb(), asset.getAliveMinutes(), subPath, env);
+                log.info("[sandbox-pool] session workspace sandboxNum={} sessionNum={} subPath={} instanceId={} envKeys={}",
+                        sandboxNum, sessionNum, subPath, osId, env == null ? 0 : env.size());
             } else {
                 osId = sandboxContainerGateway.create(
-                        asset.getCpu(), asset.getMemoryMb(), asset.getAliveMinutes());
-                log.info("[sandbox-pool] create+bind sandboxNum={} sessionNum={} instanceId={}",
-                        sandboxNum, sessionNum, osId);
+                        asset.getCpu(), asset.getMemoryMb(), asset.getAliveMinutes(), null, env);
+                log.info("[sandbox-pool] create+bind sandboxNum={} sessionNum={} instanceId={} envKeys={}",
+                        sandboxNum, sessionNum, osId, env == null ? 0 : env.size());
             }
             String sri = sandboxGateway.generateRuntimeInstanceNum();
             LocalDateTime now = LocalDateTime.now();

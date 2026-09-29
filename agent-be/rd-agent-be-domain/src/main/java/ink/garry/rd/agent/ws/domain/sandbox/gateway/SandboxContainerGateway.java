@@ -1,6 +1,7 @@
 package ink.garry.rd.agent.ws.domain.sandbox.gateway;
 
 import java.math.BigDecimal;
+import java.util.Map;
 
 /**
  * 远程沙箱容器生命周期网关（OpenSandbox 或 Mock）。
@@ -10,14 +11,39 @@ import java.math.BigDecimal;
 public interface SandboxContainerGateway {
 
     /**
-     * 按规格创建远程容器。
+     * 按规格创建远程容器（可挂会话工作空间、可注入环境变量）。
+     *
+     * @param cpu              CPU 核数
+     * @param memoryMb         内存 MB
+     * @param aliveMinutes     容器 TTL 分钟
+     * @param workspaceSubPath 会话卷 subPath；未开隔离或空时忽略
+     * @param env              环境变量（可空）
+     * @return 远程 instanceId
+     */
+    String create(BigDecimal cpu, int memoryMb, int aliveMinutes,
+                  String workspaceSubPath, Map<String, String> env);
+
+    /**
+     * 按规格创建远程容器（无 subPath / env）。
      *
      * @param cpu          CPU 核数
      * @param memoryMb     内存 MB
      * @param aliveMinutes 容器 TTL 分钟
      * @return 远程 instanceId
      */
-    String create(BigDecimal cpu, int memoryMb, int aliveMinutes);
+    default String create(BigDecimal cpu, int memoryMb, int aliveMinutes) {
+        return create(cpu, memoryMb, aliveMinutes, null, null);
+    }
+
+    /**
+     * 按规格创建远程容器并注入环境变量（无会话 subPath）。
+     *
+     * @param env 环境变量（可空）
+     * @return 远程 instanceId
+     */
+    default String create(BigDecimal cpu, int memoryMb, int aliveMinutes, Map<String, String> env) {
+        return create(cpu, memoryMb, aliveMinutes, null, env);
+    }
 
     /**
      * 是否把工作空间按会话挂到独立 OSS 前缀。
@@ -31,13 +57,13 @@ public interface SandboxContainerGateway {
     }
 
     /**
-     * 创建并挂上会话工作空间。未开启隔离时忽略 subPath，行为与 {@link #create(BigDecimal, int, int)} 相同。
+     * 创建并挂上会话工作空间（无额外环境变量）。
      *
      * @param workspaceSubPath {@code workspaceNum/agentNum/sessionNum}，可空
      * @return 远程 instanceId
      */
     default String create(BigDecimal cpu, int memoryMb, int aliveMinutes, String workspaceSubPath) {
-        return create(cpu, memoryMb, aliveMinutes);
+        return create(cpu, memoryMb, aliveMinutes, workspaceSubPath, null);
     }
 
     /**

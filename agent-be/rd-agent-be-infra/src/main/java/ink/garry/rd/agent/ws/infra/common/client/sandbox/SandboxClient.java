@@ -115,19 +115,35 @@ public class SandboxClient {
      * @return 新建容器的 sandboxId
      */
     public String create(BigDecimal cpu, int memoryMb, int aliveMinutes) {
+        return create(cpu, memoryMb, aliveMinutes, (Map<String, String>) null);
+    }
+
+    /**
+     * 按规格新建沙箱容器，并注入环境变量。
+     *
+     * @param cpu          CPU 核数
+     * @param memoryMb     内存 MB
+     * @param aliveMinutes 存活分钟
+     * @param env          环境变量（可空）
+     * @return sandboxId
+     */
+    public String create(BigDecimal cpu, int memoryMb, int aliveMinutes, Map<String, String> env) {
         String cpuMillis = cpu.multiply(BigDecimal.valueOf(1000))
                 .setScale(0, RoundingMode.HALF_UP).toPlainString() + "m";
         String memory = memoryMb + "Mi";
-        try (Sandbox sandbox = Sandbox.builder()
+        Sandbox.Builder builder = Sandbox.builder()
                 .image(properties.getImage())
                 .resource(Map.of("cpu", cpuMillis, "memory", memory))
                 .timeout(Duration.ofMinutes(aliveMinutes))
                 .manualCleanup()
-                .connectionConfig(connectionConfig)
-                .build()) {
+                .connectionConfig(connectionConfig);
+        if (env != null && !env.isEmpty()) {
+            builder = builder.env(env);
+        }
+        try (Sandbox sandbox = builder.build()) {
             String sandboxId = sandbox.getId();
-            log.info("sandbox created by spec, id={}, cpu={}, memory={}, aliveMinutes={}",
-                    sandboxId, cpuMillis, memory, aliveMinutes);
+            log.info("sandbox created by spec, id={}, cpu={}, memory={}, aliveMinutes={}, envKeys={}",
+                    sandboxId, cpuMillis, memory, aliveMinutes, env == null ? 0 : env.size());
             return sandboxId;
         }
     }
@@ -139,6 +155,18 @@ public class SandboxClient {
      * @return 新建容器的 sandboxId
      */
     public String create(BigDecimal cpu, int memoryMb, int aliveMinutes, String workspaceSubPath) {
+        return create(cpu, memoryMb, aliveMinutes, workspaceSubPath, null);
+    }
+
+    /**
+     * 按规格创建容器（可挂 PVC + 注入环境变量）。
+     *
+     * @param workspaceSubPath 会话卷 subPath
+     * @param env              环境变量（可空）
+     * @return sandboxId
+     */
+    public String create(BigDecimal cpu, int memoryMb, int aliveMinutes,
+                         String workspaceSubPath, Map<String, String> env) {
         Volume volume = isolatesWorkspaceBySession()
                 ? OssWorkspaceVolumeFactory.build(properties.getOss(), workspaceSubPath)
                 : null;
@@ -154,10 +182,14 @@ public class SandboxClient {
         if (volume != null) {
             builder = builder.volume(volume);
         }
+        if (env != null && !env.isEmpty()) {
+            builder = builder.env(env);
+        }
         try (Sandbox sandbox = builder.build()) {
             String sandboxId = sandbox.getId();
-            log.info("sandbox created by spec, id={}, cpu={}, memory={}, aliveMinutes={}, workspaceSubPath={}",
-                    sandboxId, cpuMillis, memory, aliveMinutes, workspaceSubPath);
+            log.info("sandbox created by spec, id={}, cpu={}, memory={}, aliveMinutes={}, workspaceSubPath={}, envKeys={}",
+                    sandboxId, cpuMillis, memory, aliveMinutes, workspaceSubPath,
+                    env == null ? 0 : env.size());
             return sandboxId;
         }
     }
