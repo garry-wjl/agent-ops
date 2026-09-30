@@ -43,6 +43,9 @@ export interface UseInvokeStreamState {
   usage?: ChatUsage;
   totalLatencyMs?: number;
   error?: string;
+  /** 会话沙箱状态（event: Sandbox.Status）；纯对话无此字段 */
+  sandboxPhase?: string;
+  sandboxStatusMessage?: string;
 }
 
 const initial: UseInvokeStreamState = {
@@ -444,6 +447,19 @@ export function useInvokeStream() {
               flushFinal({ loading: false, error: parsed.data?.message ?? '调用失败' });
               abortRef.current?.abort();
               abortRef.current = null;
+              return;
+            }
+            if (parsed.event === 'Sandbox.Status') {
+              const phase = parsed.data?.phase;
+              const message = parsed.data?.message;
+              setState((prev) => ({
+                ...prev,
+                sandboxPhase: phase,
+                sandboxStatusMessage: message,
+                ...(phase === 'FAILED' && message
+                  ? { error: prev.error ?? `沙箱准备失败：${message}` }
+                  : {}),
+              }));
               return;
             }
             // parsed.event === 'message'：BE 不设 event 名，全部走这一路

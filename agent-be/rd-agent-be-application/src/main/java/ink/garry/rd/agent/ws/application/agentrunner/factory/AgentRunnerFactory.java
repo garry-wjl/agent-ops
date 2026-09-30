@@ -14,11 +14,15 @@ import ink.garry.rd.agent.ws.application.agentrunner.tool.SandboxTool;
 import ink.garry.rd.agent.ws.application.attachment.query.AttachmentQueryService;
 import ink.garry.rd.agent.ws.application.common.prompt.SysPromptVariableSubstitutor;
 import ink.garry.rd.agent.ws.application.sandbox.SandboxQueryService;
+import ink.garry.rd.agent.ws.application.sandbox.lifecycle.SessionSandboxLifecycleService;
+import ink.garry.rd.agent.ws.application.sandbox.lifecycle.SessionSandboxSkillProjector;
 import ink.garry.rd.agent.ws.application.sandbox.pool.SandboxPoolService;
 import ink.garry.rd.agent.ws.application.tool.ToolQueryService;
 import ink.garry.rd.agent.ws.application.tool.factory.ToolRunnerFactory;
 import ink.garry.rd.agent.ws.infra.agentscope.harness.opensandbox.OpenSandboxExecBridge;
 import ink.garry.rd.agent.ws.infra.agentscope.harness.opensandbox.OpenSandboxFilesystemSpec;
+import ink.garry.rd.agent.ws.infra.agentscope.harness.opensandbox.OpenSandboxUserManagedContextFactory;
+import io.agentscope.harness.agent.sandbox.SandboxContext;
 import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContextHolder;
 import ink.garry.rd.agent.ws.client.agent.dto.AgentDTO;
 import ink.garry.rd.agent.ws.client.sandbox.dto.SandboxDetailDTO;
@@ -89,6 +93,12 @@ public class AgentRunnerFactory {
 
     @Resource
     private SandboxPoolService sandboxPoolService;
+
+    @Resource
+    private SessionSandboxLifecycleService sessionSandboxLifecycleService;
+
+    @Resource
+    private SessionSandboxSkillProjector sessionSandboxSkillProjector;
 
     /** v4.0：按 ConfigSnapshot.modelId（模型管理 num）解析运行时凭证（modelId/baseUrl/解密 apiKey）。 */
     @Resource
@@ -228,13 +238,12 @@ public class AgentRunnerFactory {
             SandboxDetailDTO sandboxDetailDTO = null;
             if (sandboxBound) {
                 sandboxDetailDTO = sandboxQueryService.getDetail(agent.getConfigSnapshot().getSandboxRef());
-                String instanceId = sandboxPoolService.ensureBound(
-                        agent.getConfigSnapshot().getSandboxRef(),
-                        sessionNum,
-                        "agent-runner",
-                        agent.getNum());
-                // 覆盖详情中的 instance，供后续 filesystem / 资源上传使用
-                if (sandboxDetailDTO != null && sandboxDetailDTO.getSandbox() != null) {
+                // 懒绑定：不在 build 同步 ensureBound；优先用预热/已绑定实例，否则留给首次工具执行
+                String instanceId = StrUtil.blankToDefault(
+                        sessionSandboxLifecycleService.readyInstanceId(sessionNum),
+                        sandboxPoolService.boundInstanceId(sessionNum));
+                if (sandboxDetailDTO != null && sandboxDetailDTO.getSandbox() != null
+                        && StrUtil.isNotBlank(instanceId)) {
                     sandboxDetailDTO.getSandbox().setSandboxInstanceId(instanceId);
                 }
             } else {
@@ -258,10 +267,16 @@ public class AgentRunnerFactory {
             List<AgentSkill> boundSkills = loadBoundSkills(agent.getConfigSnapshot());
             BoundSkillRepository boundSkillRepository = new BoundSkillRepository(boundSkills);
 
-            //3.2.1 若绑定了沙箱，将技能资源文件写入沙箱容器
+            //3.2.1 若绑定了沙箱，将技能资源写入容器（已有实例则同步；否则 defer 到 READY）
             if (sandboxBound && sandboxDetailDTO != null) {
-                String instanceId = sandboxDetailDTO.getSandbox().getSandboxInstanceId();
-                uploadSkillResourcesToSandbox(boundSkills, instanceId, sessionNum);
+                String instanceId = sandboxDetailDTO.getSandbox() != null
+                        ? sandboxDetailDTO.getSandbox().getSandboxInstanceId() : null;
+                if (StrUtil.isNotBlank(instanceId)) {
+                    uploadSkillResourcesToSandbox(boundSkills, instanceId, sessionNum);
+                    sessionSandboxSkillProjector.cancel(sessionNum);
+                } else {
+                    sessionSandboxSkillProjector.defer(sessionNum, boundSkills);
+                }
             }
             if (Boolean.TRUE.equals(agent.getConfigSnapshot().getEnableLongTermMemory())) {
                 String operatorId = vars == null ? null : vars.get("OPERATOR_ID");
@@ -411,6 +426,54 @@ public class AgentRunnerFactory {
             log.error("Agent创建模式错误：{}", agent.getCreationMode());
             throw new IllegalArgumentException("Agent创建模式错误");
         }
+    }
+
+    /**
+     * 为本轮 invoke 构造 Harness user-managed {@link SandboxContext}。
+     * <p>
+     * instanceId 可空（预热未完成）：首次工具执行经 bridge 懒绑定；注入后 SandboxManager
+     * 走 externalSandbox，release 不再 shutdown，会话 {@code /workspace} 跨轮保留。
+     *
+     * @param agentNum      Agent 编号
+     * @param sessionNum    会话编号
+     * @param targetVersion 调试目标版本（可空）
+     * @return 可注入的 context；无沙箱或未绑定时 null
+     */
+    public SandboxContext buildUserManagedSandboxContext(
+            String agentNum, String sessionNum, String targetVersion) {
+        if (StrUtil.isBlank(agentNum) || StrUtil.isBlank(sessionNum) || openSandboxExecBridge == null) {
+            return null;
+        }
+        AgentDTO agent = agentQueryService.loadAgentForDebug(agentNum, targetVersion);
+        if (agent == null || agent.getConfigSnapshot() == null) {
+            return null;
+        }
+        String sandboxRef = agent.getConfigSnapshot().getSandboxRef();
+        if (StrUtil.isBlank(sandboxRef)) {
+            return null;
+        }
+        String instanceId = StrUtil.blankToDefault(
+                sessionSandboxLifecycleService.readyInstanceId(sessionNum),
+                sandboxPoolService.boundInstanceId(sessionNum));
+        long ttl = 10L;
+        try {
+            SandboxDetailDTO detail = sandboxQueryService.getDetail(sandboxRef);
+            if (detail != null && detail.getSandbox() != null
+                    && detail.getSandbox().getAliveMinutes() != null) {
+                ttl = detail.getSandbox().getAliveMinutes();
+            }
+        } catch (Exception e) {
+            log.warn("[sandbox] resolve aliveMinutes for user-managed context failed ref={}: {}",
+                    sandboxRef, e.getMessage());
+        }
+        return OpenSandboxUserManagedContextFactory.create(
+                openSandboxExecBridge,
+                instanceId,
+                sessionNum,
+                sandboxRef,
+                agent.getNum(),
+                Map.of(),
+                ttl);
     }
 
     /**

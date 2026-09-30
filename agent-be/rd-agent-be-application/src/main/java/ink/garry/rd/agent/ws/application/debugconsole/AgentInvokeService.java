@@ -1,5 +1,6 @@
 package ink.garry.rd.agent.ws.application.debugconsole;
 
+import ink.garry.rd.agent.ws.application.agentrunner.AgentInvokeFrame;
 import ink.garry.rd.agent.ws.application.agentrunner.AgentRunnerService;
 import ink.garry.rd.agent.ws.application.agentrunner.InvokeContentNormalizer;
 import ink.garry.rd.agent.ws.application.agentrunner.NormalizedInvokeContent;
@@ -77,6 +78,20 @@ public class AgentInvokeService {
                                     Map<String, Object> context) {
         NormalizedInvokeContent content = invokeContentNormalizer.normalize(input, attachments);
         return agentRunnerService.runAgent(
+                agentNum, content, sessionNum, operatorId, targetVersion, "DEBUG_CONSOLE", context);
+    }
+
+    /**
+     * 调试台 SSE：Agent Event + {@code Sandbox.Status} 统一帧。
+     */
+    @Transactional
+    public Flux<AgentInvokeFrame> invokeStreamFrames(String agentNum, Object input,
+                                                       List<AttachmentRefParam> attachments,
+                                                       String sessionNum, String operatorId,
+                                                       String targetVersion,
+                                                       Map<String, Object> context) {
+        NormalizedInvokeContent content = invokeContentNormalizer.normalize(input, attachments);
+        return agentRunnerService.runAgentFrames(
                 agentNum, content, sessionNum, operatorId, targetVersion, "DEBUG_CONSOLE", context);
     }
 }

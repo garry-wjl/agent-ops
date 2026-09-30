@@ -82,13 +82,15 @@ public class OpenSandboxClient implements SandboxClient<OpenSandboxClientOptions
             SandboxSnapshotSpec snapshotSpec,
             OpenSandboxClientOptions options) {
         Objects.requireNonNull(options, "options");
-        if (options.getInstanceId() == null || options.getInstanceId().isBlank()) {
-            throw new SandboxException.SandboxConfigurationException(
-                    "OpenSandbox instanceId is required (platform-provisioned container)");
-        }
         if (options.getSessionNum() == null || options.getSessionNum().isBlank()) {
             throw new SandboxException.SandboxConfigurationException(
                     "OpenSandbox sessionNum is required for SESSION isolation");
+        }
+        // instanceId 可空：后台预热未完成时先挂句柄，首次 exec 经 bridge.resolveInstanceId 懒绑定
+        if ((options.getInstanceId() == null || options.getInstanceId().isBlank())
+                && (options.getSandboxNum() == null || options.getSandboxNum().isBlank())) {
+            throw new SandboxException.SandboxConfigurationException(
+                    "OpenSandbox requires instanceId or sandboxNum for lazy bind");
         }
 
         String harnessSessionId = UUID.randomUUID().toString();

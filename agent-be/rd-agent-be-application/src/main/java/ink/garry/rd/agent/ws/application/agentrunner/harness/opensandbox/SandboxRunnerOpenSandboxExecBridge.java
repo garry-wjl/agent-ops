@@ -5,6 +5,8 @@ import com.alibaba.opensandbox.sandbox.domain.models.execd.executions.ExecutionE
 import com.alibaba.opensandbox.sandbox.domain.models.execd.executions.ExecutionLogs;
 import com.alibaba.opensandbox.sandbox.domain.models.execd.executions.OutputMessage;
 import com.alibaba.opensandbox.sandbox.domain.models.execd.executions.RunInSessionRequest;
+import ink.garry.rd.agent.ws.application.sandbox.lifecycle.SessionSandboxLifecycleService;
+import ink.garry.rd.agent.ws.application.sandbox.lifecycle.SessionSandboxSkillProjector;
 import ink.garry.rd.agent.ws.application.sandbox.pool.SandboxPoolService;
 import ink.garry.rd.agent.ws.application.sandbox.runner.SandboxRunner;
 import ink.garry.rd.agent.ws.application.sandbox.runner.SandboxSession;
@@ -32,13 +34,18 @@ public class SandboxRunnerOpenSandboxExecBridge implements OpenSandboxExecBridge
 
     private final SandboxRunner sandboxRunner;
     private final SandboxPoolService sandboxPoolService;
+    private final SessionSandboxLifecycleService sessionSandboxLifecycleService;
+    private final SessionSandboxSkillProjector sessionSandboxSkillProjector;
 
     @Override
     public String resolveInstanceId(
             String instanceId, String sessionNum, String sandboxNum, String agentNum) {
         try {
-            return sandboxPoolService.ensureAliveOrRebind(
+            // 用户真正用沙箱：未就绪则推 Sandbox.Status PREPARING
+            String live = sessionSandboxLifecycleService.ensureAliveOrRebindForUse(
                     sessionNum, instanceId, sandboxNum, agentNum, "agent-exec");
+            sessionSandboxSkillProjector.flush(sessionNum, live);
+            return live;
         } catch (Exception e) {
             log.warn("[opensandbox-exec] resolveInstanceId failed sessionNum={}: {}",
                     sessionNum, e.getMessage());
@@ -102,7 +109,7 @@ public class SandboxRunnerOpenSandboxExecBridge implements OpenSandboxExecBridge
         log.warn("[opensandbox-exec] container dead, rebind once sessionNum={} oldId={}: {}",
                 sessionNum, instanceId, first.getMessage());
         // 强制走 ensureBound：先清死绑定
-        String live = sandboxPoolService.ensureAliveOrRebind(
+        String live = sessionSandboxLifecycleService.ensureAliveOrRebindForUse(
                 sessionNum, instanceId, null, null, "agent-exec-rebind");
         if (live == null || live.equals(instanceId)) {
             throw new IllegalStateException(

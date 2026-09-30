@@ -185,11 +185,23 @@ export interface AgentScopeEvent {
 
 /**
  * FE 内部解析后的统一壳子。
- * BE 当前不设置 SSE 的 event: 字段，故全部落入 'message' 通道携带 AgentScopeEvent；
- * 'error' 通道仅在 FE 自己 onError 兜底时构造，不来自 BE 协议。
+ * - 默认通道 event 缺省时为 'message'，携带 AgentScopeEvent
+ * - {@code event: Sandbox.Status}：会话沙箱状态机（PREPARING/READY/FAILED）
+ * - 'error' 通道仅在 FE 自己 onError 兜底时构造
  */
+export type SandboxStatusPhase = 'IDLE' | 'PREPARING' | 'READY' | 'FAILED';
+
+export interface SandboxStatusPayload {
+  sessionNum?: string;
+  phase: SandboxStatusPhase | string;
+  instanceId?: string;
+  message?: string;
+  ts?: number;
+}
+
 export type SsePlatformEvent =
   | { event: 'message'; data: AgentScopeEvent }
+  | { event: 'Sandbox.Status'; data: SandboxStatusPayload }
   | { event: 'error'; data: { code?: number; message: string; trace_id?: string } };
 
 /* ============================================================
