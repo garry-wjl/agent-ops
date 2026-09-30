@@ -8,6 +8,7 @@ import ink.garry.rd.agent.ws.application.agentrunner.harness.HarnessUserMemorySy
 import ink.garry.rd.agent.ws.application.attachment.command.AttachmentCommandService;
 import ink.garry.rd.agent.ws.application.common.prompt.SysPromptVariableSubstitutor;
 import ink.garry.rd.agent.ws.application.debugconsole.SegmentAccumulator;
+import ink.garry.rd.agent.ws.application.sandbox.lifecycle.SessionSandboxLifecycleService;
 import ink.garry.rd.agent.ws.application.session.SessionCommandService;
 import ink.garry.rd.agent.ws.client.session.dto.SessionDTO;
 import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContextHolder;
@@ -24,6 +25,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.sandbox.SandboxContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -59,6 +61,9 @@ public class AgentRunnerService {
 
     @Resource
     private HarnessUserMemorySync harnessUserMemorySync;
+
+    @Resource
+    private SessionSandboxLifecycleService sessionSandboxLifecycleService;
 
     /**
      * 运行 Agent（生产/默认入口：当前在线版本）。
@@ -121,11 +126,26 @@ public class AgentRunnerService {
     }
 
     /**
-     * 运行 Agent（多模态 / 附件入口）。
+     * 运行 Agent（多模态 / 附件入口）— 仅 AgentScope Event（评测等消费者）。
      */
     public Flux<Event> runAgent(String agentNum, NormalizedInvokeContent content, String sessionNum,
                                 String operatorId, String targetVersion, String origin,
                                 Map<String, Object> context) {
+        return runAgentFrames(agentNum, content, sessionNum, operatorId, targetVersion, origin, context)
+                .filter(AgentInvokeFrame::isAgentEvent)
+                .map(AgentInvokeFrame::getAgentEvent);
+    }
+
+    /**
+     * 运行 Agent 并合并会话沙箱状态帧（调试台 / Open SSE）。
+     * <p>
+     * 订阅 {@link SessionSandboxLifecycleService}：用户路径首次用沙箱时推送
+     * {@code event: Sandbox.Status}；纯对话不阻塞、预热未订阅则不打扰 UI。
+     */
+    public Flux<AgentInvokeFrame> runAgentFrames(String agentNum, NormalizedInvokeContent content,
+                                                   String sessionNum, String operatorId,
+                                                   String targetVersion, String origin,
+                                                   Map<String, Object> context) {
         Assert.notNull(content, "invoke content 不能为空");
         //1. 确定会话(沙箱工具按 sessionNum 绑定复用容器,故须先于 build 确定)
         Map<String, Object> sessionContext;
@@ -184,17 +204,25 @@ public class AgentRunnerService {
         // transformEvent 拦截 REASONING 事件，将标签内文本转为 ThinkingBlock，上游无感。
         AtomicBoolean inThinkTag = new AtomicBoolean(false);
 
-        RuntimeContext runtimeContext = RuntimeContext.builder()
+        RuntimeContext.Builder runtimeBuilder = RuntimeContext.builder()
                 .userId(StrUtil.blankToDefault(operatorId, "anonymous"))
-                .sessionId(finalSessionNum)
-                .build();
+                .sessionId(finalSessionNum);
+        // 方案 B：注入 user-managed SandboxContext，避免 Harness 每轮 shutdown 清 /workspace
+        if (agent instanceof HarnessAgent) {
+            SandboxContext userManaged = agentRunnerFactory.buildUserManagedSandboxContext(
+                    agentNum, finalSessionNum, targetVersion);
+            if (userManaged != null) {
+                runtimeBuilder.put(SandboxContext.class, userManaged);
+            }
+        }
+        RuntimeContext runtimeContext = runtimeBuilder.build();
 
         // 注意：agent.stream(...) 是惰性 Flux；HarnessAgent 使用带 RuntimeContext 的重载以隔离 (userId, sessionId)。
         Flux<Event> eventFlux = agent instanceof HarnessAgent harnessAgent
                 ? harnessAgent.stream(msg, runtimeContext)
                 : agent.stream(msg);
 
-        return eventFlux
+        Flux<AgentInvokeFrame> agentFrames = eventFlux
                 .map(event -> transformEvent(event, inThinkTag))
                 .doOnNext(acc::accept)
                 .doOnNext(usageAcc::accept)
@@ -211,15 +239,24 @@ public class AgentRunnerService {
                                                 acc.toContentBlocksJson(),
                                                 finalSessionNum,
                                                 operatorId))
-                                .subscribeOn(Schedulers.boundedElastic())          // 切换到弹性线程池执行
-                                .then(Mono.just(event));                             // 存完后发射原始 item
+                                .subscribeOn(Schedulers.boundedElastic())
+                                .then(Mono.just(AgentInvokeFrame.agent(event)));
                     }
-                    return Flux.just(event);
+                    return Flux.just(AgentInvokeFrame.agent(event));
                 })
                 // AGENT_RESULT 后主动 complete，避免上游 agent.stream 挂起导致 SSE 半关闭、前端 loading 卡死
-                .takeUntil(event -> event.isLast() && EventType.AGENT_RESULT.equals(event.getType()))
+                .takeUntil(frame -> frame.isAgentEvent()
+                        && frame.getAgentEvent().isLast()
+                        && EventType.AGENT_RESULT.equals(frame.getAgentEvent().getType()))
                 .doOnComplete(() -> harnessUserMemorySync.capture(
                         agentNum, targetVersion, finalSessionNum, operatorId));
+
+        // publish 避免 merge + takeUntilOther 对冷流双重订阅导致 Agent 跑两遍
+        return agentFrames.publish(shared -> Flux.merge(
+                sessionSandboxLifecycleService.subscribe(finalSessionNum)
+                        .map(AgentInvokeFrame::sandboxStatus)
+                        .takeUntilOther(shared.ignoreElements()),
+                shared));
     }
 
     private static NormalizedInvokeContent textOnly(String input) {

@@ -1,5 +1,7 @@
 package ink.garry.rd.agent.ws.application.agentrunner.harness.opensandbox;
 
+import ink.garry.rd.agent.ws.application.sandbox.lifecycle.SessionSandboxLifecycleService;
+import ink.garry.rd.agent.ws.application.sandbox.lifecycle.SessionSandboxSkillProjector;
 import ink.garry.rd.agent.ws.application.sandbox.pool.SandboxPoolService;
 import ink.garry.rd.agent.ws.infra.agentscope.harness.opensandbox.OpenSandboxCommandResult;
 import ink.garry.rd.agent.ws.infra.agentscope.harness.opensandbox.OpenSandboxExecBridge;
@@ -24,13 +26,17 @@ public class DockerOpenSandboxExecBridge implements OpenSandboxExecBridge {
 
     private final DockerCli dockerCli;
     private final SandboxPoolService sandboxPoolService;
+    private final SessionSandboxLifecycleService sessionSandboxLifecycleService;
+    private final SessionSandboxSkillProjector sessionSandboxSkillProjector;
 
     @Override
     public String resolveInstanceId(
             String instanceId, String sessionNum, String sandboxNum, String agentNum) {
         try {
-            return sandboxPoolService.ensureAliveOrRebind(
+            String live = sessionSandboxLifecycleService.ensureAliveOrRebindForUse(
                     sessionNum, instanceId, sandboxNum, agentNum, "docker-exec");
+            sessionSandboxSkillProjector.flush(sessionNum, live);
+            return live;
         } catch (Exception e) {
             log.warn("[docker-opensandbox-exec] resolveInstanceId failed sessionNum={}: {}",
                     sessionNum, e.getMessage());
@@ -91,7 +97,7 @@ public class DockerOpenSandboxExecBridge implements OpenSandboxExecBridge {
 
     private String tryRebind(String sessionNum, String instanceId, String sandboxNum, String agentNum) {
         try {
-            return sandboxPoolService.ensureAliveOrRebind(
+            return sessionSandboxLifecycleService.ensureAliveOrRebindForUse(
                     sessionNum, instanceId, sandboxNum, agentNum, "docker-exec-rebind");
         } catch (Exception ex) {
             log.warn("[docker-opensandbox-exec] rebind failed: {}", ex.getMessage());

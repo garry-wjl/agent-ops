@@ -45,18 +45,26 @@ public class OpenSandboxHarnessSandbox extends AbstractBaseSandbox {
     }
 
     /**
-     * 不销毁平台容器；仅尝试清理 workspace 目录。
+     * Harness 每轮 release 可能调用本方法。
+     * <p>
+     * 平台供给容器（{@code containerOwned=false}）时<strong>不</strong>清理 {@code /workspace}：
+     * 会话级文件系统应跨多轮 Agent 调用保留；目录随平台 {@code kill}/回收销毁。
+     * 仅在 SPI 自持容器（{@code containerOwned=true}）时尝试 {@link #doDestroyWorkspace()}。
      *
-     * @throws Exception 清理失败时上抛（目录清理失败仅打日志）
+     * @throws Exception 自持容器清理失败时上抛（目录清理失败仅打日志）
      */
     @Override
     public void shutdown() throws Exception {
-        if (openState.isContainerOwned()) {
-            log.warn(
-                    "[sandbox-opensandbox] containerOwned=true but kill is not implemented; "
-                            + "rely on platform lifecycle. instanceId={}",
+        if (!openState.isContainerOwned()) {
+            log.debug(
+                    "[sandbox-opensandbox] skip workspace destroy (platform-owned session FS) instanceId={}",
                     openState.getInstanceId());
+            return;
         }
+        log.warn(
+                "[sandbox-opensandbox] containerOwned=true but kill is not implemented; "
+                        + "destroy workspace only. instanceId={}",
+                openState.getInstanceId());
         try {
             doDestroyWorkspace();
         } catch (Exception e) {

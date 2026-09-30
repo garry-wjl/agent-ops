@@ -1,6 +1,6 @@
 package ink.garry.rd.agent.ws.adapter.open;
 
-import ink.garry.rd.agent.ws.adapter.common.SseEventTransformer;
+import ink.garry.rd.agent.ws.adapter.common.AgentInvokeSseMapper;
 import ink.garry.rd.agent.ws.adapter.common.SseKeepAlive;
 import ink.garry.rd.agent.ws.adapter.config.BaseController;
 import ink.garry.rd.agent.ws.adapter.security.ApiKeyAuthenticationFilter;
@@ -21,7 +21,6 @@ import ink.garry.rd.agent.ws.facade.common.Result;
 import ink.garry.rd.agent.ws.facade.exception.BusinessException;
 import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContext;
 import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContextHolder;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -95,23 +94,11 @@ public class OpenAgentController {
         bindOpenWorkspace(req);
         invokeContentNormalizer.normalize(param.getInput(), param.getAttachments());
         return SseKeepAlive.withHeartbeat(
-                openAgentInvokeService.invoke(
+                AgentInvokeSseMapper.toSse(
+                        openAgentInvokeService.invokeFrames(
                                 param.getAgentNum(), param.getInput(), param.getAttachments(),
-                                param.getSessionNum(), param.getOperatorId(), param.getContext())
-                        .map(event -> {
-                            try {
-                                JsonNode root = objectMapper.valueToTree(event);
-                                SseEventTransformer.transformFormatJsonResults(root);
-                                return ServerSentEvent.<String>builder()
-                                        .data(objectMapper.writeValueAsString(root))
-                                        .build();
-                            } catch (Exception e) {
-                                log.error("SSE 事件变换失败", e);
-                                return ServerSentEvent.<String>builder()
-                                        .data("{}")
-                                        .build();
-                            }
-                        }));
+                                param.getSessionNum(), param.getOperatorId(), param.getContext()),
+                        objectMapper));
     }
 
     /**

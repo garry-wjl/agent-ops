@@ -3,6 +3,7 @@ package ink.garry.rd.agent.ws.application.sandbox.pool;
 import cn.hutool.core.util.StrUtil;
 import ink.garry.rd.agent.ws.application.agent.AgentQueryService;
 import ink.garry.rd.agent.ws.application.sandbox.SandboxQueryService;
+import ink.garry.rd.agent.ws.application.sandbox.lifecycle.SessionSandboxLifecycleService;
 import ink.garry.rd.agent.ws.client.agent.dto.AgentDTO;
 import ink.garry.rd.agent.ws.client.sandbox.dto.SandboxDTO;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.CreationMode;
@@ -13,7 +14,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 /**
- * 会话创建后异步预热沙箱绑定（claim/create），避免卡在首条消息。
+ * 会话创建后异步预热沙箱绑定（静默推进状态机，不向对话 SSE 推 PREPARING）。
  */
 @Slf4j
 @Service
@@ -24,10 +25,10 @@ public class SandboxSessionPrewarmService {
     @Resource
     private SandboxQueryService sandboxQueryService;
     @Resource
-    private SandboxPoolService sandboxPoolService;
+    private SessionSandboxLifecycleService sessionSandboxLifecycleService;
 
     /**
-     * 异步预热：CONFIG Agent 且绑定在线沙箱时 ensureBound。
+     * 异步预热：CONFIG Agent 且绑定在线沙箱时 ensureBound（silent）。
      *
      * @param agentNum   Agent 编号
      * @param sessionNum 会话编号
@@ -53,7 +54,8 @@ public class SandboxSessionPrewarmService {
                 log.info("[sandbox-prewarm] skip non-online sandbox agentNum={} ref={}", agentNum, ref);
                 return;
             }
-            String instanceId = sandboxPoolService.ensureBound(ref, sessionNum, operatorId, agentNum);
+            String instanceId = sessionSandboxLifecycleService.ensureBoundSilent(
+                    ref, sessionNum, operatorId, agentNum);
             log.info("[sandbox-prewarm] bound agentNum={} sessionNum={} instanceId={}",
                     agentNum, sessionNum, instanceId);
         } catch (Exception e) {

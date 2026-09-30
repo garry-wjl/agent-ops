@@ -86,7 +86,9 @@ interface ChatMessage {
   durationLabel?: string;
   /** Token 用量文案，如 `820 tokens (in 700 / out 120)` */
   usageLabel?: string;
-}
+  /** 会话沙箱状态（Sandbox.Status） */
+  sandboxPhase?: string;
+};
 
 const COLOR = {
   divider: '#E5E7EB',
@@ -415,6 +417,7 @@ export default function ConsolePage() {
           usageLabel: stream.loading
             ? undefined
             : formatUsageLabel(stream.usage),
+          sandboxPhase: stream.sandboxPhase,
         };
       }
       return next;
@@ -426,6 +429,7 @@ export default function ConsolePage() {
     stream.loading,
     stream.totalLatencyMs,
     stream.usage,
+    stream.sandboxPhase,
   ]);
 
   useEffect(() => {
@@ -1264,7 +1268,7 @@ function AssistantMessage(props: {
           />
         ) : msg.status === 'streaming' ? (
           // 已发请求但首帧未到 — 显示 timeline 风格脉冲占位,与后续段衔接自然
-          <StreamingPlaceholder />
+          <StreamingPlaceholder sandboxPhase={msg.sandboxPhase} />
         ) : (
           // 历史回放降级：thinking → 正文 → 工具链（BE 持久化未保留交错顺序）
           // 此分支必然非 streaming(上层已分流),streaming 参数固定 false
@@ -1338,7 +1342,13 @@ function ActionButton(props: {
  * 视觉上沿用 timeline(贯穿竖线 + 圆点),圆点带脉冲动画并附"Agent 正在处理中"文案。
  * 首帧到达后,AssistantMessage 会切换到 AssistantSegmentList,timeline 结构保持连贯。
  */
-function StreamingPlaceholder() {
+function StreamingPlaceholder({ sandboxPhase }: { sandboxPhase?: string }) {
+  const label =
+    sandboxPhase === 'PREPARING'
+      ? '沙箱准备中…'
+      : sandboxPhase === 'FAILED'
+        ? '沙箱准备失败'
+        : 'Agent 正在处理中';
   return (
     <div className="agent-timeline">
       <div
@@ -1346,7 +1356,7 @@ function StreamingPlaceholder() {
         style={{ minHeight: 24, display: 'flex', alignItems: 'center' }}
       >
         <span className="agent-timeline-dot agent-timeline-dot-pulse" />
-        <span style={{ color: COLOR.textMuted, fontSize: 13 }}>Agent 正在处理中</span>
+        <span style={{ color: COLOR.textMuted, fontSize: 13 }}>{label}</span>
       </div>
     </div>
   );

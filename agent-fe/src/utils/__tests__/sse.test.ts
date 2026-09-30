@@ -92,4 +92,55 @@ describe('invokeStream SSE heartbeat comments', () => {
 
     expect(error?.message).toBe('无权限操作该会话');
   });
+
+  it('parses event: Sandbox.Status separately from message', async () => {
+    const store = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        store.set(k, v);
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+    });
+
+    const payload =
+      'event: Sandbox.Status\ndata: {"sessionNum":"SES1","phase":"PREPARING","ts":1}\n\n' +
+      'data: {"type":"REASONING","isLast":false}\n\n';
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(payload));
+        controller.close();
+      },
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        body: stream,
+        headers: {
+          get: (name: string) =>
+            name.toLowerCase() === 'content-type'
+              ? 'text/event-stream;charset=UTF-8'
+              : null,
+        },
+      }),
+    );
+
+    const events: Array<{ event: string; data: unknown }> = [];
+    await invokeStream({ url: '/api/v1/debug-console/invoke', body: {} }, {
+      onEvent: (e) => events.push(e),
+    });
+
+    expect(events).toHaveLength(2);
+    expect(events[0].event).toBe('Sandbox.Status');
+    expect(events[0].data).toEqual({
+      sessionNum: 'SES1',
+      phase: 'PREPARING',
+      ts: 1,
+    });
+    expect(events[1].event).toBe('message');
+    expect((events[1].data as { type: string }).type).toBe('REASONING');
+  });
 });

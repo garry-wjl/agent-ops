@@ -1,5 +1,6 @@
 package ink.garry.rd.agent.ws.application.agent;
 
+import ink.garry.rd.agent.ws.application.agentrunner.AgentInvokeFrame;
 import ink.garry.rd.agent.ws.application.agentrunner.AgentRunnerService;
 import ink.garry.rd.agent.ws.application.agentrunner.InvokeContentNormalizer;
 import ink.garry.rd.agent.ws.application.agentrunner.NormalizedInvokeContent;
@@ -75,6 +76,18 @@ public class OpenAgentInvokeService {
                               String sessionNum, String operatorId, Map<String, Object> context) {
         NormalizedInvokeContent content = invokeContentNormalizer.normalize(input, attachments);
         return agentRunnerService.runAgent(
+                agentNum, content, sessionNum, resolveOperator(operatorId), null, "API", context);
+    }
+
+    /**
+     * 对外 SSE：Agent Event + {@code Sandbox.Status} 统一帧。
+     */
+    public Flux<AgentInvokeFrame> invokeFrames(String agentNum, String input,
+                                                 List<AttachmentRefParam> attachments,
+                                                 String sessionNum, String operatorId,
+                                                 Map<String, Object> context) {
+        NormalizedInvokeContent content = invokeContentNormalizer.normalize(input, attachments);
+        return agentRunnerService.runAgentFrames(
                 agentNum, content, sessionNum, resolveOperator(operatorId), null, "API", context);
     }
 
