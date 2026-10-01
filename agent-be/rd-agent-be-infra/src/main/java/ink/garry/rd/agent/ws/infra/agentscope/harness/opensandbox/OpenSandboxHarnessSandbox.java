@@ -10,6 +10,7 @@ import java.io.InputStream;
 import java.util.Base64;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -18,8 +19,11 @@ import org.slf4j.LoggerFactory;
  * <p>
  * 命令经 {@link OpenSandboxExecBridge} 走到平台会话复用（应用层通常包装 {@code SandboxRunner#obtainSession}
  * + {@code runInSession}）。workspace 根固定为状态中的路径（默认 {@code /workspace}）；
- * persist/hydrate 用 tar+base64 over exec（首期默认 {@code NoopSnapshotSpec} 时 persist 不会被 stop 触发，
- * 但 start 投影仍可能调用 hydrate）。
+ * persist/hydrate 用 tar+base64 over exec（首期默认 {@code NoopSnapshotSpec} 时 persist 不会被 stop 触发）。
+ * <p>
+ * <b>懒启动</b>：Harness 每轮 {@code stream} 都会 {@code acquire → start()}。本实现的
+ * {@link #start()} <strong>不</strong>触发 {@code ensureBound}/远端 mkdir，把绑定推迟到首次
+ * {@link #doExec} / 写文件，避免纯对话被沙箱冷启动阻塞。
  */
 public class OpenSandboxHarnessSandbox extends AbstractBaseSandbox {
 
@@ -35,6 +39,15 @@ public class OpenSandboxHarnessSandbox extends AbstractBaseSandbox {
     private final OpenSandboxExecBridge execBridge;
 
     /**
+     * 本地「已 start」标记（不代表远端容器已 ensure）。
+     * 父类 {@code running} 为 private，故用本字段承接懒启动语义。
+     */
+    private final AtomicBoolean locallyStarted = new AtomicBoolean(false);
+
+    /** 远端 workspace 根是否已在本句柄上 mkdir 成功。 */
+    private final AtomicBoolean remoteWorkspacePrepared = new AtomicBoolean(false);
+
+    /**
      * @param state      OpenSandbox 状态
      * @param execBridge 执行桥
      */
@@ -42,6 +55,34 @@ public class OpenSandboxHarnessSandbox extends AbstractBaseSandbox {
         super(state);
         this.openState = Objects.requireNonNull(state, "state");
         this.execBridge = Objects.requireNonNull(execBridge, "execBridge");
+    }
+
+    /**
+     * Harness 每轮 stream 入口会调用；此处故意不做远端 ensure/probe/mkdir。
+     * <p>
+     * 真实绑定与 workspace 初始化见 {@link #ensureRemoteWorkspacePrepared()}（首次 exec 时）。
+     */
+    @Override
+    public void start() {
+        locallyStarted.set(true);
+        log.debug(
+                "[sandbox-opensandbox] lazy start (defer ensure/mkdir) sessionNum={} instanceId={}",
+                openState.getSessionNum(),
+                openState.getInstanceId());
+    }
+
+    /**
+     * 与懒 {@link #start()} 配对：不触发远端 persist/ensure（Noop 快照下本就无持久化）。
+     */
+    @Override
+    public void stop() {
+        openState.setWorkspaceRootReady(true);
+        locallyStarted.set(false);
+    }
+
+    @Override
+    public boolean isRunning() {
+        return locallyStarted.get();
     }
 
     /**
@@ -79,6 +120,7 @@ public class OpenSandboxHarnessSandbox extends AbstractBaseSandbox {
      * 在会话 bash 中执行命令；cwd 切到 workspace 根。
      * <p>非 0 退出码仍返回 {@link ExecResult}（供 probe / 文件工具语义），不抛异常；
      * 连接失败等基础设施错误才上抛。
+     * <p>首次调用会 {@code resolveInstanceId}（可能 ensureBound）并 mkdir workspace。
      *
      * @param runtimeContext 可空（内部 probe 为 null）
      * @param command        shell 命令
@@ -89,7 +131,7 @@ public class OpenSandboxHarnessSandbox extends AbstractBaseSandbox {
     protected ExecResult doExec(RuntimeContext runtimeContext, String command, int timeoutSeconds)
             throws Exception {
         String wrapped = wrapWithWorkspaceCd(command);
-        String instanceId = resolveLiveInstanceId();
+        String instanceId = ensureRemoteWorkspacePrepared();
         try {
             OpenSandboxCommandResult raw =
                     execBridge.exec(
@@ -124,7 +166,7 @@ public class OpenSandboxHarnessSandbox extends AbstractBaseSandbox {
                         + " . 2>/dev/null | base64 -w0 2>/dev/null || tar -cf - -C "
                         + shellSingleQuote(root)
                         + " . 2>/dev/null | base64";
-        String instanceId = resolveLiveInstanceId();
+        String instanceId = ensureRemoteWorkspacePrepared();
         OpenSandboxCommandResult raw =
                 execBridge.exec(
                         instanceId,
@@ -164,14 +206,13 @@ public class OpenSandboxHarnessSandbox extends AbstractBaseSandbox {
         Objects.requireNonNull(archive, "archive");
         byte[] tarBytes = archive.readAllBytes();
         String root = getWorkspaceRoot();
-        doSetupWorkspace();
+        String instanceId = ensureRemoteWorkspacePrepared();
         if (tarBytes.length == 0) {
             return;
         }
         String b64 = Base64.getEncoder().encodeToString(tarBytes);
         String tmpPath =
                 "/tmp/as_ws_hydrate_" + UUID.randomUUID().toString().replace("-", "") + ".b64";
-        String instanceId = resolveLiveInstanceId();
         execBridge.writeTextFile(
                 instanceId,
                 openState.getSessionNum(),
@@ -204,24 +245,11 @@ public class OpenSandboxHarnessSandbox extends AbstractBaseSandbox {
     }
 
     /**
-     * {@code mkdir -p} workspace 根。
+     * {@code mkdir -p} workspace 根（经 {@link #ensureRemoteWorkspacePrepared()}，会懒 ensure）。
      */
     @Override
     protected void doSetupWorkspace() throws Exception {
-        String root = getWorkspaceRoot();
-        String instanceId = resolveLiveInstanceId();
-        OpenSandboxCommandResult raw =
-                execBridge.exec(
-                        instanceId,
-                        openState.getSessionNum(),
-                        openState.getEnv(),
-                        openState.getTtlMinutes(),
-                        "mkdir -p " + shellSingleQuote(root));
-        if (raw.normalizedExitCode() != 0) {
-            throw new SandboxException.SandboxRuntimeException(
-                    SandboxErrorCode.WORKSPACE_START_ERROR,
-                    "mkdir workspace failed: " + raw.safeStderr());
-        }
+        ensureRemoteWorkspacePrepared();
     }
 
     /**
@@ -260,6 +288,44 @@ public class OpenSandboxHarnessSandbox extends AbstractBaseSandbox {
     private String wrapWithWorkspaceCd(String command) {
         String root = getWorkspaceRoot();
         return "cd " + shellSingleQuote(root) + " && " + command;
+    }
+
+    /**
+     * 首次真实使用时：resolve/ensure 实例 + mkdir workspace；之后同句柄复用。
+     *
+     * @return 可用 instanceId
+     */
+    private String ensureRemoteWorkspacePrepared() throws Exception {
+        String existingId = openState.getInstanceId();
+        if (remoteWorkspacePrepared.get() && existingId != null && !existingId.isBlank()) {
+            return resolveLiveInstanceId();
+        }
+        synchronized (this) {
+            String instanceId = resolveLiveInstanceId();
+            if (remoteWorkspacePrepared.get()) {
+                return instanceId;
+            }
+            String root = getWorkspaceRoot();
+            OpenSandboxCommandResult raw =
+                    execBridge.exec(
+                            instanceId,
+                            openState.getSessionNum(),
+                            openState.getEnv(),
+                            openState.getTtlMinutes(),
+                            "mkdir -p " + shellSingleQuote(root));
+            if (raw.normalizedExitCode() != 0) {
+                throw new SandboxException.SandboxRuntimeException(
+                        SandboxErrorCode.WORKSPACE_START_ERROR,
+                        "mkdir workspace failed: " + raw.safeStderr());
+            }
+            openState.setWorkspaceRootReady(true);
+            remoteWorkspacePrepared.set(true);
+            log.debug(
+                    "[sandbox-opensandbox] remote workspace prepared sessionNum={} instanceId={}",
+                    openState.getSessionNum(),
+                    instanceId);
+            return instanceId;
+        }
     }
 
     /**

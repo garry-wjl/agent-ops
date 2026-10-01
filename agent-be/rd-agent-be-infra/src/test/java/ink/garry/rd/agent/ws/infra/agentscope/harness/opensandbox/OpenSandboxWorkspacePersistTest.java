@@ -8,10 +8,13 @@ import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
@@ -127,5 +130,67 @@ class OpenSandboxWorkspacePersistTest {
                 .sandboxNum("SBX-X")
                 .agentNum("AGT-X");
         assertNotNull(client.create(workspaceSpec, new io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec(), options));
+    }
+
+    @Test
+    void start_doesNotTouchBridge_evenWhenInstanceBlank() throws Exception {
+        OpenSandboxSandboxState state = new OpenSandboxSandboxState();
+        state.setSessionId("hs-lazy");
+        state.setSessionNum("sess-lazy");
+        state.setSandboxNum("SBX1");
+        state.setAgentNum("AGT1");
+        state.setTtlMinutes(10L);
+        state.setWorkspaceRoot("/workspace");
+        state.setContainerOwned(false);
+        WorkspaceSpec spec = new WorkspaceSpec();
+        spec.setRoot("/workspace");
+        state.setWorkspaceSpec(spec);
+        OpenSandboxHarnessSandbox lazy = new OpenSandboxHarnessSandbox(state, bridge);
+
+        lazy.start();
+
+        assertTrue(lazy.isRunning());
+        verifyNoInteractions(bridge);
+    }
+
+    @Test
+    void acquireStart_userManaged_doesNotEnsureOnStart() throws Exception {
+        SandboxContext ctx = OpenSandboxUserManagedContextFactory.create(
+                bridge, null, "sess-1", "SBX1", "AGT1", Map.of(), 10L);
+        assertNotNull(ctx);
+
+        OpenSandboxClient client = new OpenSandboxClient(bridge);
+        SessionSandboxStateStore store = mock(SessionSandboxStateStore.class);
+        SandboxManager manager = new SandboxManager(client, store, "agent-1");
+
+        SandboxAcquireResult acquired = manager.acquire(ctx, RuntimeContext.empty());
+        assertNotNull(acquired);
+        acquired.getSandbox().start();
+
+        verify(bridge, never()).resolveInstanceId(
+                nullable(String.class), anyString(), nullable(String.class), nullable(String.class));
+        verify(bridge, never()).exec(
+                nullable(String.class), anyString(), anyMap(), anyLong(), anyString());
+    }
+
+    @Test
+    void firstDoExec_resolvesAndMkdirs() throws Exception {
+        when(bridge.resolveInstanceId(eq("sbx-1"), eq("sess-1"), isNull(), isNull()))
+                .thenReturn("sbx-1");
+        when(bridge.exec(eq("sbx-1"), eq("sess-1"), anyMap(), eq(10L), contains("mkdir -p")))
+                .thenReturn(new OpenSandboxCommandResult(0, "", ""));
+        when(bridge.exec(eq("sbx-1"), eq("sess-1"), anyMap(), eq(10L), contains("echo hi")))
+                .thenReturn(new OpenSandboxCommandResult(0, "ok", ""));
+
+        platformSandbox.start();
+        verifyNoInteractions(bridge);
+
+        var result = platformSandbox.exec(RuntimeContext.empty(), "echo hi", 30);
+        assertNotNull(result);
+        assertTrue(result.ok());
+
+        verify(bridge).resolveInstanceId(eq("sbx-1"), eq("sess-1"), isNull(), isNull());
+        verify(bridge).exec(eq("sbx-1"), eq("sess-1"), anyMap(), eq(10L), contains("mkdir -p"));
+        verify(bridge).exec(eq("sbx-1"), eq("sess-1"), anyMap(), eq(10L), contains("echo hi"));
     }
 }
