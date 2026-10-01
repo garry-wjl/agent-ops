@@ -6,7 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -45,7 +47,11 @@ class OpenSandboxHarnessSandboxDoExecTest {
 
     @Test
     void doExec_shouldCdToWorkspaceAndMapStdout() throws Exception {
-        when(bridge.exec(eq("sbx-1"), eq("sess-1"), anyMap(), eq(45L), anyString()))
+        when(bridge.resolveInstanceId(eq("sbx-1"), eq("sess-1"), isNull(), isNull()))
+                .thenReturn("sbx-1");
+        when(bridge.exec(eq("sbx-1"), eq("sess-1"), anyMap(), eq(45L), contains("mkdir -p")))
+                .thenReturn(new OpenSandboxCommandResult(0, "", ""));
+        when(bridge.exec(eq("sbx-1"), eq("sess-1"), anyMap(), eq(45L), contains("echo hello")))
                 .thenReturn(new OpenSandboxCommandResult(0, "hello\n", ""));
 
         ExecResult result = sandbox.exec(null, "echo hello", 30);
@@ -64,7 +70,11 @@ class OpenSandboxHarnessSandboxDoExecTest {
 
     @Test
     void doExec_nonzeroExit_shouldReturnResultWithoutThrowing() throws Exception {
-        when(bridge.exec(anyString(), anyString(), anyMap(), anyLong(), anyString()))
+        when(bridge.resolveInstanceId(anyString(), anyString(), isNull(), isNull()))
+                .thenReturn("sbx-1");
+        when(bridge.exec(anyString(), anyString(), anyMap(), anyLong(), contains("mkdir -p")))
+                .thenReturn(new OpenSandboxCommandResult(0, "", ""));
+        when(bridge.exec(anyString(), anyString(), anyMap(), anyLong(), contains("false")))
                 .thenReturn(new OpenSandboxCommandResult(7, "out", "boom"));
 
         ExecResult result = sandbox.exec(null, "false", 10);
