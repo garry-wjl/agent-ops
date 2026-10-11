@@ -61,6 +61,16 @@ public enum BizCode {
     INVOKE_TIMEOUT(4001, "invoke 超时"),
     LLM_QUOTA_EXCEEDED(4002, "LLM 配额不足"),
     SSE_INTERRUPTED(4003, "SSE 中断"),
+    /** 续传：run 不存在或已过期 */
+    RUN_NOT_FOUND(4004, "调用 run 不存在或已过期"),
+    /** 续传：run 已结束，请拉会话历史 */
+    RUN_NOT_RUNNING(4005, "调用 run 已结束"),
+    /** Last-Event-ID 非法或不属于该 run */
+    CURSOR_INVALID(4006, "Last-Event-ID 非法"),
+    /** 事件缓冲已淘汰，无法从该 cursor 续传 */
+    CURSOR_EXPIRED(4007, "事件游标已过期"),
+    /** 同一 session 已有进行中的 run */
+    SESSION_BUSY(4008, "会话已有进行中的调用"),
 
     // ---- Attachment（41xx）----
     ATTACHMENT_INVALID(4101, "附件参数非法"),

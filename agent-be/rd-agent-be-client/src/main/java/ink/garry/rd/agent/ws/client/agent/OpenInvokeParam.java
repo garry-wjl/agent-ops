@@ -44,4 +44,19 @@ public class OpenInvokeParam {
     /** 本轮附件引用列表；可空 */
     @Valid
     private List<AttachmentRefParam> attachments;
+
+    /**
+     * 纯续传：为 true 时不启新一轮模型，仅从缓冲重放/跟随。
+     * 也可通过 lastEventId + 空 input 隐式进入续传。
+     */
+    private Boolean resume;
+
+    /** 可选 runId；续传时更稳 */
+    private String runId;
+
+    /**
+     * 已收到的最后一条 SSE id（{@code runId:seq}），续传从下一条开始。
+     * 亦可由请求头 {@code Last-Event-ID} 传入。
+     */
+    private String lastEventId;
 }

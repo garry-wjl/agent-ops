@@ -92,6 +92,15 @@ const SSE_ACCEPT_HEADER: FieldDoc = {
   description: '建议 text/event-stream（SSE 调用）',
 };
 
+const LAST_EVENT_ID_HEADER: FieldDoc = {
+  name: 'Last-Event-ID',
+  location: 'header',
+  type: 'string',
+  required: false,
+  description:
+    'SSE 标准续传游标，格式 runId:seq（与最近一帧的 id 相同）。与 body.lastEventId 二选一，body 优先；配合空 input/attachments 或 resume=true 进入续传',
+};
+
 const RESULT_FIELDS: FieldDoc[] = [
   { name: 'code', type: 'number', required: true, description: '业务码；0 表示成功' },
   { name: 'message', type: 'string', required: true, description: '提示信息' },
@@ -101,39 +110,155 @@ const RESULT_FIELDS: FieldDoc[] = [
 
 const EVENT_RESPONSE_GROUPS: FieldGroup[] = [
   {
-    title: 'SSE 帧',
-    description: '每帧仅含 data 行：data: <Event JSON>；鉴权等失败时可能直接返回 application/json 的 Result，而非 SSE。',
+    title: '① 推荐客户端处理流程（对接必读）',
+    description:
+      '按帧解析 SSE 块（以空行分隔）。先看有无 event 行，再看 data。每帧更新 lastEventId=id。以 run_finished 作为本轮订阅结束（不要只靠 AGENT_RESULT 关连接）。断线后用 resume + lastEventId 续传，勿重复提交用户 input。',
     fields: [
       {
-        name: 'data',
-        type: 'Event (JSON)',
+        name: 'step1',
+        type: 'parse',
         required: true,
-        description: 'AgentScope Event 对象，字段见下表',
+        description: '解析块内 id: / event: / data:；以 : 开头的行为 comment（如 :heartbeat），忽略',
+      },
+      {
+        name: 'step2',
+        type: 'dispatch',
+        required: true,
+        description:
+          '若 event 为 run_started | run_finished | Sandbox.Status → 走控制帧；若无 event 行 → 按 data.type 走业务帧',
+      },
+      {
+        name: 'step3',
+        type: 'cursor',
+        required: true,
+        description: '有 id 则 lastEventId=id（格式 RUN…:数字）；续传原样回传',
+      },
+      {
+        name: 'step4',
+        type: 'lifecycle',
+        required: true,
+        description:
+          'run_started：记 runId/sessionNum；业务帧：渲染；run_finished：结束 loading（status=FAILED 当失败）',
+      },
+      {
+        name: 'step5',
+        type: 'resume',
+        required: true,
+        description:
+          '网络断开：同一接口 POST，resume=true + lastEventId（或 Header Last-Event-ID），input/attachments 留空；从断点后续帧开始，无重复、不重跑',
       },
     ],
   },
   {
-    title: 'Event',
+    title: '② SSE 帧（通用字段）',
+    description:
+      '开跑与 HTTP 订阅解耦：事件先入 Redis Stream 再下发；断开不中止推理。空闲约每 10s `:heartbeat`。进入 SSE 前的错误为 application/json Result，不会出现 SSE event=error。',
+    fields: [
+      {
+        name: 'id',
+        type: 'string',
+        required: true,
+        description: 'SSE id = {runId}:{seq}，seq 从 1 单调递增；续传游标',
+      },
+      {
+        name: 'event',
+        type: 'string',
+        required: false,
+        description:
+          '有则三选一：run_started | run_finished | Sandbox.Status；无 event 行 = AgentScope 业务帧',
+      },
+      {
+        name: 'data',
+        type: 'JSON',
+        required: true,
+        description: '控制帧见下表；业务帧为 Event 对象（含 type/message/isLast/…）',
+      },
+    ],
+  },
+  {
+    title: '③ 控制帧总览（有 event 名）',
+    description:
+      '先匹配 event，再解析 data。run_started / run_finished 的 data 字段值均为 JSON 字符串（非 number/boolean）。',
+    fields: [
+      {
+        name: 'run_started',
+        type: 'control',
+        required: true,
+        description:
+          '本轮第一帧。data: { runId, sessionNum, agentNum, status:"RUNNING" }（值均为 string）。必须保存 runId、sessionNum',
+      },
+      {
+        name: 'Sandbox.Status',
+        type: 'control',
+        required: false,
+        description:
+          '沙箱状态（Agent 未挂沙箱工具时可能整轮不下发）。data: { sessionNum, phase, instanceId?, message?, ts }；phase=IDLE|PREPARING|READY|FAILED；ts 为 number（epoch ms）',
+      },
+      {
+        name: 'run_finished',
+        type: 'control',
+        required: true,
+        description:
+          '本轮终态，订阅应结束。data: { runId, status }（string）；status=DONE|FAILED|CANCELLED。续传已收齐时可能再补一条合成帧（seq=lastSeq+1）',
+      },
+    ],
+  },
+  {
+    title: '④ 业务帧 · Event.type（无 event 名时看 data.type）',
+    description:
+      'data 为 AgentScope Event JSON。典型顺序：多次 REASONING（流式）↔ TOOL_RESULT（多轮 ReAct）→ AGENT_RESULT → 随后还有 run_finished。ALL 仅作服务端过滤，一般不下发。',
+    fields: [
+      {
+        name: 'REASONING',
+        type: 'EventType',
+        required: true,
+        description:
+          '主展示通道：LLM 文本/思考/发起工具。可多 chunk（isLast=false…true）。遍历 message.content：text 拼回复；thinking 拼思考；tool_use 展示工具调用（见 fragment 协议）',
+      },
+      {
+        name: 'TOOL_RESULT',
+        type: 'EventType',
+        required: false,
+        description:
+          '工具执行结果。content 内 type=tool_result，用 id 关联先前 tool_use；output 为 ContentBlock[]（常含 text）',
+      },
+      {
+        name: 'HINT',
+        type: 'EventType',
+        required: false,
+        description: 'RAG/Memory/Plan 等提示，单条；UI 可折叠或忽略',
+      },
+      {
+        name: 'AGENT_RESULT',
+        type: 'EventType',
+        required: true,
+        description:
+          '本轮 Agent 业务结束帧。message.usage 为本轮汇总 Token（多轮 ReAct 已累加）。内容可能与 REASONING 重复，UI 通常只取 usage；流尚未结束，仍须等 run_finished',
+      },
+      {
+        name: 'SUMMARY',
+        type: 'EventType',
+        required: false,
+        description: '触及 maxIters 等场景的兜底总结；按文本展示即可',
+      },
+    ],
+  },
+  {
+    title: '⑤ Event 对象字段',
     fields: [
       {
         name: 'type',
         type: 'string',
         required: true,
-        description:
-          'REASONING | TOOL_RESULT | HINT | AGENT_RESULT | SUMMARY（ALL 仅作过滤，一般不下发）',
+        description: 'REASONING | TOOL_RESULT | HINT | AGENT_RESULT | SUMMARY',
       },
-      { name: 'message', type: 'Msg', required: true, description: '本帧消息体，见 Msg' },
+      { name: 'message', type: 'Msg', required: true, description: '见 Msg / ContentBlock' },
       {
         name: 'isLast',
         type: 'boolean',
         required: true,
-        description: 'true=该 messageId 最终帧（可落库）；false=流式中间帧',
-      },
-      {
-        name: 'source',
-        type: 'EventSource | null',
-        required: false,
-        description: '子 Agent 来源；顶层 Agent 为 null',
+        description:
+          '同一 message.id 的流式切片：false=中间片（追加渲染）；true=该消息最终片（可落库；REASONING 末帧常带 usage）',
       },
       {
         name: 'messageId',
@@ -141,10 +266,16 @@ const EVENT_RESPONSE_GROUPS: FieldGroup[] = [
         required: true,
         description: '等同 message.id；同 id 多帧属同一逻辑消息',
       },
+      {
+        name: 'source',
+        type: 'EventSource | null',
+        required: false,
+        description: '子 Agent 来源；顶层为 null',
+      },
     ],
   },
   {
-    title: 'Msg（message）',
+    title: '⑥ Msg（message）',
     fields: [
       { name: 'id', type: 'string', required: true, description: '消息 ID；流式多帧共享' },
       { name: 'name', type: 'string', required: false, description: '发送方名称' },
@@ -158,54 +289,85 @@ const EVENT_RESPONSE_GROUPS: FieldGroup[] = [
         name: 'content',
         type: 'ContentBlock[]',
         required: true,
-        description: '内容块数组，按 type 判别',
+        description: '内容块数组，按 type 判别（见下）',
       },
       { name: 'metadata', type: 'object', required: false, description: '扩展元数据' },
-      { name: 'timestamp', type: 'string', required: false, description: '时间戳' },
-      { name: 'usage', type: 'ChatUsage', required: false, description: 'Token 用量，多见最终帧' },
+      { name: 'timestamp', type: 'string', required: false, description: '时间戳字符串' },
+      {
+        name: 'usage',
+        type: 'ChatUsage',
+        required: false,
+        description: 'Token 用量；多见 REASONING isLast / AGENT_RESULT',
+      },
     ],
   },
   {
-    title: 'ContentBlock（content[]）',
-    description: '以 type 为判别字段；常见子集如下。',
+    title: '⑦ ContentBlock（content[]）',
+    description: '以 type 判别。思考字段名是 thinking（不是 text）。',
     fields: [
       {
-        name: 'type',
-        type: 'string',
-        required: true,
-        description:
-          'text | thinking | tool_use | tool_result | image | audio | video | hint | data',
-      },
-      {
-        name: 'text',
-        type: 'string',
+        name: 'type=text',
+        type: 'block',
         required: false,
-        description: 'type=text：可见文本',
+        description: '{ "type":"text", "text":"可见增量或全文" } — 拼到助手回复',
       },
       {
-        name: 'thinking',
-        type: 'string',
+        name: 'type=thinking',
+        type: 'block',
         required: false,
-        description: 'type=thinking：思考内容',
+        description: '{ "type":"thinking", "thinking":"…" } — 拼到思考区；勿读 text 字段',
       },
       {
-        name: 'id / name / input / state',
-        type: 'mixed',
+        name: 'type=tool_use',
+        type: 'block',
         required: false,
         description:
-          'type=tool_use：id、name、input；state=pending|asking|allowed|submitted|finished；content/metadata 可选',
+          '{ id, name, input?, content? }。首帧 name=真实工具名；后续同 id 且 name="__fragment__" 时把 content 字符串拼到参数 JSON（见 ⑧）',
       },
       {
-        name: 'id / name / output / state',
-        type: 'mixed',
+        name: 'type=tool_result',
+        type: 'block',
         required: false,
         description:
-          'type=tool_result：id 对应 tool_use；output 为 ContentBlock[]；state=success|error|interrupted|denied|running',
+          '{ id, name?, output? }；id 对应 tool_use；output 为 ContentBlock[]（常见再嵌套 text）',
+      },
+      {
+        name: 'type=image|audio|video|hint|data',
+        type: 'block',
+        required: false,
+        description: '多模态/扩展块；按需展示，未知 type 建议忽略不报错',
       },
     ],
   },
   {
-    title: 'ChatUsage（usage）',
+    title: '⑧ tool_use fragment 协议（对接必读）',
+    description: '工具参数可能分多帧到达，必须按 id 拼接 content，不能只读 input。',
+    fields: [
+      {
+        name: '首帧',
+        type: 'tool_use',
+        required: true,
+        description:
+          'name=真实工具名（如 shell）；input 可能为 {} 或不完整；content 为参数 JSON 字符串第一段（可空）',
+      },
+      {
+        name: '后续帧',
+        type: 'tool_use',
+        required: false,
+        description:
+          '同一 id；name 固定 "__fragment__"；把 content 追加到该 id 的参数缓冲；不要用 __fragment__ 覆盖工具名',
+      },
+      {
+        name: '完成时机',
+        type: 'hint',
+        required: false,
+        description:
+          '收到同 id 的 TOOL_RESULT（content 内 tool_result）或后续 REASONING 不再追加该 id 时，将缓冲 JSON.parse 为完整入参',
+      },
+    ],
+  },
+  {
+    title: '⑨ ChatUsage（usage）',
     fields: [
       { name: 'inputTokens', type: 'number', required: true, description: '输入 token' },
       { name: 'outputTokens', type: 'number', required: true, description: '输出 token' },
@@ -213,7 +375,7 @@ const EVENT_RESPONSE_GROUPS: FieldGroup[] = [
         name: 'cachedTokens',
         type: 'number',
         required: false,
-        description: '缓存命中的输入 token，无则 0',
+        description: '缓存命中输入 token，无则 0',
       },
       { name: 'time', type: 'number', required: false, description: '耗时（秒）' },
       {
@@ -225,8 +387,8 @@ const EVENT_RESPONSE_GROUPS: FieldGroup[] = [
     ],
   },
   {
-    title: 'EventSource（source）',
-    description: '仅子 Agent 事件出现。',
+    title: '⑩ EventSource（source）',
+    description: '仅子 Agent 事件出现；顶层为 null。',
     fields: [
       { name: 'agentKey', type: 'string', required: false, description: '运行时句柄' },
       { name: 'agentId', type: 'string', required: false, description: '子 Agent 类型 ID' },
@@ -235,12 +397,23 @@ const EVENT_RESPONSE_GROUPS: FieldGroup[] = [
       { name: 'parentSessionId', type: 'string', required: false, description: '父会话 ID' },
       { name: 'taskId', type: 'string', required: false, description: '异步任务预留' },
       { name: 'depth', type: 'number', required: false, description: '嵌套深度，1=直接子级' },
-      {
-        name: 'path',
-        type: 'string',
-        required: false,
-        description: '调用路径，如 main/researcher',
-      },
+      { name: 'path', type: 'string', required: false, description: '调用路径，如 main/researcher' },
+    ],
+  },
+  {
+    title: '⑪ 错误与业务码',
+    description:
+      '进入 SSE 前失败 → HTTP + Result JSON（无 SSE）。流内失败 → 仍可能收到业务帧，最后 run_finished.status=FAILED。无 SSE event=error。',
+    fields: [
+      { name: '1001', type: 'INVALID_PARAM', required: false, description: '开跑时 input/attachments 同时为空等' },
+      { name: '2017', type: 'API_KEY_MISSING', required: false, description: '缺少有效秘钥' },
+      { name: '2018', type: 'API_KEY_INVALID', required: false, description: '秘钥无效或已删除' },
+      { name: '2019', type: 'API_KEY_AGENT_MISMATCH', required: false, description: '秘钥与 body.agentNum 不一致' },
+      { name: '4004', type: 'RUN_NOT_FOUND', required: false, description: 'run 不存在/过期；续传缺游标且无进行中 run' },
+      { name: '4006', type: 'CURSOR_INVALID', required: false, description: 'Last-Event-ID 非法或与 runId 不一致' },
+      { name: '4007', type: 'CURSOR_EXPIRED', required: false, description: '事件缓冲已淘汰' },
+      { name: '4008', type: 'SESSION_BUSY', required: false, description: '同一 sessionNum 已有进行中 run' },
+      { name: '41xx', type: 'ATTACHMENT_*', required: false, description: '附件非法/不存在/越权/过大等（进 SSE 前）' },
     ],
   },
 ];
@@ -454,12 +627,17 @@ function buildSpecs(agentNum: string): ApiSpec[] {
     {
       method: 'POST',
       path: '/api/v1/open/agents/command/invoke',
-      title: 'Invoke（SSE 流式调用）',
+      title: 'Invoke（SSE 流式调用 / 断线续传）',
       description:
-        '对外触发 Agent 推理，响应为 AgentScope Event SSE。operatorId 可选，留空记为 system。可选 context 用于系统提示词 {{key}} 替换并合并进会话默认上下文。input 与 attachments 至少一个有内容；图片走 Vision，文档由模型按需调用平台内置 read_attachment。校验失败在 SSE 前返回 4xx。',
+        '对外触发 Agent 推理或续传同一轮 run。字段为 camelCase（与调试台 snake_case 不同）。开跑：input 与 attachments 至少一个有内容；会话 origin 记为 API；operatorId 空则 system；可选 context 做系统提示词 {{key}} 替换并浅合并进会话。图片走 Vision，文档由模型按需调用内置 read_attachment。HTTP 断开不会中止本轮推理（事件写入 Redis 缓冲）。续传：resume=true，或 lastEventId/Last-Event-ID + 空 input/attachments；从缓冲重放并跟随 live，不会再次调用模型。同一 sessionNum 仅允许一个 RUNNING run（否则 4008）。缓冲默认运行中最长约 2h、结束后约 45m 可续传。校验失败在进入 SSE 前返回 4xx JSON。',
       requestContentType: 'application/json',
       responseContentType: 'text/event-stream',
-      headers: [...AUTH_HEADERS, JSON_CONTENT_HEADER, SSE_ACCEPT_HEADER],
+      headers: [
+        ...AUTH_HEADERS,
+        JSON_CONTENT_HEADER,
+        SSE_ACCEPT_HEADER,
+        LAST_EVENT_ID_HEADER,
+      ],
       requestParams: [
         {
           name: 'agentNum',
@@ -473,7 +651,8 @@ function buildSpecs(agentNum: string): ApiSpec[] {
           location: 'body',
           type: 'string',
           required: false,
-          description: '用户输入文本；可与 attachments 二选一或并存（纯附件合法）',
+          description:
+            '用户输入文本；开跑时与 attachments 二选一或并存（纯附件合法）。续传时应为空',
         },
         {
           name: 'inputType',
@@ -488,14 +667,15 @@ function buildSpecs(agentNum: string): ApiSpec[] {
           type: 'array',
           required: false,
           description:
-            '已上传登记的附件引用数组：[{ fileId, name?, mimeType?, size?, kind? }]；须先调 uploadAttachment',
+            '已上传登记的附件引用：[{ fileId, name?, mimeType?, size?, kind? }]；须先调 uploadAttachment。续传时应为空',
         },
         {
           name: 'sessionNum',
           location: 'body',
           type: 'string',
           required: false,
-          description: '会话编号；空则由下游创建新会话',
+          description:
+            '会话编号；开跑时空则新建。续传时建议带上；无 lastEventId/runId 时可凭进行中 run 解析',
         },
         {
           name: 'operatorId',
@@ -509,13 +689,37 @@ function buildSpecs(agentNum: string): ApiSpec[] {
           location: 'body',
           type: 'object',
           required: false,
-          description: '扁平键值；替换系统提示词 {{key}}，并浅合并写入会话上下文',
+          description: '扁平键值；替换系统提示词 {{key}}，并浅合并写入会话上下文（续传忽略）',
+        },
+        {
+          name: 'resume',
+          location: 'body',
+          type: 'boolean',
+          required: false,
+          description:
+            'true=纯续传，不启新一轮模型。也可省略，改用 lastEventId + 空 input/attachments 隐式续传',
+        },
+        {
+          name: 'runId',
+          location: 'body',
+          type: 'string',
+          required: false,
+          description: '可选本轮 runId（形如 RUN…）；续传时建议带上，须与 lastEventId 中的 runId 一致',
+        },
+        {
+          name: 'lastEventId',
+          location: 'body',
+          type: 'string',
+          required: false,
+          description:
+            '已收到的最后一条 SSE id，格式 runId:seq；续传从下一条开始。与 Header Last-Event-ID 等价，body 优先',
         },
       ],
       responseSummary:
-        '成功时为 SSE：每条 data 为一个 Event JSON。流正常结束关闭连接。非流式错误（如缺秘钥、附件非法）返回 Result JSON。',
+        '成功为 text/event-stream。分发：有 event → 控制帧（run_started / Sandbox.Status / run_finished）；无 event → 业务帧看 data.type（REASONING|TOOL_RESULT|HINT|AGENT_RESULT|SUMMARY）。每帧保存 id。以 run_finished 结束订阅（AGENT_RESULT 只表示业务收尾，其后仍有 run_finished）。tool_use 须按 id 拼接 __fragment__ 的 content。取消订阅不取消服务端 run。',
       responseGroups: EVENT_RESPONSE_GROUPS,
-      curl: `curl -N -X POST '${base}/api/v1/open/agents/command/invoke' \\
+      curl: `# —— 开跑 ——
+curl -N -X POST '${base}/api/v1/open/agents/command/invoke' \\
   -H 'Authorization: Bearer ak-xxxxxxxx' \\
   -H 'Content-Type: application/json' \\
   -H 'Accept: text/event-stream' \\
@@ -530,16 +734,68 @@ function buildSpecs(agentNum: string): ApiSpec[] {
     "sessionNum": null,
     "operatorId": null,
     "context": { "orderId": "ORD-123", "page": "order_detail" }
+  }'
+
+# —— 断线续传（保存上一帧 id，例如 RUNxxx:12）——
+curl -N -X POST '${base}/api/v1/open/agents/command/invoke' \\
+  -H 'Authorization: Bearer ak-xxxxxxxx' \\
+  -H 'Content-Type: application/json' \\
+  -H 'Accept: text/event-stream' \\
+  -H 'Last-Event-ID: RUNxxx:12' \\
+  -d '{
+    "agentNum": "${agentNum}",
+    "sessionNum": "SES-xxx",
+    "resume": true,
+    "runId": "RUNxxx",
+    "lastEventId": "RUNxxx:12"
   }'`,
-      responseExample: `data:{"type":"REASONING","message":{"id":"...","name":"agent","role":"ASSISTANT","content":[{"type":"text","text":"正在查询…"}],"metadata":{},"timestamp":"2026-08-15 15:00:00"},"isLast":false,"messageId":"..."}
+      responseExample: `# —— 控制帧：run_started（data 字段值均为 string）——
+id: RUN2109…:1
+event: run_started
+data: {"runId":"RUN2109…","sessionNum":"SES-xxx","agentNum":"${agentNum}","status":"RUNNING"}
 
-data:{"type":"AGENT_RESULT","message":{"id":"...","name":"agent","role":"ASSISTANT","content":[{"type":"text","text":"预计 3 个工作日内发货。"}],"timestamp":"2026-08-15 15:00:01","usage":{"inputTokens":100,"outputTokens":20,"cachedTokens":0,"time":1.2,"totalTokens":120}},"isLast":true,"messageId":"..."}
+# —— 控制帧：Sandbox.Status（可选；ts 为 number）——
+id: RUN2109…:2
+event: Sandbox.Status
+data: {"sessionNum":"SES-xxx","phase":"READY","instanceId":"inst-1","ts":1728880000000}
 
-# 说明：AGENT_RESULT.message.usage 为本轮汇总（多轮 ReAct 会累加各次 LLM 调用）；
-# 调试台与开放 Event SSE 同源。
+# —— 业务帧：REASONING 流式文本（无 event 行；isLast=false）——
+id: RUN2109…:3
+data: {"type":"REASONING","message":{"id":"m1","role":"ASSISTANT","content":[{"type":"text","text":"正在"}],"timestamp":"2026-10-11 20:00:00"},"isLast":false,"messageId":"m1","source":null}
 
-# 非 SSE 错误示例
-# {"code":2017,"message":"缺少有效秘钥","data":null,"traceId":"..."}`,
+# —— 业务帧：REASONING 思考块（字段名 thinking）——
+id: RUN2109…:4
+data: {"type":"REASONING","message":{"id":"m1","role":"ASSISTANT","content":[{"type":"thinking","thinking":"先查订单状态…"}]},"isLast":false,"messageId":"m1"}
+
+# —— 业务帧：tool_use 首帧 + fragment（按 id 拼接 content）——
+id: RUN2109…:5
+data: {"type":"REASONING","message":{"id":"m2","role":"ASSISTANT","content":[{"type":"tool_use","id":"call_1","name":"shell","input":{},"content":"{\\"cmd\\":"}]},"isLast":false,"messageId":"m2"}
+
+id: RUN2109…:6
+data: {"type":"REASONING","message":{"id":"m2","role":"ASSISTANT","content":[{"type":"tool_use","id":"call_1","name":"__fragment__","content":"\\"ls\\"}"}]},"isLast":true,"messageId":"m2"}
+
+# —— 业务帧：TOOL_RESULT ——
+id: RUN2109…:7
+data: {"type":"TOOL_RESULT","message":{"id":"m3","role":"TOOL","content":[{"type":"tool_result","id":"call_1","output":[{"type":"text","text":"a.txt\\nb.txt"}]}]},"isLast":true,"messageId":"m3"}
+
+# —— 业务帧：AGENT_RESULT（取 usage；仍须等 run_finished）——
+id: RUN2109…:8
+data: {"type":"AGENT_RESULT","message":{"id":"m4","role":"ASSISTANT","content":[{"type":"text","text":"目录下有两个文件。"}],"usage":{"inputTokens":100,"outputTokens":20,"cachedTokens":0,"time":1.2,"totalTokens":120}},"isLast":true,"messageId":"m4"}
+
+# —— 控制帧：run_finished（本轮订阅结束）——
+id: RUN2109…:9
+event: run_finished
+data: {"runId":"RUN2109…","status":"DONE"}
+
+:heartbeat
+
+# 对接要点：
+# 1) 分发：有 event → 控制帧；无 event → data.type
+# 2) 每帧保存 id；断线 resume + lastEventId，勿重发 input
+# 3) 结束条件：run_finished（不是 AGENT_RESULT）
+# 4) tool_use：同 id 拼接 content；name=__fragment__ 不覆盖工具名
+# 5) 非 SSE 错误：{"code":2017,"message":"缺少有效秘钥","data":null,"traceId":"..."}
+# 6) 会话忙：{"code":4008,"message":"会话已有进行中的调用",...}`,
     },
     {
       method: 'POST',
@@ -1416,9 +1672,10 @@ export default function ApiInfoTab({ agentNum }: ApiInfoTabProps) {
       <Text style={{ color: COLOR.textMuted, fontSize: 12 }}>
         对外开放接口（/api/v1/open/agents/**）。调用方需在 Header 携带{' '}
         <Text code>Authorization: Bearer ak-xxxx</Text>
-        ；秘钥已隐含归属 Agent，请求中的 agentNum 必须与秘钥一致，否则返回 403。非流式接口统一为{' '}
+        ；秘钥已隐含归属 Agent，请求中的 agentNum 必须与秘钥一致，否则返回 403（2019）。非流式接口统一为{' '}
         <Text code>{`{ code, message, data, traceId }`}</Text>
-        ；SSE 接口每条事件的 data 为协议消息 JSON。
+        。Invoke SSE 每帧带 <Text code>id=runId:seq</Text>
+        ，支持 <Text code>Last-Event-ID</Text> / body.lastEventId 断线续传；字段命名为 camelCase。
       </Text>
       {specs.map((s) => (
         <ApiCard key={`${s.method} ${s.path}`} spec={s} onCopy={handleCopy} />

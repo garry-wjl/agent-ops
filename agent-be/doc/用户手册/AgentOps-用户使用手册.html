@@ -980,44 +980,74 @@
 
     <!-- ==================== 14. API 接口 ==================== -->
     <h2 id="api">14. API 接口</h2>
-    <p>每个 Agent 自动暴露 4 个标准 Open API，可在详情页"API 信息" Tab 中查看完整 URL 与 cURL 示例。调用时需通过<strong> API 密钥（Bearer Token）</strong>鉴权。</p>
+    <p>每个 Agent 在详情页「API 信息」Tab 展示完整 Open API（路径、参数、cURL、响应字段）。以下与现网代码一致；权威细节以该 Tab 为准。鉴权：<strong>Authorization: Bearer ak-…</strong>（秘钥管理 Tab 创建）。字段命名为 <strong>camelCase</strong>。前缀均为 <code>/api/v1/open/agents</code>。</p>
     <table>
       <tr><th>接口</th><th>Method</th><th>路径</th><th>说明</th></tr>
-      <tr><td>调用 Agent</td><td>POST</td><td><code>/v1/open/agents/command/invoke</code></td><td>SSE 流式调用；body 含 input / input_type / skill_hint / session_id</td></tr>
-      <tr><td>创建会话</td><td>POST</td><td><code>/v1/open/agents/command/createSession</code></td><td>起新会话，返回 sessionId</td></tr>
-      <tr><td>查询会话列表</td><td>POST</td><td><code>/v1/open/agents/query/sessionList</code></td><td>分页查询会话</td></tr>
-      <tr><td>查询会话详情</td><td>GET</td><td><code>/v1/open/agents/query/sessionDetail</code></td><td>含消息链</td></tr>
+      <tr><td>上传附件</td><td>POST</td><td><code>/api/v1/open/agents/command/uploadAttachment</code></td><td>预签名 + 登记；invoke 前引用 fileId</td></tr>
+      <tr><td>调用 Agent</td><td>POST</td><td><code>/api/v1/open/agents/command/invoke</code></td><td>SSE 流式开跑 / 断线续传（text/event-stream）</td></tr>
+      <tr><td>A2UI 调用</td><td>POST</td><td><code>/api/v1/open/agents/command/a2ui/invoke</code></td><td>A2UI v0.9.1 SSE（与 Event SSE 并存）</td></tr>
+      <tr><td>A2UI Action</td><td>POST</td><td><code>/api/v1/open/agents/command/a2ui/action</code></td><td>A2UI 用户动作回传</td></tr>
+      <tr><td>创建会话</td><td>POST</td><td><code>/api/v1/open/agents/command/createSession</code></td><td>起新会话，返回 SessionDTO</td></tr>
+      <tr><td>查询会话列表</td><td>POST</td><td><code>/api/v1/open/agents/query/sessionList</code></td><td>分页查询会话</td></tr>
+      <tr><td>查询会话详情</td><td>GET</td><td><code>/api/v1/open/agents/query/sessionDetail?num=</code></td><td>含消息链</td></tr>
     </table>
 
-    <h3>13.1 invoke 请求体</h3>
+    <h3>14.1 invoke 请求体（开跑）</h3>
     <pre><code>{
-  "input": "你好，帮我查一下 PROJ-X 的本周 issue",
-  "input_type": "text",
-  "skill_hint": "jira-issue-summary",
-  "session_id": "sess-abc123"
+  "agentNum": "AGT-xxx",
+  "input": "你好，帮我查一下订单",
+  "inputType": "text",
+  "sessionNum": null,
+  "operatorId": null,
+  "context": { "orderId": "ORD-123" },
+  "attachments": []
 }</code></pre>
     <table>
       <tr><th>字段</th><th>类型</th><th>必填</th><th>说明</th></tr>
-      <tr><td><code>input</code></td><td>string / object</td><td>是</td><td>text 模式为字符串；JSON 模式为对象</td></tr>
-      <tr><td><code>input_type</code></td><td>"text" / "json"</td><td>是</td><td>显式标识输入模式</td></tr>
-      <tr><td><code>skill_hint</code></td><td>string</td><td>否</td><td>调试 Skill 时强制注入的 skill_name</td></tr>
-      <tr><td><code>session_id</code></td><td>string</td><td>否</td><td>不传则起新会话</td></tr>
+      <tr><td><code>agentNum</code></td><td>string</td><td>是</td><td>须与 API Key 归属 Agent 一致，否则 2019</td></tr>
+      <tr><td><code>input</code></td><td>string</td><td>否*</td><td>用户文本；与 attachments 至少一个有内容</td></tr>
+      <tr><td><code>inputType</code></td><td>string</td><td>否</td><td>text / multimodal（有附件建议 multimodal）</td></tr>
+      <tr><td><code>attachments</code></td><td>array</td><td>否*</td><td>[{ fileId, name?, mimeType?, size?, kind? }]；须先 uploadAttachment</td></tr>
+      <tr><td><code>sessionNum</code></td><td>string</td><td>否</td><td>空则新建会话；同源会话同时仅允许一个 RUNNING run（否则 4008）</td></tr>
+      <tr><td><code>operatorId</code></td><td>string</td><td>否</td><td>空记 system</td></tr>
+      <tr><td><code>context</code></td><td>object</td><td>否</td><td>扁平键值；替换系统提示词 {{key}} 并合并会话上下文</td></tr>
     </table>
 
-    <h3>13.2 SSE 事件协议</h3>
+    <h3>14.2 invoke 断线续传</h3>
+    <p>HTTP 断开<strong>不会</strong>中止服务端本轮推理；事件写入 Redis 缓冲。客户端保存每帧 SSE <code>id</code>（格式 <code>runId:seq</code>），重连时：</p>
+    <ul>
+      <li>Header <code>Last-Event-ID: RUNxxx:12</code>，和/或 body <code>lastEventId</code>（body 优先）；</li>
+      <li><code>resume: true</code>，或留空 <code>input</code>/<code>attachments</code> 隐式进入续传；</li>
+      <li>建议同时传 <code>sessionNum</code>、<code>runId</code>。</li>
+    </ul>
+    <pre><code>{
+  "agentNum": "AGT-xxx",
+  "sessionNum": "SES-xxx",
+  "resume": true,
+  "runId": "RUNxxx",
+  "lastEventId": "RUNxxx:12"
+}</code></pre>
+    <p>续传从缓冲重放并跟随 live，<strong>不会再次调用模型</strong>。缓冲默认：运行中最长约 2h，结束后约 45m 仍可续传。常见错误码：4004 run 不存在/过期；4006 游标非法；4007 缓冲已淘汰；4008 会话忙。</p>
+
+    <h3>14.3 SSE 事件协议（invoke）</h3>
+    <p>成功响应 <code>text/event-stream</code>；每帧含 <code>id={runId}:{seq}</code>，可选 <code>event</code>，以及 <code>data</code> JSON。空闲约每 10s 有 <code>:heartbeat</code>（可忽略）。<strong>分发规则</strong>：有 <code>event</code> → 控制帧；无 <code>event</code> → 看 <code>data.type</code> 业务帧。以 <code>run_finished</code> 结束本轮（不要只靠 <code>AGENT_RESULT</code>）。完整字段与 fragment 协议见详情页「API 信息」或技术方案文档。</p>
     <table>
-      <tr><th>事件类型</th><th>触发时机</th><th>关键字段</th></tr>
-      <tr><td><code>message.delta</code></td><td>LLM 输出每段文本</td><td>content, index</td></tr>
-      <tr><td><code>step.start</code></td><td>进入工具 / Skill 调用</td><td>step_id, skill_name, input, started_at</td></tr>
-      <tr><td><code>step.end</code></td><td>工具 / Skill 调用结束</td><td>step_id, output, status, latency_ms, error?</td></tr>
-      <tr><td><code>final</code></td><td>整个 invoke 结束</td><td>session_id, trace_id, total_tokens, total_latency_ms</td></tr>
-      <tr><td><code>error</code></td><td>不可恢复错误</td><td>code, message, step_id?</td></tr>
+      <tr><th>层级</th><th>名称</th><th>含义 / 客户端动作</th></tr>
+      <tr><td>控制 event</td><td><code>run_started</code></td><td>本轮开始；保存 runId、sessionNum（data 字段值为 string）</td></tr>
+      <tr><td>控制 event</td><td><code>Sandbox.Status</code></td><td>沙箱 IDLE/PREPARING/READY/FAILED（可无）；ts 为 number</td></tr>
+      <tr><td>控制 event</td><td><code>run_finished</code></td><td>本轮终态 DONE/FAILED/CANCELLED；结束 loading</td></tr>
+      <tr><td>业务 type</td><td><code>REASONING</code></td><td>主展示：content 内 text / thinking / tool_use（流式多帧）</td></tr>
+      <tr><td>业务 type</td><td><code>TOOL_RESULT</code></td><td>工具结果；用 id 关联 tool_use</td></tr>
+      <tr><td>业务 type</td><td><code>HINT</code></td><td>提示信息，可忽略</td></tr>
+      <tr><td>业务 type</td><td><code>AGENT_RESULT</code></td><td>业务收尾；取 usage；仍须等 run_finished</td></tr>
+      <tr><td>业务 type</td><td><code>SUMMARY</code></td><td>兜底总结，少见</td></tr>
     </table>
+    <p><strong>tool_use fragment</strong>：首帧 <code>name</code> 为真实工具名；后续同 <code>id</code> 且 <code>name="__fragment__"</code> 时，将 <code>content</code> 字符串拼成完整参数 JSON，勿用 <code>__fragment__</code> 覆盖工具名。</p>
 
-    <h3>13.3 API 鉴权</h3>
+    <h3>14.4 API 鉴权</h3>
     <p>调用 Open API 需在 HTTP Header 中传入 API Key：</p>
-    <pre><code>Authorization: Bearer sk-xxxxx</code></pre>
-    <p>API Key 在"秘钥管理" Tab 中创建。每个密钥可分别管理，删除即即刻失效。</p>
+    <pre><code>Authorization: Bearer ak-xxxxx</code></pre>
+    <p>API Key 在「秘钥管理」Tab 中创建；删除即即刻失效。请求体 <code>agentNum</code> 必须与秘钥归属一致。</p>
 
     <!-- ==================== 15. 常见问题 ==================== -->
     <h2 id="faq">15. 常见问题</h2>
@@ -1034,8 +1064,8 @@
     <h3>Q4：如何对比同一 Agent 两个版本的效果？</h3>
     <p>进入 Agent 详情页的"版本管理" Tab，选择两个历史版本点击<strong>"对比"</strong>，或进入评测报告页面选择两次评测报告进行对比。</p>
 
-    <h3>Q5：调试台 SSE 连接中断怎么办？</h3>
-    <p>已渲染的消息和步骤会保留。点击 Sender 中的<strong>"重试"</strong>按钮，系统将从最后一条用户消息重新发送。</p>
+    <h3>Q5：调试台 / Open API SSE 连接中断怎么办？</h3>
+    <p>服务端本轮推理不会因 HTTP 断开而停止。调试台会自动用已保存的 SSE <code>id</code>（Last-Event-ID）续传；Open API 调用方应自行保存每帧 <code>id</code>，重连时对同一 <code>/command/invoke</code> 传 <code>resume=true</code> + <code>lastEventId</code>（或 Header <code>Last-Event-ID</code>），不会重跑模型。缓冲过期（约结束后 45 分钟）则需重新开跑或查会话历史。</p>
 
     <h3>Q6：如何删除一个工作空间？</h3>
     <p>需满足两个条件：空间内无资产（Agent / Skill / 工具数量均为 0）；在删除确认弹窗中输入完整确认词。删除为逻辑删除，数据库记录保留。</p>

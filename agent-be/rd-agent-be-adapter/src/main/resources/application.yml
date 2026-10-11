@@ -80,6 +80,12 @@ app:
   llm:
     base-url: ${LLM_BASE_URL:http://llm-proxy.garry.internal/v1}
     api-key: ${LLM_API_KEY:}
+  # Agent invoke 断线续传：Redis Stream 缓冲 + Last-Event-ID
+  agent-run:
+    ttl-after-finish: ${AGENT_RUN_TTL_AFTER_FINISH:45m}
+    ttl-running: ${AGENT_RUN_TTL_RUNNING:2h}
+    max-events: ${AGENT_RUN_MAX_EVENTS:50000}
+    poll-interval: ${AGENT_RUN_POLL_INTERVAL:200ms}
   auth:
     platform-admins: garry.wang1,alice.zhang
     # 引导创建平台管理员用户时的默认初始密码（生产务必覆盖）

@@ -3,13 +3,14 @@ package ink.garry.rd.agent.ws.adapter.common;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import ink.garry.rd.agent.ws.application.agentrunner.AgentInvokeFrame;
+import ink.garry.rd.agent.ws.application.agentrunner.run.AgentRunStreamEvent;
 import ink.garry.rd.agent.ws.client.sandbox.dto.SandboxStatusEvent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.codec.ServerSentEvent;
 import reactor.core.publisher.Flux;
 
 /**
- * 将 {@link AgentInvokeFrame} 转为 SSE：Agent Event 默认 data 帧；沙箱状态带 {@code event: Sandbox.Status}。
+ * 将 {@link AgentInvokeFrame} / {@link AgentRunStreamEvent} 转为 SSE。
  */
 @Slf4j
 public final class AgentInvokeSseMapper {
@@ -28,6 +29,29 @@ public final class AgentInvokeSseMapper {
             return Flux.empty();
         }
         return frames.map(frame -> toEvent(frame, objectMapper));
+    }
+
+    /**
+     * 可回放 run 事件 → SSE（带 id，供 Last-Event-ID 续传）。
+     *
+     * @param events run 事件流
+     * @return SSE 字符串流
+     */
+    public static Flux<ServerSentEvent<String>> toSseFromRun(Flux<AgentRunStreamEvent> events) {
+        if (events == null) {
+            return Flux.empty();
+        }
+        return events.map(AgentInvokeSseMapper::toRunEvent);
+    }
+
+    private static ServerSentEvent<String> toRunEvent(AgentRunStreamEvent ev) {
+        ServerSentEvent.Builder<String> b = ServerSentEvent.<String>builder()
+                .id(ev.getId())
+                .data(ev.getData() == null ? "{}" : ev.getData());
+        if (ev.getEvent() != null && !ev.getEvent().isBlank()) {
+            b.event(ev.getEvent());
+        }
+        return b.build();
     }
 
     private static ServerSentEvent<String> toEvent(AgentInvokeFrame frame, ObjectMapper objectMapper) {

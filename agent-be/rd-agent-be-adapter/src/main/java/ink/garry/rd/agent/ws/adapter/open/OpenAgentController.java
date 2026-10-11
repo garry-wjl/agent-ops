@@ -1,11 +1,14 @@
 package ink.garry.rd.agent.ws.adapter.open;
 
+import cn.hutool.core.util.StrUtil;
 import ink.garry.rd.agent.ws.adapter.common.AgentInvokeSseMapper;
 import ink.garry.rd.agent.ws.adapter.common.SseKeepAlive;
 import ink.garry.rd.agent.ws.adapter.config.BaseController;
 import ink.garry.rd.agent.ws.adapter.security.ApiKeyAuthenticationFilter;
 import ink.garry.rd.agent.ws.application.agent.OpenAgentInvokeService;
 import ink.garry.rd.agent.ws.application.agentrunner.InvokeContentNormalizer;
+import ink.garry.rd.agent.ws.application.agentrunner.NormalizedInvokeContent;
+import ink.garry.rd.agent.ws.application.agentrunner.run.AgentRunCoordinator;
 import ink.garry.rd.agent.ws.client.agent.OpenInvokeParam;
 import ink.garry.rd.agent.ws.client.agent.OpenSessionCreateParam;
 import ink.garry.rd.agent.ws.client.agent.OpenSessionListQuery;
@@ -21,7 +24,6 @@ import ink.garry.rd.agent.ws.facade.common.Result;
 import ink.garry.rd.agent.ws.facade.exception.BusinessException;
 import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContext;
 import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContextHolder;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -58,7 +60,7 @@ public class OpenAgentController {
 
     private final OpenAgentInvokeService openAgentInvokeService;
     private final InvokeContentNormalizer invokeContentNormalizer;
-    private final ObjectMapper objectMapper;
+    private final AgentRunCoordinator agentRunCoordinator;
 
     /**
      * 开放上传附件（预签名 + 登记）。
@@ -92,13 +94,42 @@ public class OpenAgentController {
     public Flux<ServerSentEvent<String>> invoke(@Valid @RequestBody OpenInvokeParam param, HttpServletRequest req) {
         assertAgentMatch(param.getAgentNum(), req);
         bindOpenWorkspace(req);
-        invokeContentNormalizer.normalize(param.getInput(), param.getAttachments());
+        String lastEventId = firstNonBlank(param.getLastEventId(), req.getHeader("Last-Event-ID"));
+        boolean resume = Boolean.TRUE.equals(param.getResume())
+                || (StrUtil.isNotBlank(lastEventId) && isBlankOpenInvoke(param));
+        NormalizedInvokeContent content = resume
+                ? NormalizedInvokeContent.builder().text(null).build()
+                : invokeContentNormalizer.normalize(param.getInput(), param.getAttachments());
+        String operatorId = StrUtil.blankToDefault(param.getOperatorId(), "system");
         return SseKeepAlive.withHeartbeat(
-                AgentInvokeSseMapper.toSse(
-                        openAgentInvokeService.invokeFrames(
-                                param.getAgentNum(), param.getInput(), param.getAttachments(),
-                                param.getSessionNum(), param.getOperatorId(), param.getContext()),
-                        objectMapper));
+                AgentInvokeSseMapper.toSseFromRun(
+                        agentRunCoordinator.invokeOrResume(
+                                resume,
+                                lastEventId,
+                                param.getRunId(),
+                                param.getAgentNum(),
+                                content,
+                                param.getSessionNum(),
+                                operatorId,
+                                null,
+                                "API",
+                                param.getContext())));
+    }
+
+    private static boolean isBlankOpenInvoke(OpenInvokeParam param) {
+        boolean noInput = StrUtil.isBlank(param.getInput());
+        boolean noAtt = param.getAttachments() == null || param.getAttachments().isEmpty();
+        return noInput && noAtt;
+    }
+
+    private static String firstNonBlank(String a, String b) {
+        if (StrUtil.isNotBlank(a)) {
+            return a.trim();
+        }
+        if (StrUtil.isNotBlank(b)) {
+            return b.trim();
+        }
+        return null;
     }
 
     /**

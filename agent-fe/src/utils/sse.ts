@@ -18,14 +18,17 @@ export interface InvokeStreamOptions {
   headers?: Record<string, string>;
 }
 
-/** 解析 SSE 块。一个块由两个换行结尾，内部 event:/data: 多行。 */
+/** 解析 SSE 块。一个块由两个换行结尾，内部 id:/event:/data: 多行。 */
 function parseSseBlock(block: string): SsePlatformEvent | null {
   const lines = block.split(/\r?\n/);
   let event = 'message';
+  let id: string | undefined;
   const dataLines: string[] = [];
   for (const line of lines) {
     if (line.startsWith('event:')) {
       event = line.slice(6).trim();
+    } else if (line.startsWith('id:')) {
+      id = line.slice(3).trim();
     } else if (line.startsWith('data:')) {
       dataLines.push(line.slice(5).trim());
     } else if (line.startsWith(':')) {
@@ -40,7 +43,7 @@ function parseSseBlock(block: string): SsePlatformEvent | null {
   } catch {
     data = raw;
   }
-  return { event, data } as SsePlatformEvent;
+  return { event, data, ...(id ? { id } : {}) } as SsePlatformEvent;
 }
 
 export async function invokeStream(
