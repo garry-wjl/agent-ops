@@ -94,10 +94,10 @@ export interface DebugInvokeRequest {
   agentNum: string;
   /** 复用会话 num；空则后端按 traceId 新建会话 */
   session_num?: string;
-  /** 用户输入；可与 attachments 二选一或并存 */
+  /** 用户输入；可与 attachments 二选一或并存；续传时必须空 */
   input?: string | Record<string, any>;
-  /** 输入类型；有附件时用 multimodal */
-  input_type: 'text' | 'json' | 'multimodal';
+  /** 输入类型；有附件时用 multimodal；续传时可省略 */
+  input_type?: 'text' | 'json' | 'multimodal';
   /** 已上传登记的附件引用 */
   attachments?: AttachmentRef[];
   skill_hint?: string;
@@ -108,6 +108,12 @@ export interface DebugInvokeRequest {
   target_version?: string;
   /** 调用上下文：用于系统提示词 {{key}} 替换并合并进会话默认上下文 */
   context?: Record<string, string | number | boolean>;
+  /** 纯续传：不启新一轮，从缓冲接着推 */
+  resume?: boolean;
+  /** 可选 runId */
+  run_id?: string;
+  /** 已收到的最后一条 SSE id（runId:seq） */
+  last_event_id?: string;
 }
 
 /* ============================================================
@@ -200,9 +206,11 @@ export interface SandboxStatusPayload {
 }
 
 export type SsePlatformEvent =
-  | { event: 'message'; data: AgentScopeEvent }
-  | { event: 'Sandbox.Status'; data: SandboxStatusPayload }
-  | { event: 'error'; data: { code?: number; message: string; trace_id?: string } };
+  | { event: 'message'; data: AgentScopeEvent; id?: string }
+  | { event: 'Sandbox.Status'; data: SandboxStatusPayload; id?: string }
+  | { event: 'run_started'; data: { runId?: string; sessionNum?: string; status?: string }; id?: string }
+  | { event: 'run_finished'; data: { runId?: string; status?: string }; id?: string }
+  | { event: 'error'; data: { code?: number; message: string; trace_id?: string }; id?: string };
 
 /* ============================================================
  * AssistantSegment — 按到达顺序的实时流分段（替代"类型分桶"）

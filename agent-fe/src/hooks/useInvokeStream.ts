@@ -36,6 +36,12 @@ export interface UseInvokeStreamState {
   /** 按到达顺序的分段列表；UI 直接 map 渲染即可 */
   segments: AssistantSegment[];
   sessionNum?: string;
+  /** 本轮 runId（run_started 回传） */
+  runId?: string;
+  /** 已收到的最后一条 SSE id，用于断线续传 */
+  lastEventId?: string;
+  /** 是否正在自动续传重连 */
+  resuming?: boolean;
   traceId?: string;
   /** 本轮汇总 Token（优先 AGENT_RESULT.message.usage） */
   totalTokens?: number;
@@ -223,11 +229,18 @@ export function useInvokeStream() {
   const [state, setState] = useState<UseInvokeStreamState>(initial);
   const abortRef = useRef<AbortController | null>(null);
   /**
-   * 业务终态已到达（AGENT_RESULT）。
+   * 业务终态已到达（AGENT_RESULT / run_finished）。
    * 服务端常在 AGENT_RESULT 后以不完整 chunked 关连接：浏览器 fetch ReadableStream
    * 可能永不 done、也不抛错，导致仅依赖 onDone 时 loading 卡死在 true。
    */
   const finishedRef = useRef(false);
+  /** 用户主动 abort：不自动续传 */
+  const userAbortRef = useRef(false);
+  const runIdRef = useRef<string | undefined>(undefined);
+  const lastEventIdRef = useRef<string | undefined>(undefined);
+  const sessionNumRef = useRef<string | undefined>(undefined);
+  const lastReqRef = useRef<DebugInvokeRequest | null>(null);
+  const resumeAttemptRef = useRef(0);
 
   // 流内容累积：收到即写 ref，rAF 合并刷到 state
   const pendingSegmentsRef = useRef<AssistantSegment[]>([]);
@@ -280,11 +293,11 @@ export function useInvokeStream() {
     }));
   }, []);
 
-  /** AGENT_RESULT 到达后结束 loading，并中止底层 fetch，避免连接半关闭挂起。 */
+  /** AGENT_RESULT / run_finished 到达后结束 loading，并中止底层 fetch。 */
   const finishStream = useCallback(() => {
     if (finishedRef.current) return;
     finishedRef.current = true;
-    flushFinal({ loading: false });
+    flushFinal({ loading: false, resuming: false });
     abortRef.current?.abort();
     abortRef.current = null;
   }, [flushFinal]);
@@ -297,14 +310,21 @@ export function useInvokeStream() {
     stepStartTimesRef.current = new Map();
     chunkedReasoningMsgIdsRef.current = new Set();
     finishedRef.current = false;
+    userAbortRef.current = false;
+    runIdRef.current = undefined;
+    lastEventIdRef.current = undefined;
+    sessionNumRef.current = undefined;
+    lastReqRef.current = null;
+    resumeAttemptRef.current = 0;
     setState(initial);
   }, []);
 
   const abort = useCallback(() => {
+    userAbortRef.current = true;
     finishedRef.current = true;
     abortRef.current?.abort();
     abortRef.current = null;
-    flushFinal({ loading: false });
+    flushFinal({ loading: false, resuming: false });
   }, [flushFinal]);
 
   useEffect(
@@ -416,37 +436,103 @@ export function useInvokeStream() {
     [ensureTick],
   );
 
-  const start = useCallback(
-    async (req: DebugInvokeRequest) => {
+  const connect = useCallback(
+    async (req: DebugInvokeRequest, opts?: { resume?: boolean }) => {
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
-      // 重置缓冲
-      pendingSegmentsRef.current = [];
-      pendingMetaRef.current = {};
-      stepStartTimesRef.current = new Map();
-      chunkedReasoningMsgIdsRef.current = new Set();
       finishedRef.current = false;
-      setState({ ...initial, loading: true });
+      userAbortRef.current = false;
+
+      const isResume = !!opts?.resume;
+      if (!isResume) {
+        pendingSegmentsRef.current = [];
+        pendingMetaRef.current = {};
+        stepStartTimesRef.current = new Map();
+        chunkedReasoningMsgIdsRef.current = new Set();
+        runIdRef.current = undefined;
+        lastEventIdRef.current = undefined;
+        resumeAttemptRef.current = 0;
+        sessionNumRef.current = req.session_num;
+        lastReqRef.current = req;
+        setState({ ...initial, loading: true, sessionNum: req.session_num });
+      } else {
+        setState((prev) => ({
+          ...prev,
+          loading: true,
+          resuming: true,
+          error: undefined,
+        }));
+      }
+
+      const body: DebugInvokeRequest = isResume
+        ? {
+            agentNum: req.agentNum,
+            session_num: sessionNumRef.current ?? req.session_num,
+            resume: true,
+            run_id: runIdRef.current,
+            last_event_id: lastEventIdRef.current,
+            target_version: req.target_version,
+          }
+        : req;
+
+      const tryAutoResume = () => {
+        if (userAbortRef.current || finishedRef.current) return false;
+        if (!lastEventIdRef.current && !runIdRef.current) return false;
+        if (resumeAttemptRef.current >= 3) return false;
+        if (!lastReqRef.current) return false;
+        resumeAttemptRef.current += 1;
+        void connect(lastReqRef.current, { resume: true });
+        return true;
+      };
 
       await invokeStream(
         {
           url: '/api/v1/debug-console/invoke',
-          body: req,
+          body,
           signal: controller.signal,
+          headers: lastEventIdRef.current
+            ? { 'Last-Event-ID': lastEventIdRef.current }
+            : undefined,
         },
         {
           onEvent: (parsed: SsePlatformEvent) => {
             if (finishedRef.current) return;
-            if (parsed.event === 'error') {
+            if (parsed.id) {
+              lastEventIdRef.current = parsed.id;
               pendingMetaRef.current = {
                 ...pendingMetaRef.current,
-                error: parsed.data?.message ?? '调用失败',
+                lastEventId: parsed.id,
               };
+            }
+            if (parsed.event === 'error') {
               finishedRef.current = true;
-              flushFinal({ loading: false, error: parsed.data?.message ?? '调用失败' });
+              flushFinal({
+                loading: false,
+                resuming: false,
+                error: parsed.data?.message ?? '调用失败',
+              });
               abortRef.current?.abort();
               abortRef.current = null;
+              return;
+            }
+            if (parsed.event === 'run_started') {
+              const rid = parsed.data?.runId;
+              const sn = parsed.data?.sessionNum;
+              if (rid) runIdRef.current = rid;
+              if (sn) sessionNumRef.current = sn;
+              setState((prev) => ({
+                ...prev,
+                runId: rid ?? prev.runId,
+                sessionNum: sn ?? prev.sessionNum,
+                resuming: false,
+              }));
+              return;
+            }
+            if (parsed.event === 'run_finished') {
+              // 终态由 AGENT_RESULT 或本事件收口
+              finishStream();
+              flushFinal({ resuming: false });
               return;
             }
             if (parsed.event === 'Sandbox.Status') {
@@ -456,14 +542,15 @@ export function useInvokeStream() {
                 ...prev,
                 sandboxPhase: phase,
                 sandboxStatusMessage: message,
+                lastEventId: parsed.id ?? prev.lastEventId,
                 ...(phase === 'FAILED' && message
                   ? { error: prev.error ?? `沙箱准备失败：${message}` }
                   : {}),
               }));
               return;
             }
-            // parsed.event === 'message'：BE 不设 event 名，全部走这一路
-            const evt = parsed.data;
+            const evt = parsed.data as AgentScopeEvent;
+            if (!evt || typeof evt !== 'object' || !('type' in evt)) return;
             switch (evt.type) {
               case 'REASONING':
                 handleReasoning(evt);
@@ -473,7 +560,6 @@ export function useInvokeStream() {
                 break;
               case 'AGENT_RESULT':
                 handleAgentResult(evt);
-                // 以业务终态结束，不依赖 HTTP 连接是否干净关闭
                 finishStream();
                 break;
               case 'HINT':
@@ -483,35 +569,39 @@ export function useInvokeStream() {
                 }
                 break;
               default: {
-                const _exhaustive: never = evt.type;
                 if (import.meta.env.DEV) {
-                  console.warn('[useInvokeStream] 未知 EventType', _exhaustive, evt);
+                  console.warn('[useInvokeStream] 未知 EventType', evt);
                 }
               }
             }
           },
           onDone: () => {
             if (finishedRef.current) return;
+            if (tryAutoResume()) return;
             finishedRef.current = true;
-            flushFinal({ loading: false });
+            flushFinal({ loading: false, resuming: false });
           },
           onError: (err) => {
-            // 终态后主动 abort / 半关闭连接产生的异常忽略，避免覆盖已完成状态
             if (finishedRef.current) return;
+            if (tryAutoResume()) return;
             finishedRef.current = true;
-            flushFinal({ loading: false, error: err.message });
+            flushFinal({ loading: false, resuming: false, error: err.message });
           },
         },
       );
     },
     [
-      ensureTick,
       finishStream,
       flushFinal,
       handleAgentResult,
       handleReasoning,
       handleToolResult,
     ],
+  );
+
+  const start = useCallback(
+    (req: DebugInvokeRequest) => connect(req, { resume: false }),
+    [connect],
   );
 
   return { ...state, start, abort, reset };

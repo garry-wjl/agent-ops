@@ -584,7 +584,7 @@ export default function AgentEditorPage() {
                 <Form.Item label="最大迭代轮次" style={{ width: 200 }}>
                   <InputNumber
                     min={1}
-                    max={100}
+                    max={500}
                     step={1}
                     precision={0}
                     style={{ width: '100%' }}

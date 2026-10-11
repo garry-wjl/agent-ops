@@ -52,4 +52,19 @@ public class DebugInvokeRequest {
     /** 本轮附件引用列表；可空 */
     @Valid
     private List<AttachmentRefParam> attachments;
+
+    /**
+     * 纯续传：为 true 时不启新一轮模型，仅从缓冲重放/跟随。
+     */
+    private Boolean resume;
+
+    /** 可选 runId；续传时更稳 */
+    @JsonProperty("run_id")
+    private String runId;
+
+    /**
+     * 已收到的最后一条 SSE id（{@code runId:seq}）。
+     */
+    @JsonProperty("last_event_id")
+    private String lastEventId;
 }

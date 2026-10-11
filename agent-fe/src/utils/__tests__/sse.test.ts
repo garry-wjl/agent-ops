@@ -6,6 +6,47 @@ describe('invokeStream SSE heartbeat comments', () => {
     vi.unstubAllGlobals();
   });
 
+  it('parses SSE id for Last-Event-ID resume', async () => {
+    const store = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        store.set(k, v);
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+    });
+    const payload =
+      'id: RUNabc:1\nevent: run_started\ndata: {"runId":"RUNabc","sessionNum":"SES1"}\n\n';
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(payload));
+        controller.close();
+      },
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        body: stream,
+        headers: {
+          get: (name: string) =>
+            name.toLowerCase() === 'content-type'
+              ? 'text/event-stream;charset=UTF-8'
+              : null,
+        },
+      }),
+    );
+    const events: Array<{ event: string; id?: string; data: unknown }> = [];
+    await invokeStream({ url: '/api/v1/debug-console/invoke', body: {} }, {
+      onEvent: (e) => events.push(e),
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0].event).toBe('run_started');
+    expect(events[0].id).toBe('RUNabc:1');
+  });
+
   it('ignores :heartbeat comments and only delivers data events', async () => {
     const store = new Map<string, string>();
     vi.stubGlobal('localStorage', {
