@@ -31,8 +31,9 @@ import java.util.regex.Pattern;
  * <b>检测口径</b>（技术方案 §6.5）：
  * <ul>
  *   <li>① 大小：资源树解码后总字节 ≤ 10 MB（Base64 节点先解码，与用户直觉一致）。</li>
- *   <li>② 格式：根 SKILL.md 存在；front-matter YAML 可解析且含 name/description/version；
- *       version 合法 Semver；路径合法（无穿越 / 非绝对 / 同级不重名）；图片 Base64 合法且 MIME 白名单；
+ *   <li>② 格式：根 SKILL.md 存在；front-matter YAML 可解析且含 name/description；
+ *       version 可选（有则须合法 Semver，发布时由系统写入）；路径合法（无穿越 / 非绝对 / 同级不重名）；
+ *       图片 Base64 合法且 MIME 白名单；
  *       文本节点 encoding=text。</li>
  *   <li>③ 可用性：复用解析装载 + 引用完整性 —— SKILL.md 内以相对路径引用的资源在文件树中均存在。</li>
  * </ul>
@@ -170,7 +171,7 @@ public final class SkillChecker {
         }
     }
 
-    /** 校验 SKILL.md front-matter：可被 YAML 解析，含 name/description/version，version 合法 Semver。 */
+    /** 校验 SKILL.md front-matter：可被 YAML 解析，含 name/description；version 可选（有则须合法 Semver）。 */
     @SuppressWarnings("unchecked")
     private static void checkFrontMatter(SkillResourceFile skillMd, List<SkillCheckError> errors) {
         String content = skillMd.getContent();
@@ -199,9 +200,8 @@ public final class SkillChecker {
         requireField(fm, "name", errors);
         requireField(fm, "description", errors);
         Object version = fm.get("version");
-        if (version == null || version.toString().isBlank()) {
-            errors.add(formatErr("SKILL.md", "front-matter 缺少 version"));
-        } else if (!SEMVER.matcher(version.toString().trim()).matches()) {
+        if (version != null && !version.toString().isBlank()
+                && !SEMVER.matcher(version.toString().trim()).matches()) {
             errors.add(formatErr("SKILL.md", "version 不是合法 Semver：" + version));
         }
     }

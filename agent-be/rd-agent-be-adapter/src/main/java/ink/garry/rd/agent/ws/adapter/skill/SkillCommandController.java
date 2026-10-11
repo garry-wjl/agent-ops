@@ -10,6 +10,7 @@ import ink.garry.rd.agent.ws.client.skill.vo.SkillPublishParam;
 import ink.garry.rd.agent.ws.client.skill.vo.SkillPublishResultVo;
 import ink.garry.rd.agent.ws.client.skill.vo.SkillRollbackParam;
 import ink.garry.rd.agent.ws.client.skill.vo.SkillUpdateParam;
+import ink.garry.rd.agent.ws.client.skill.vo.SkillUpgradeFromZipParam;
 import ink.garry.rd.agent.ws.client.skill.vo.SkillVo;
 import ink.garry.rd.agent.ws.facade.common.Result;
 import jakarta.annotation.Resource;
@@ -90,8 +91,27 @@ public class SkillCommandController extends BaseController {
      */
     @PostMapping("/publish")
     public Result<SkillPublishResultVo> publish(@Valid @RequestBody SkillPublishParam param) {
+        // version 入参已废弃：由系统自动分配，忽略客户端传入值
         SkillPublishResultDTO dto = skillCommandService.publish(
-                param.getSkillNum(), param.getVersion(), getCurrentUserId());
+                param.getSkillNum(), getCurrentUserId());
+        return toPublishHttpResult(dto);
+    }
+
+    /**
+     * 压缩包升级：整树覆盖草稿 + 自动生成下一 patch 版本 + 发布三检。
+     *
+     * @param param skillNum + zipBase64
+     * @return 发布结果（含自动生成的 version）
+     */
+    @PostMapping("/upgradeFromZip")
+    public Result<SkillPublishResultVo> upgradeFromZip(@Valid @RequestBody SkillUpgradeFromZipParam param) {
+        SkillPublishResultDTO dto = skillCommandService.upgradeFromZip(
+                assembler.toUpgradeFromZipDTO(param), getCurrentUserId());
+        return toPublishHttpResult(dto);
+    }
+
+    /** 发布 / 升级共用：PASS→ok，FAIL→3006 + 明细。 */
+    private Result<SkillPublishResultVo> toPublishHttpResult(SkillPublishResultDTO dto) {
         SkillPublishResultVo vo = assembler.toPublishResultVo(dto);
         if (!"PASS".equals(dto.getResult())) {
             Result<SkillPublishResultVo> fail = Result.fail(

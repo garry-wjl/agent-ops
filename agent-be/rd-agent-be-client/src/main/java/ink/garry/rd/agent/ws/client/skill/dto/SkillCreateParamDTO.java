@@ -38,7 +38,10 @@ public class SkillCreateParamDTO {
     /** 自由标签数组（可空） */
     private List<String> tags;
 
-    /** 版本号字符串（约定 vX.Y.Z，后端不解析；创建落草稿时记录，发布时校验唯一） */
+    /**
+     * @deprecated 创建仅落草稿，版本号在发布时由系统自动生成；传入无效
+     */
+    @Deprecated
     private String version;
 
     /** 负责人用户 ID */

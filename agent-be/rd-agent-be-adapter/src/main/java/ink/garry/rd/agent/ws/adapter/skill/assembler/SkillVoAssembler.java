@@ -11,6 +11,7 @@ import ink.garry.rd.agent.ws.client.skill.dto.SkillPublishResultDTO;
 import ink.garry.rd.agent.ws.client.skill.dto.SkillResourceFileDTO;
 import ink.garry.rd.agent.ws.client.skill.dto.SkillResourceTreeDTO;
 import ink.garry.rd.agent.ws.client.skill.dto.SkillUpdateParamDTO;
+import ink.garry.rd.agent.ws.client.skill.dto.SkillUpgradeFromZipParamDTO;
 import ink.garry.rd.agent.ws.client.skill.dto.SkillVersionDTO;
 import ink.garry.rd.agent.ws.client.skill.dto.SkillVersionDetailDTO;
 import ink.garry.rd.agent.ws.client.skill.dto.VersionDiffDTO;
@@ -24,6 +25,7 @@ import ink.garry.rd.agent.ws.client.skill.vo.SkillPublishResultVo;
 import ink.garry.rd.agent.ws.client.skill.vo.SkillResourceFileVo;
 import ink.garry.rd.agent.ws.client.skill.vo.SkillResourceTreeVo;
 import ink.garry.rd.agent.ws.client.skill.vo.SkillUpdateParam;
+import ink.garry.rd.agent.ws.client.skill.vo.SkillUpgradeFromZipParam;
 import ink.garry.rd.agent.ws.client.skill.vo.SkillVersionDetailVo;
 import ink.garry.rd.agent.ws.client.skill.vo.SkillVersionVo;
 import ink.garry.rd.agent.ws.client.skill.vo.SkillVo;
@@ -81,6 +83,14 @@ public class SkillVoAssembler {
                 .description(param.getDescription())
                 .tags(param.getTags())
                 .resourceFiles(toResourceFileDTOs(param.getResourceFiles()))
+                .build();
+    }
+
+    /** 压缩包升级参数：Vo → DTO。 */
+    public SkillUpgradeFromZipParamDTO toUpgradeFromZipDTO(SkillUpgradeFromZipParam param) {
+        return SkillUpgradeFromZipParamDTO.builder()
+                .skillNum(param.getSkillNum())
+                .zipBase64(param.getZipBase64())
                 .build();
     }
 

@@ -14,6 +14,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Button, Empty, Modal, message } from 'antd';
 import {
+  CloudUploadOutlined,
   PlusOutlined,
   RightOutlined,
 } from '@ant-design/icons';
@@ -23,6 +24,7 @@ import { formatTime } from '@/utils/format';
 import { useBreadcrumbName } from '@/hooks/useBreadcrumbName';
 import CheckRecordsTab from './CheckRecordsTab';
 import ResourceTreeTab from './ResourceTreeTab';
+import UpgradeFromZipModal from './UpgradeFromZipModal';
 import { XMarkdown } from '@ant-design/x-markdown';
 
 const COLOR = {
@@ -51,6 +53,7 @@ export default function SkillDetailPage() {
   const [activeTab, setActiveTab] = useState<TabKey>(
     (searchParams.get('tab') as TabKey) || 'basic',
   );
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
   useBreadcrumbName(detail?.skill?.name);
 
   const reload = async () => {
@@ -233,10 +236,22 @@ export default function SkillDetailPage() {
             canEdit={s.source === 'SELF'}
             onRollback={handleRollback}
             onEditSkill={handleEditSkill}
+            onUpgradeFromZip={() => setUpgradeOpen(true)}
           />
         ) : null}
         {activeTab === 'checks' ? <CheckRecordsTab skillNum={s.num} /> : null}
       </div>
+
+      <UpgradeFromZipModal
+        open={upgradeOpen}
+        skillNum={s.num}
+        currentVersionNum={s.currentVersionNum}
+        onClose={() => setUpgradeOpen(false)}
+        onSuccess={() => {
+          setActiveTab('versions');
+          void reload();
+        }}
+      />
     </div>
   );
 }
@@ -470,6 +485,7 @@ function VersionsTab(props: {
   canEdit: boolean;
   onRollback: (v: string) => void;
   onEditSkill: () => void;
+  onUpgradeFromZip: () => void;
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -478,20 +494,30 @@ function VersionsTab(props: {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
+          gap: 12,
+          flexWrap: 'wrap',
         }}
       >
         <span style={{ fontSize: 12, color: COLOR.textMuted }}>
-          历史版本只读；如需发布新版本，请「编辑 Skill」修改草稿后发布（发布将触发检测）。
+          历史版本只读。可拖拽 .zip 一键覆盖资源并自动发版，或进入编辑器手动改草稿后发布。
         </span>
         {props.canEdit && (
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={props.onEditSkill}
-            style={{ background: COLOR.primary }}
-          >
-            编辑并发布新版本
-          </Button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button
+              icon={<CloudUploadOutlined />}
+              onClick={props.onUpgradeFromZip}
+            >
+              上传压缩包升级
+            </Button>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={props.onEditSkill}
+              style={{ background: COLOR.primary }}
+            >
+              编辑并发布新版本
+            </Button>
+          </div>
         )}
       </div>
       {props.versions.length === 0 ? (

@@ -65,20 +65,18 @@ import { COLOR } from './constants';
 interface FormValues {
   name: string;
   description: string;
-  version: string;
   tags?: string[];
 }
 
 /** 直接创建编辑区内部 Tab。 */
 type EditorTab = 'skill' | 'resources';
 
-/** 默认 SKILL.md 模板（带 front-matter 三字段）。 */
-function defaultSkillMd(name = '', description = '', version = '1.0.0'): string {
+/** 默认 SKILL.md 模板（name/description；version 由发布时系统写入）。 */
+function defaultSkillMd(name = '', description = ''): string {
   return [
     '---',
     `name: ${name}`,
     `description: ${description}`,
-    `version: ${version}`,
     '---',
     '',
     '# Skill 说明',
@@ -147,28 +145,25 @@ export default function SkillEditorPage() {
 
   // 元信息回填（从 detail.skill）
   useEffect(() => {
-    if (isNew) {
-      form.setFieldsValue({ version: '1.0.0' });
-      return;
-    }
+    if (isNew) return;
     if (detail?.skill) {
       form.setFieldsValue({
         name: detail.skill.name,
         description: detail.skill.description ?? '',
-        version: detail.skill.currentVersionNum ?? '1.0.0',
         tags: detail.skill.tags,
       });
     }
   }, [isNew, detail, form]);
 
   // ============================================================
-  // 双向同步：SKILL.md front-matter ↔ 表单 name/description/version
+  // 双向同步：SKILL.md front-matter ↔ 表单 name/description
+  // （version 由发布时系统写入，不参与表单同步）
   // ============================================================
 
   /** 表单字段变更 → 写回根 SKILL.md front-matter。 */
   const handleFormValuesChange = (changed: Partial<FormValues>) => {
     if (syncingRef.current) return;
-    if (!('name' in changed || 'description' in changed || 'version' in changed)) {
+    if (!('name' in changed || 'description' in changed)) {
       return;
     }
     const root = getRootSkillMd(files);
@@ -176,7 +171,6 @@ export default function SkillEditorPage() {
     const patch = {
       name: form.getFieldValue('name') ?? '',
       description: form.getFieldValue('description') ?? '',
-      version: form.getFieldValue('version') ?? '',
     };
     const parsed = parseSkillMarkdown(root.content ?? '');
     if (frontMatterEquals(parsed.data, patch)) return;
@@ -208,14 +202,12 @@ export default function SkillEditorPage() {
     const current = {
       name: form.getFieldValue('name') ?? '',
       description: form.getFieldValue('description') ?? '',
-      version: form.getFieldValue('version') ?? '',
     };
     if (frontMatterEquals(parsed.data, current)) return;
     syncingRef.current = true;
     form.setFieldsValue({
       name: parsed.data.name ?? current.name,
       description: parsed.data.description ?? current.description,
-      version: parsed.data.version ?? current.version,
     });
     queueMicrotask(() => {
       syncingRef.current = false;
@@ -239,17 +231,15 @@ export default function SkillEditorPage() {
   const [checkResult, setCheckResult] = useState<SkillPublishResultVO | null>(
     null,
   );
-  const publishTargetRef = useRef<{ skillNum: string; version: string } | null>(
-    null,
-  );
+  const publishTargetRef = useRef<{ skillNum: string } | null>(null);
 
-  const runPublish = async (sn: string, version: string) => {
-    publishTargetRef.current = { skillNum: sn, version };
+  const runPublish = async (sn: string) => {
+    publishTargetRef.current = { skillNum: sn };
     setPublishOpen(true);
     setChecking(true);
     setCheckResult(null);
     try {
-      const res = await SkillApi.publish({ skillNum: sn, version });
+      const res = await SkillApi.publish({ skillNum: sn });
       setCheckResult(res);
     } catch (err) {
       if (err instanceof BizError && err.code === 3006 && err.data) {
@@ -296,7 +286,6 @@ export default function SkillEditorPage() {
           mode: 'UPLOAD',
           name: values.name,
           description: values.description,
-          version: values.version,
           tags: values.tags,
           zipBase64,
         });
@@ -307,7 +296,6 @@ export default function SkillEditorPage() {
         mode: 'DIRECT',
         name: values.name,
         description: values.description,
-        version: values.version,
         tags: values.tags,
         resourceFiles: files,
       });
@@ -356,7 +344,7 @@ export default function SkillEditorPage() {
     try {
       const sn = await saveDraft(values);
       if (!sn) return;
-      await runPublish(sn, values.version);
+      await runPublish(sn);
     } catch (err) {
       if (err instanceof Error) message.error(err.message);
     } finally {
@@ -378,7 +366,6 @@ export default function SkillEditorPage() {
     const defaultMd = defaultSkillMd(
       form.getFieldValue('name') ?? '',
       form.getFieldValue('description') ?? '',
-      form.getFieldValue('version') ?? '1.0.0',
     );
     const dirty =
       (createMode === 'DIRECT' &&
@@ -517,15 +504,17 @@ export default function SkillEditorPage() {
               onParsed={(parsedFiles, b64) => {
                 setUploadFiles(parsedFiles);
                 setZipBase64(b64);
-                // 回填：从 SKILL.md front-matter 解析 name/description/version
+                // 回填：从 SKILL.md front-matter 解析 name/description
+                // 即便 YAML 子集解析有警告，已抽出的同步字段仍回填（常见于 |/> 多行 description）
                 const root = getRootSkillMd(parsedFiles);
                 if (root?.content) {
                   const parsed = parseSkillMarkdown(root.content);
-                  if (!parsed.error && (parsed.data.name || parsed.data.description || parsed.data.version)) {
+                  setFrontMatterError(parsed.error);
+                  if (parsed.data.name || parsed.data.description) {
                     form.setFieldsValue({
                       name: parsed.data.name ?? form.getFieldValue('name'),
-                      description: parsed.data.description ?? form.getFieldValue('description'),
-                      version: parsed.data.version ?? form.getFieldValue('version'),
+                      description:
+                        parsed.data.description ?? form.getFieldValue('description'),
                     });
                   }
                 }
@@ -663,7 +652,7 @@ export default function SkillEditorPage() {
         sizeHint={`${formatBytes(totalBytes)} / ${formatBytes(SKILL_SIZE_LIMIT_BYTES)}`}
         onRetry={() => {
           const t = publishTargetRef.current;
-          if (t) void runPublish(t.skillNum, t.version);
+          if (t) void runPublish(t.skillNum);
         }}
         onClose={handlePublishDone}
         onViewRecords={() => {
@@ -675,7 +664,7 @@ export default function SkillEditorPage() {
   );
 }
 
-/** 基本信息表单（名称 / 版本 / 标签 / 描述）—— 竖排，样式同上传模式 / 工具编辑器。 */
+/** 基本信息表单（名称 / 标签 / 描述）—— 竖排；版本号发布时由系统生成。 */
 function MetaForm(props: {
   form: ReturnType<typeof Form.useForm<FormValues>>[0];
   disabled?: boolean;
@@ -697,16 +686,6 @@ function MetaForm(props: {
         validateStatus={props.frontMatterError ? 'error' : undefined}
       >
         <Input placeholder="如 jira-summary" />
-      </Form.Item>
-      <Form.Item
-        label="版本"
-        name="version"
-        rules={[
-          { required: true, message: '请输入版本号' },
-          { pattern: /^\d+\.\d+\.\d+$/, message: '需为 Semver x.y.z' },
-        ]}
-      >
-        <Input placeholder="1.0.0" disabled={props.disabled} />
       </Form.Item>
       <Form.Item label="标签" name="tags">
         <Select
