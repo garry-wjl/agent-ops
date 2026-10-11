@@ -29,7 +29,10 @@ public class SkillCreateParam {
     /** 自由标签数组（可空） */
     private List<String> tags;
 
-    /** 版本号字符串（约定 vX.Y.Z） */
+    /**
+     * @deprecated 创建仅落草稿，版本号在发布时由系统自动生成；传入无效
+     */
+    @Deprecated
     private String version;
 
     /** 【UPLOAD 模式】zip 压缩包的 Base64 串 */

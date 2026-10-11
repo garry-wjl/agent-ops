@@ -118,6 +118,10 @@ export interface SkillPublishResultVO {
   errors?: SkillCheckError[];
   /** 检测记录编号（落库后回填，便于跳详情） */
   recordNum?: string | null;
+  /** 检测记录编号（与 BE checkRecordNum 对齐；部分接口只回这个字段） */
+  checkRecordNum?: string | null;
+  /** 拟发 / 已发版本号（upgradeFromZip / publish 回传） */
+  version?: string | null;
   /** 总耗时毫秒 */
   costMs?: number;
 }
@@ -226,8 +230,6 @@ export interface SkillCreateParam {
   mode: SkillCreateMode;
   name: string;
   description: string;
-  /** Semver 版本号 `x.y.z`，首建默认 `1.0.0` */
-  version: string;
   tags?: string[];
   /** mode=UPLOAD：原始 zip 的 Base64（不含 data: 前缀） */
   zipBase64?: string;
@@ -257,7 +259,15 @@ export interface SkillUpdateParam {
  */
 export interface SkillPublishParam {
   skillNum: string;
-  version: string;
+}
+
+/**
+ * 压缩包升级入参：整树覆盖草稿 + 后端自动 bump patch 版本号并发布。
+ */
+export interface SkillUpgradeFromZipParam {
+  skillNum: string;
+  /** 原始 zip 的 Base64（不含 data: 前缀） */
+  zipBase64: string;
 }
 
 /** v2.11：回滚到指定历史版本入参。 */

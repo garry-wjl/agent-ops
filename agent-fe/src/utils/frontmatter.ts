@@ -1,14 +1,15 @@
 /**
  * SKILL.md front-matter 双向同步工具（2026-06-10 Skill 管理优化）
  *
- * 技术方案 §0-Q5 / PRD §6.2：`name` / `description` / `version` 三字段在
+ * 技术方案 §0-Q5 / PRD §6.2：`name` / `description` 在
  * 「元信息表单 ↔ SKILL.md front-matter」之间**实时双向同步**，由前端解析/序列化，
  * 后端按结构化字段落库、不解析 SKILL.md 衔接头。
  *
- * 同步范围严格限定三字段；`tags` 不参与同步（元信息层属性，避免语义冲突）。
+ * 同步范围严格限定 name/description；`version` 由发布时系统写入，不参与表单同步；
+ * `tags` 亦不参与同步（元信息层属性，避免语义冲突）。
  *
- * 设计取舍：仅同步 3 个标量字段，故内置一个**极简 YAML 子集**解析/写回器
- * （只处理 `key: value` 标量 + `# 注释` + 引号），不引入 js-yaml 依赖；
+ * 设计取舍：内置一个**极简 YAML 子集**解析/写回器
+ * （只处理 `key: value` 标量 + `|`/`>` 块标量 + `# 注释` + 引号），不引入 js-yaml 依赖；
  * 对无法识别的复杂 front-matter 不静默破坏——保留原文、解析失败时回报 error。
  */
 
@@ -16,14 +17,13 @@
 export interface SkillFrontMatter {
   name?: string;
   description?: string;
-  version?: string;
 }
 
 /** front-matter 解析结果。 */
 export interface ParsedFrontMatter {
   /** 是否存在 `---` 包裹的 front-matter 块 */
   present: boolean;
-  /** 解析出的同步字段（仅 name/description/version） */
+  /** 解析出的同步字段（仅 name/description） */
   data: SkillFrontMatter;
   /** front-matter 之后的正文（不含分隔线） */
   body: string;
@@ -32,8 +32,9 @@ export interface ParsedFrontMatter {
 }
 
 const FRONT_MATTER_RE = /^﻿?---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n([\s\S]*))?$/;
-/** 仅这三个 key 参与双向同步。 */
-const SYNCED_KEYS = ['name', 'description', 'version'] as const;
+/** 参与表单双向同步的 key（不含 version）。 */
+const SYNCED_KEYS = ['name', 'description'] as const;
+const BLOCK_SCALAR_RE = /^[|>]([+-]?)([0-9]*)$/;
 
 /** 去除标量值两端的成对引号；非引号包裹原样返回。 */
 function unquote(raw: string): string {
@@ -57,10 +58,54 @@ function quoteIfNeeded(value: string): string {
 }
 
 /**
+ * 消费 YAML 块标量（`|` / `>`）后续缩进行，拼成单行文本（空白折叠为空格）。
+ *
+ * @returns `[拼接值, 下一行下标]`
+ */
+function consumeBlockScalar(lines: string[], startIdx: number): [string, number] {
+  const chunks: string[] = [];
+  let i = startIdx;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.trim() === '') {
+      chunks.push('');
+      i += 1;
+      continue;
+    }
+    if (!/^\s/.test(line)) break;
+    chunks.push(line.trim());
+    i += 1;
+  }
+  const text = chunks
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return [text, i];
+}
+
+/**
+ * 跳过非同步键的块标量 / 缩进续行，避免把合法嵌套 YAML 当成解析错误。
+ */
+function skipIndentedBlock(lines: string[], startIdx: number): number {
+  let i = startIdx;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.trim() === '') {
+      i += 1;
+      continue;
+    }
+    if (!/^\s/.test(line)) break;
+    i += 1;
+  }
+  return i;
+}
+
+/**
  * 解析 SKILL.md，抽出 front-matter 三字段与正文。
  *
  * - 无 front-matter 块时 `present=false`，`data` 为空，`body` 为全文；
- * - YAML 形态异常（缺闭合 `---`、键值非法）时 `error` 非空，调用方据此标红提示。
+ * - YAML 形态异常（缺闭合 `---`、键值非法）时 `error` 非空，调用方据此标红提示；
+ * - 即便 `error` 非空，已解析出的同步字段仍会放进 `data`（便于上传 zip 回填）。
  */
 export function parseSkillMarkdown(md: string): ParsedFrontMatter {
   const text = md ?? '';
@@ -84,20 +129,66 @@ export function parseSkillMarkdown(md: string): ParsedFrontMatter {
   let error: string | null = null;
 
   const lines = yamlBlock.split(/\r?\n/);
-  for (const line of lines) {
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
     const trimmed = line.trim();
-    if (trimmed === '' || trimmed.startsWith('#')) continue;
+    if (trimmed === '' || trimmed.startsWith('#')) {
+      i += 1;
+      continue;
+    }
+    // 顶层缩进行：嵌套结构，跳过整块，不报错
+    if (/^\s/.test(line)) {
+      i = skipIndentedBlock(lines, i);
+      continue;
+    }
     const colon = line.indexOf(':');
     if (colon === -1) {
       error = `front-matter 行无法解析为 key: value —— "${trimmed}"`;
+      i += 1;
       continue;
     }
     const key = line.slice(0, colon).trim();
-    const valueRaw = line.slice(colon + 1);
-    // 嵌套 / 列表（行首缩进或值以 - 起头的多行结构）超出同步范围，忽略不报错
-    if (/^\s/.test(line) || valueRaw.trim().startsWith('-')) continue;
-    if ((SYNCED_KEYS as readonly string[]).includes(key)) {
+    const valueRaw = line.slice(colon + 1).trim();
+    const synced = (SYNCED_KEYS as readonly string[]).includes(key);
+
+    // 列表值或以 `-` 起头的多行结构：非同步键跳过；同步键不支持列表
+    if (valueRaw.startsWith('-')) {
+      i = skipIndentedBlock(lines, i + 1);
+      continue;
+    }
+
+    const block = valueRaw.match(BLOCK_SCALAR_RE);
+    if (block) {
+      if (synced) {
+        const [textValue, next] = consumeBlockScalar(lines, i + 1);
+        if (textValue) {
+          data[key as keyof SkillFrontMatter] = textValue;
+        }
+        i = next;
+      } else {
+        i = skipIndentedBlock(lines, i + 1);
+      }
+      continue;
+    }
+
+    if (synced) {
       data[key as keyof SkillFrontMatter] = unquote(valueRaw);
+    }
+    // 普通标量后若紧跟缩进行（隐式续行 / 嵌套），一并跳过以免误报
+    i += 1;
+    if (i < lines.length && /^\s/.test(lines[i] ?? '')) {
+      if (synced && data[key as keyof SkillFrontMatter] !== undefined) {
+        // 同步键的隐式续行：追加到标量值
+        const [extra, next] = consumeBlockScalar(lines, i);
+        if (extra) {
+          const prev = data[key as keyof SkillFrontMatter] ?? '';
+          data[key as keyof SkillFrontMatter] = `${prev} ${extra}`.trim();
+        }
+        i = next;
+      } else {
+        i = skipIndentedBlock(lines, i);
+      }
     }
   }
 
@@ -130,19 +221,35 @@ export function applyFrontMatter(md: string, patch: SkillFrontMatter): string {
   const body = match[2] ?? '';
   const lines = yamlBlock.split(/\r?\n/);
   const handled = new Set<string>();
+  const nextLines: string[] = [];
 
-  const nextLines = lines.map((line) => {
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
     const colon = line.indexOf(':');
     if (colon === -1 || /^\s/.test(line) || line.trim().startsWith('#')) {
-      return line;
+      nextLines.push(line);
+      i += 1;
+      continue;
     }
     const key = line.slice(0, colon).trim();
-    if ((SYNCED_KEYS as readonly string[]).includes(key) && patch[key as keyof SkillFrontMatter] !== undefined) {
+    const valueRaw = line.slice(colon + 1).trim();
+    if (
+      (SYNCED_KEYS as readonly string[]).includes(key) &&
+      patch[key as keyof SkillFrontMatter] !== undefined
+    ) {
       handled.add(key);
-      return renderLine(key, patch[key as keyof SkillFrontMatter] as string);
+      nextLines.push(renderLine(key, patch[key as keyof SkillFrontMatter] as string));
+      i += 1;
+      // 丢掉原块标量 / 隐式续行，避免留下孤儿缩进
+      if (BLOCK_SCALAR_RE.test(valueRaw) || (i < lines.length && /^\s/.test(lines[i] ?? ''))) {
+        i = skipIndentedBlock(lines, i);
+      }
+      continue;
     }
-    return line;
-  });
+    nextLines.push(line);
+    i += 1;
+  }
 
   for (const key of SYNCED_KEYS) {
     if (patch[key] !== undefined && !handled.has(key)) {

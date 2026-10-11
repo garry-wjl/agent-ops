@@ -85,9 +85,16 @@ export default function PublishCheckModal(props: Props) {
                 fontSize: 13,
               }}
             >
-              三项检测全部通过，版本已生效上线。
+              三项检测全部通过
+              {result.version ? `，已发布版本 ${result.version}` : '，版本已生效上线'}
+              。
             </div>
           )}
+          {!isPass && result.version ? (
+            <div style={{ fontSize: 12, color: COLOR.textMuted }}>
+              拟发版本 {result.version}（由系统自动分配）
+            </div>
+          ) : null}
           <CheckResultView
             result={result.result}
             sizeResult={result.sizeResult}

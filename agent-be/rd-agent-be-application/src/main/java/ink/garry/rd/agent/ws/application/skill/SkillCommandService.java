@@ -11,6 +11,7 @@ import ink.garry.rd.agent.ws.client.skill.dto.SkillPublishResultDTO;
 import ink.garry.rd.agent.ws.client.skill.dto.SkillResourceFileDTO;
 import ink.garry.rd.agent.ws.client.skill.dto.SkillResourceTreeDTO;
 import ink.garry.rd.agent.ws.client.skill.dto.SkillUpdateParamDTO;
+import ink.garry.rd.agent.ws.client.skill.dto.SkillUpgradeFromZipParamDTO;
 import ink.garry.rd.agent.ws.domain.skill.Skill;
 import ink.garry.rd.agent.ws.domain.skill.SkillVersion;
 import ink.garry.rd.agent.ws.domain.skill.dto.SkillCheckResultDTO;
@@ -26,7 +27,9 @@ import ink.garry.rd.agent.ws.domain.skillcheck.valueobject.SkillCheckResult;
 import ink.garry.rd.agent.ws.facade.exception.BusinessException;
 import ink.garry.rd.agent.ws.infra.common.constant.LockKeyConstant;
 import ink.garry.rd.agent.ws.infra.common.util.SkillChecker;
+import ink.garry.rd.agent.ws.infra.common.util.SkillFrontMatterUtil;
 import ink.garry.rd.agent.ws.infra.common.util.SkillResourceCodec;
+import ink.garry.rd.agent.ws.infra.common.util.SkillSemver;
 import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContextHolder;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -62,7 +65,7 @@ import java.util.stream.Collectors;
  * </ul>
  * <p>
  * <b>方法集</b>：createSkill / parseZipPreview / updateSkill / discardDraft / publish /
- * rollbackToVersion / unpublish / delete。
+ * upgradeFromZip / rollbackToVersion / unpublish / delete。
  */
 @Slf4j
 @Service
@@ -103,7 +106,8 @@ public class SkillCommandService {
      *   <li>mode=DIRECT：使用 {@code resourceFiles} 前端组装的资源树。</li>
      * </ul>
      *
-     * @param param      创建参数；name / description / version / ownerUserId / mode 必填，按 mode 提供 zipBase64 或 resourceFiles
+     * @param param      创建参数；name / description / ownerUserId / mode 必填，按 mode 提供 zipBase64 或 resourceFiles
+     *                   （version 已废弃，发布时由系统自动生成）
      * @param operatorId 操作人用户 ID
      * @return 创建后的 {@link SkillDTO}（status=DRAFT）
      */
@@ -113,7 +117,6 @@ public class SkillCommandService {
         Assert.notBlank(operatorId, "操作人不能为空");
         Assert.notBlank(param.getName(), "Skill 名称不能为空");
         Assert.notBlank(param.getDescription(), "Skill 描述不能为空");
-        Assert.notBlank(param.getVersion(), "版本号不能为空");
         Assert.notBlank(param.getOwnerUserId(), "Skill 负责人不能为空");
         Assert.notBlank(param.getMode(), "创建方式 mode 不能为空");
 
@@ -269,17 +272,16 @@ public class SkillCommandService {
      *       → 落检测记录(PASS)；</li>
      *   <li>FAIL：skill.markCheckFailed(CHECKING→CHECK_FAILED) → 落检测记录(FAIL)。</li>
      * </ul>
+     * 版本号由系统自动分配（当前在线版本 patch+1，冲突则继续递增），并写回 SKILL.md front-matter。
      * 版本号唯一冲突仍抛 {@link BizCode#VERSION_CONFLICT}（参数错误，非检测结果）。
      *
      * @param skillNum   Skill 业务编号
-     * @param version    本次发布版本号
      * @param operatorId 操作人用户 ID
-     * @return 发布结果（result=PASS/FAIL + 三项子结果 + errors + 检测记录 num）
+     * @return 发布结果（result=PASS/FAIL + 三项子结果 + errors + 自动生成的 version）
      */
     @Transactional(rollbackFor = Exception.class)
-    public SkillPublishResultDTO publish(String skillNum, String version, String operatorId) {
+    public SkillPublishResultDTO publish(String skillNum, String operatorId) {
         Assert.notBlank(skillNum, "Skill 业务编号不能为空");
-        Assert.notBlank(version, "版本号不能为空");
         Assert.notBlank(operatorId, "操作人不能为空");
 
         return runWithLock(LockKeyConstant.SKILL_COMMAND_LOCK_PREFIX + skillNum, () -> {
@@ -287,40 +289,120 @@ public class SkillCommandService {
             if (skill == null) {
                 throw new BusinessException(BizCode.SKILL_NOT_FOUND.getCode(), "Skill 不存在 num=" + skillNum);
             }
-
-            // 1. 版本号唯一性预检（经 QueryService；版本冲突属参数错误，抛异常）
-            if (skillQueryService.existsByVersion(skillNum, version)) {
-                throw new BusinessException(BizCode.VERSION_CONFLICT.getCode(),
-                        "Skill " + skillNum + " 版本号 " + version + " 已存在");
-            }
-
-            // 2. 提交发布：DRAFT → CHECKING（COMPANY 守卫由聚合内断言）
-            skill.submitForCheck(version, operatorId);
-
-            // 3. 三检（infra 工具，不抛异常返回结构体）
-            SkillCheckResultDTO checkResult = SkillChecker.check(skill.getResourceFiles());
-
-            String checkRecordNum;
-            if (checkResult.getResult() == SkillCheckResult.PASS) {
-                // 4a. 通过：建版本快照（含资源树）→ save → publish；再切 Skill 主表
-                SkillVersion newVersion = skillFactory.buildSkillVersion(
-                        skill.getNum(), version, skill.getName(), skill.getDescription(),
-                        skill.getTags(), skill.getResourceFiles());
-                newVersion.save(operatorId);
-                newVersion.publish(operatorId);
-                skill.publish(version, operatorId);
-                checkRecordNum = saveCheckRecord(skill, version, checkResult, operatorId);
-                log.info("[SkillCommandService] publish PASS num={} version={} operator={}",
-                        skillNum, version, operatorId);
-            } else {
-                // 4b. 不通过：CHECKING → CHECK_FAILED；落检测记录
-                skill.markCheckFailed(operatorId);
-                checkRecordNum = saveCheckRecord(skill, version, checkResult, operatorId);
-                log.info("[SkillCommandService] publish CHECK_FAILED num={} version={} errorCount={}",
-                        skillNum, version, checkResult.getErrors() == null ? 0 : checkResult.getErrors().size());
-            }
-            return toPublishResultDTO(checkResult, checkRecordNum, version);
+            String nextVersion = allocateNextVersion(skillNum, skill.getCurrentVersionNum());
+            List<SkillResourceFile> files = SkillFrontMatterUtil.rewriteRootVersion(
+                    skill.getResourceFiles(), nextVersion);
+            skill.setResourceFiles(files);
+            skill.setStatus(SkillStatus.DRAFT);
+            skill.save(operatorId);
+            log.info("[SkillCommandService] publish auto-version num={} nextVersion={} operator={}",
+                    skillNum, nextVersion, operatorId);
+            return publishUnlocked(skill, nextVersion, operatorId);
         });
+    }
+
+    /**
+     * 通过 zip 压缩包升级 Skill：整树覆盖草稿 → 自动 bump patch 版本号 → 同步 SKILL.md front-matter
+     * → 走发布三检生成不可变版本。
+     *
+     * @param param      skillNum + zipBase64
+     * @param operatorId 操作人
+     * @return 发布结果（含自动生成的 version）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public SkillPublishResultDTO upgradeFromZip(SkillUpgradeFromZipParamDTO param, String operatorId) {
+        Assert.notNull(param, "升级参数不能为空");
+        Assert.notBlank(param.getSkillNum(), "Skill 业务编号不能为空");
+        Assert.notBlank(param.getZipBase64(), "zipBase64 不能为空");
+        Assert.notBlank(operatorId, "操作人不能为空");
+
+        String skillNum = param.getSkillNum();
+        return runWithLock(LockKeyConstant.SKILL_COMMAND_LOCK_PREFIX + skillNum, () -> {
+            Skill skill = skillFactory.buildSkillByNum(skillNum);
+            if (skill == null) {
+                throw new BusinessException(BizCode.SKILL_NOT_FOUND.getCode(), "Skill 不存在 num=" + skillNum);
+            }
+            skill.assertWritableByLocal();
+
+            List<SkillResourceFile> files = SkillResourceCodec.expandZip(Base64.decode(param.getZipBase64()));
+            String nextVersion = allocateNextVersion(skillNum, skill.getCurrentVersionNum());
+            files = SkillFrontMatterUtil.rewriteRootVersion(files, nextVersion);
+
+            // 用压缩包 front-matter 覆盖展示字段（有则写）
+            var fm = SkillFrontMatterUtil.parseRootFields(files);
+            if (StrUtil.isNotBlank(fm.get("name"))) {
+                skill.setName(fm.get("name"));
+            }
+            if (StrUtil.isNotBlank(fm.get("description"))) {
+                skill.setDescription(fm.get("description"));
+            }
+
+            skill.setResourceFiles(files);
+            skill.setStatus(SkillStatus.DRAFT);
+            skill.save(operatorId);
+
+            log.info("[SkillCommandService] upgradeFromZip draft replaced num={} nextVersion={} operator={}",
+                    skillNum, nextVersion, operatorId);
+            return publishUnlocked(skill, nextVersion, operatorId);
+        });
+    }
+
+    /**
+     * 在已持有 Skill 命令锁的前提下执行发布三检（供 {@link #publish} / {@link #upgradeFromZip} 复用）。
+     *
+     * @param skill      已加载的聚合
+     * @param version    拟发布版本号
+     * @param operatorId 操作人
+     * @return 发布结果
+     */
+    private SkillPublishResultDTO publishUnlocked(Skill skill, String version, String operatorId) {
+        String skillNum = skill.getNum();
+        if (skillQueryService.existsByVersion(skillNum, version)) {
+            throw new BusinessException(BizCode.VERSION_CONFLICT.getCode(),
+                    "Skill " + skillNum + " 版本号 " + version + " 已存在");
+        }
+
+        skill.submitForCheck(version, operatorId);
+        SkillCheckResultDTO checkResult = SkillChecker.check(skill.getResourceFiles());
+
+        String checkRecordNum;
+        if (checkResult.getResult() == SkillCheckResult.PASS) {
+            SkillVersion newVersion = skillFactory.buildSkillVersion(
+                    skill.getNum(), version, skill.getName(), skill.getDescription(),
+                    skill.getTags(), skill.getResourceFiles());
+            newVersion.save(operatorId);
+            newVersion.publish(operatorId);
+            skill.publish(version, operatorId);
+            checkRecordNum = saveCheckRecord(skill, version, checkResult, operatorId);
+            log.info("[SkillCommandService] publish PASS num={} version={} operator={}",
+                    skillNum, version, operatorId);
+        } else {
+            skill.markCheckFailed(operatorId);
+            checkRecordNum = saveCheckRecord(skill, version, checkResult, operatorId);
+            log.info("[SkillCommandService] publish CHECK_FAILED num={} version={} errorCount={}",
+                    skillNum, version, checkResult.getErrors() == null ? 0 : checkResult.getErrors().size());
+        }
+        return toPublishResultDTO(checkResult, checkRecordNum, version);
+    }
+
+    /**
+     * 分配下一可用 patch 版本：从 {@code currentVersionNum} bump，冲突则继续递增。
+     *
+     * @param skillNum           Skill 编号
+     * @param currentVersionNum  当前在线版本（可空）
+     * @return 未占用的版本号
+     */
+    private String allocateNextVersion(String skillNum, String currentVersionNum) {
+        String candidate = SkillSemver.nextPatch(currentVersionNum);
+        // 防御：草稿期可能曾用过中间号；最多探测 1000 次避免死循环
+        for (int i = 0; i < 1000; i++) {
+            if (!skillQueryService.existsByVersion(skillNum, candidate)) {
+                return candidate;
+            }
+            candidate = SkillSemver.nextPatch(candidate);
+        }
+        throw new BusinessException(BizCode.VERSION_CONFLICT.getCode(),
+                "无法为 Skill " + skillNum + " 分配可用版本号");
     }
 
     /** 落一条检测记录，返回其业务编号。 */

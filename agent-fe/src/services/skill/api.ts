@@ -2,7 +2,7 @@
  * Skill 服务 — 对应 BE Skill 管理 技术方案 v2.11 + 2026-06-10 优化（双模式创建 + 文件入库 + 发布检测）
  *
  * 路径约定（adapter 层 command / query 两组）：
- * - 写：/api/v1/skill/command/{create|update|discardDraft|publish|rollback|unpublish|delete}
+ * - 写：/api/v1/skill/command/{create|update|discardDraft|publish|upgradeFromZip|rollback|unpublish|delete}
  * - 读：POST /api/v1/skill/query/list / versionCompare / parseZip
  *       GET  /api/v1/skill/query/detail / versionList / versionDetail
  *            /resourceTree / checkRecord/page / checkRecord/detail
@@ -33,6 +33,7 @@ import type {
   SkillResourceTreeVO,
   SkillRollbackParam,
   SkillUpdateParam,
+  SkillUpgradeFromZipParam,
   SkillVO,
   SkillBindableVersionVO,
   SkillVersionDetailVO,
@@ -87,6 +88,14 @@ export const skillApi = {
    */
   publish: (param: SkillPublishParam) =>
     post<SkillPublishResultVO>('/api/v1/skill/command/publish', param),
+
+  /**
+   * 压缩包升级：解压覆盖草稿资源树 → 自动生成下一 patch 版本 → 发布三检。
+   * <p>PASS → 返回 {@link SkillPublishResultVO}（含 version）；
+   * FAIL → BizError(3006)，data 为检测明细。
+   */
+  upgradeFromZip: (param: SkillUpgradeFromZipParam) =>
+    post<SkillPublishResultVO>('/api/v1/skill/command/upgradeFromZip', param),
 
   /** 2026-06-10：zip 解析预览（只解析不落库，POST 因携带大体积 Base64 body）。 */
   parseZip: (param: SkillZipParseParam) =>
