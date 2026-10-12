@@ -5,6 +5,7 @@ import com.alibaba.opensandbox.sandbox.domain.models.execd.executions.ExecutionE
 import com.alibaba.opensandbox.sandbox.domain.models.execd.executions.ExecutionLogs;
 import com.alibaba.opensandbox.sandbox.domain.models.execd.executions.OutputMessage;
 import com.alibaba.opensandbox.sandbox.domain.models.execd.executions.RunInSessionRequest;
+import ink.garry.rd.agent.ws.application.agentrunner.sandbox.HeaderEnvInjector;
 import ink.garry.rd.agent.ws.application.sandbox.lifecycle.SessionSandboxLifecycleService;
 import ink.garry.rd.agent.ws.application.sandbox.lifecycle.SessionSandboxSkillProjector;
 import ink.garry.rd.agent.ws.application.sandbox.pool.SandboxPoolService;
@@ -61,15 +62,17 @@ public class SandboxRunnerOpenSandboxExecBridge implements OpenSandboxExecBridge
             long ttlMinutes,
             String command)
             throws Exception {
+        // OpenSandbox runInSession 无 per-command env：用 export 前缀注入 header→env
+        String effective = HeaderEnvInjector.prefixExports(env, command);
         try (SandboxSession session =
                      sandboxRunner.obtainSession(instanceId, sessionNum, env, ttlMinutes)) {
             Execution execution = session.sandbox().commands()
                     .runInSession(session.execdSessionId(),
-                            RunInSessionRequest.builder().command(command).build());
+                            RunInSessionRequest.builder().command(effective).build());
             sandboxPoolService.markSessionActive(sessionNum);
             return toResult(execution);
         } catch (Exception e) {
-            return retryOnceAfterRebind(instanceId, sessionNum, env, ttlMinutes, command, null, null, e, true);
+            return retryOnceAfterRebind(instanceId, sessionNum, env, ttlMinutes, effective, null, null, e, true);
         }
     }
 

@@ -6,6 +6,7 @@ import com.alibaba.fastjson2.JSON;
 import ink.garry.rd.agent.ws.client.agent.A2aResyncVO;
 import ink.garry.rd.agent.ws.client.agent.AgentCreateParam;
 import ink.garry.rd.agent.ws.client.agent.CompactionSetting;
+import ink.garry.rd.agent.ws.client.agent.HeaderEnvMappingParam;
 import ink.garry.rd.agent.ws.client.agent.PublishParam;
 import ink.garry.rd.agent.ws.client.common.BizCode;
 import ink.garry.rd.agent.ws.client.skill.dto.SkillDetailDTO;
@@ -22,6 +23,7 @@ import ink.garry.rd.agent.ws.domain.agent.valueobject.AgentVersionStatus;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.CompactionPolicy;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.ConfigSnapshot;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.CreationMode;
+import ink.garry.rd.agent.ws.domain.agent.valueobject.HeaderEnvMapping;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.MemoryConfig;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.SkillRef;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.SyncEventType;
@@ -630,6 +632,8 @@ public class AgentCommandService {
                 .skillRefs(toSkillRefs(p.getSkillRefs()))
                 .toolRefs(toToolRefs(p.getToolRefs()))
                 .sandboxRef(p.getSandboxRef())
+                .headerEnvInjectEnabled(p.getHeaderEnvInjectEnabled())
+                .headerEnvMappings(toHeaderEnvMappings(p.getHeaderEnvMappings()))
                 .childAgentNums(p.getChildAgentNums())
                 .memoryConfig(memoryFromMap(p.getMemoryConfig()))
                 .qps(p.getQps())
@@ -658,6 +662,14 @@ public class AgentCommandService {
         }
         if (snapshot.getMaxIters() == null) {
             snapshot.setMaxIters(10);
+        }
+        snapshot.setHeaderEnvInjectEnabled(Boolean.TRUE.equals(snapshot.getHeaderEnvInjectEnabled()));
+        if (snapshot.getHeaderEnvMappings() != null) {
+            snapshot.setHeaderEnvMappings(snapshot.getHeaderEnvMappings().stream()
+                    .filter(m -> m != null
+                            && StrUtil.isNotBlank(m.getHeaderName())
+                            && StrUtil.isNotBlank(m.getEnvName()))
+                    .toList());
         }
         snapshot.setEnableLongTermMemory(Boolean.TRUE.equals(snapshot.getEnableLongTermMemory()));
         snapshot.setCompaction(CompactionPolicy.normalize(snapshot.getCompaction()));
@@ -745,6 +757,23 @@ public class AgentCommandService {
                     .build());
         }
         return result;
+    }
+
+    private List<HeaderEnvMapping> toHeaderEnvMappings(List<HeaderEnvMappingParam> mappings) {
+        if (mappings == null || mappings.isEmpty()) {
+            return null;
+        }
+        List<HeaderEnvMapping> result = new ArrayList<>();
+        for (HeaderEnvMappingParam m : mappings) {
+            if (m == null || StrUtil.isBlank(m.getHeaderName()) || StrUtil.isBlank(m.getEnvName())) {
+                continue;
+            }
+            result.add(HeaderEnvMapping.builder()
+                    .headerName(m.getHeaderName().trim())
+                    .envName(m.getEnvName().trim())
+                    .build());
+        }
+        return result.isEmpty() ? null : result;
     }
 
     private List<ToolRef> toToolRefs(List<ink.garry.rd.agent.ws.client.agent.ToolRefParam> refs) {

@@ -1,11 +1,12 @@
 /**
- * SandboxSpecSection 环境变量行 ↔ Record 互转。
+ * SandboxSpecSection 环境变量行 ↔ Record 互转；请求头映射压缩。
  */
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_SANDBOX_SPEC,
   envRecordToRows,
   envRowsToRecord,
+  headerEnvMappingsToParam,
 } from '../SandboxSpecSection';
 
 describe('SandboxSpecSection env helpers', () => {
@@ -13,6 +14,8 @@ describe('SandboxSpecSection env helpers', () => {
     expect(DEFAULT_SANDBOX_SPEC.sandboxEnabled).toBe(true);
     expect(DEFAULT_SANDBOX_SPEC.sandboxCpu).toBe(1);
     expect(DEFAULT_SANDBOX_SPEC.sandboxEnv).toEqual([]);
+    expect(DEFAULT_SANDBOX_SPEC.headerEnvInjectEnabled).toBe(false);
+    expect(DEFAULT_SANDBOX_SPEC.headerEnvMappings).toEqual([]);
   });
 
   it('envRecordToRows maps object to rows', () => {
@@ -34,5 +37,17 @@ describe('SandboxSpecSection env helpers', () => {
     ).toEqual({ FOO: 'bar' });
     expect(envRowsToRecord([])).toBeUndefined();
     expect(envRowsToRecord(null)).toBeUndefined();
+  });
+
+  it('headerEnvMappingsToParam skips blank rows', () => {
+    expect(
+      headerEnvMappingsToParam([
+        { headerName: ' X-User-Id ', envName: ' USER_ID ' },
+        { headerName: '', envName: 'X' },
+        { headerName: 'H', envName: '' },
+      ]),
+    ).toEqual([{ headerName: 'X-User-Id', envName: 'USER_ID' }]);
+    expect(headerEnvMappingsToParam([])).toBeUndefined();
+    expect(headerEnvMappingsToParam(null)).toBeUndefined();
   });
 });

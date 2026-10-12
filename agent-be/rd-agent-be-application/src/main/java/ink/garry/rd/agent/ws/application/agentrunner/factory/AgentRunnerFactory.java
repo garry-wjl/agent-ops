@@ -13,6 +13,7 @@ import ink.garry.rd.agent.ws.application.agentrunner.tool.ReadAttachmentTool;
 import ink.garry.rd.agent.ws.application.agentrunner.tool.SandboxTool;
 import ink.garry.rd.agent.ws.application.attachment.query.AttachmentQueryService;
 import ink.garry.rd.agent.ws.application.common.prompt.SysPromptVariableSubstitutor;
+import ink.garry.rd.agent.ws.application.agentrunner.sandbox.HeaderEnvInjector;
 import ink.garry.rd.agent.ws.application.sandbox.SandboxQueryService;
 import ink.garry.rd.agent.ws.application.sandbox.lifecycle.SessionSandboxLifecycleService;
 import ink.garry.rd.agent.ws.application.sandbox.lifecycle.SessionSandboxSkillProjector;
@@ -229,8 +230,9 @@ public class AgentRunnerFactory {
             // AgentScope 2.0.0：上下文管理由 stateStore 自动处理，不再需要手动构建 Memory；
             // 通过 .stateStore(agentStateStore) 注入后，agent 在 call/stream 时自动 save/load。
 
-            //2.构建环境变量:后续迁移到创建沙箱的时候
-            Map<String, String> env = new HashMap<>();
+            //2. 沙箱环境变量：在请求线程抓取入站头，按快照映射表转为 env（异步线程无 RequestContext）
+            Map<String, String> env = new HashMap<>(HeaderEnvInjector.resolve(
+                    agent.getConfigSnapshot(), HttpHeaderUtil.getHeaderMap()));
 
             //3. 构建工具集（FC/MCP/内置）；沙箱走 Harness filesystem，不再注册 SandboxTool
             Toolkit toolkit = new Toolkit();
@@ -466,13 +468,16 @@ public class AgentRunnerFactory {
             log.warn("[sandbox] resolve aliveMinutes for user-managed context failed ref={}: {}",
                     sandboxRef, e.getMessage());
         }
+        // 与 build() 一致：请求线程解析 header→env，写入 user-managed 上下文供后续 exec 使用
+        Map<String, String> env = HeaderEnvInjector.resolve(
+                agent.getConfigSnapshot(), HttpHeaderUtil.getHeaderMap());
         return OpenSandboxUserManagedContextFactory.create(
                 openSandboxExecBridge,
                 instanceId,
                 sessionNum,
                 sandboxRef,
                 agent.getNum(),
-                Map.of(),
+                env,
                 ttl);
     }
 

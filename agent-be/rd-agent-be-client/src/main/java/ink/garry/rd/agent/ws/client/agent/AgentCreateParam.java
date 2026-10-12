@@ -69,6 +69,15 @@ public class AgentCreateParam {
     /** v4.0 - 关联沙箱引用标识（由 sandboxSpec 维护时可不传） */
     private String sandboxRef;
 
+    /**
+     * 是否将 Invoke 入站请求头按 {@link #headerEnvMappings} 注入沙箱环境变量。
+     * <p>缺省 false。
+     */
+    private Boolean headerEnvInjectEnabled;
+
+    /** 请求头 → 沙箱环境变量映射。 */
+    private List<HeaderEnvMappingParam> headerEnvMappings;
+
     /** Agent 内嵌沙箱规格；优先于直接传 sandboxRef */
     private SandboxSpecParam sandboxSpec;
 

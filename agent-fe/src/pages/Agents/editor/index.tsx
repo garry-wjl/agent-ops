@@ -61,6 +61,7 @@ import SandboxSpecSection, {
   DEFAULT_SANDBOX_SPEC,
   envRecordToRows,
   envRowsToRecord,
+  headerEnvMappingsToParam,
 } from '../components/SandboxSpecSection';
 import type { AssetOption } from '../components/AssetPickerModal';
 import PromptPickerModal from '../components/PromptPickerModal';
@@ -276,6 +277,11 @@ export default function AgentEditorPage() {
             sandboxAliveMinutes: 10,
             sandboxMaxConcurrent: 8,
             sandboxEnv: [],
+            headerEnvInjectEnabled: snap?.headerEnvInjectEnabled ?? false,
+            headerEnvMappings: (snap?.headerEnvMappings ?? []).map((m) => ({
+              headerName: m.headerName ?? '',
+              envName: m.envName ?? '',
+            })),
           },
         });
         if (snap?.sandboxRef) {
@@ -352,6 +358,8 @@ export default function AgentEditorPage() {
       toolNums: draft.ctx.toolNums,
       toolRefs: draft.ctx.toolRefs,
       sandboxRef: draft.ctx.sandboxRef,
+      headerEnvInjectEnabled: Boolean(draft.ctx.headerEnvInjectEnabled),
+      headerEnvMappings: headerEnvMappingsToParam(draft.ctx.headerEnvMappings),
     });
 
   const buildCreateParam = (): AgentCreateParam =>
@@ -371,6 +379,8 @@ export default function AgentEditorPage() {
       toolNums: draft.ctx.toolNums,
       toolRefs: draft.ctx.toolRefs,
       sandboxRef: draft.ctx.sandboxRef,
+      headerEnvInjectEnabled: Boolean(draft.ctx.headerEnvInjectEnabled),
+      headerEnvMappings: headerEnvMappingsToParam(draft.ctx.headerEnvMappings),
       sandboxSpec: buildSandboxSpec(),
     });
 
