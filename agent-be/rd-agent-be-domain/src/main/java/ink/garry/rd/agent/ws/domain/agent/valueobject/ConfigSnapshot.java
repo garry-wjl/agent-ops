@@ -90,6 +90,18 @@ public class ConfigSnapshot {
     private List<ToolRef> toolRefs;
     /** 关联沙箱的引用标识（v4.0 新增：沙箱管理引用，单选可空） */
     private String sandboxRef;
+
+    /**
+     * 是否将 Invoke 入站请求头按 {@link #headerEnvMappings} 注入沙箱环境变量。
+     * <p>缺省 false；仅绑定沙箱时有意义。
+     */
+    private Boolean headerEnvInjectEnabled;
+
+    /**
+     * 请求头 → 沙箱环境变量映射表；仅 {@link #headerEnvInjectEnabled}=true 时消费。
+     */
+    private List<HeaderEnvMapping> headerEnvMappings;
+
     /** 子 Agent 业务编号列表（仅 SUPERVISOR / ROUTER 使用） */
     private List<String> childAgentNums;
     /** 记忆配置（v2.5 重构：策略枚举 + 短期窗口 N） */

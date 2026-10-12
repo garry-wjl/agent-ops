@@ -76,6 +76,10 @@ export interface ToolsContextValue {
   sandboxMaxConcurrent?: number;
   /** 沙箱环境变量编辑行 */
   sandboxEnv?: { key: string; value: string }[];
+  /** 是否将接口请求头转换为沙箱环境变量 */
+  headerEnvInjectEnabled?: boolean;
+  /** 请求头 → 环境变量映射编辑行 */
+  headerEnvMappings?: { headerName: string; envName: string }[];
 }
 
 export interface ToolsContextSectionProps {

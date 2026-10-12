@@ -156,6 +156,17 @@ public class AgentDTO {
         /** 关联沙箱引用标识（v4.0 新增：沙箱管理引用，单选可空） */
         private String sandboxRef;
 
+        /**
+         * 是否将 Invoke 入站请求头按 {@link #headerEnvMappings} 注入沙箱环境变量。
+         * <p>缺省 false；仅绑定沙箱时有意义。
+         */
+        private Boolean headerEnvInjectEnabled;
+
+        /**
+         * 请求头 → 沙箱环境变量映射；仅 {@code headerEnvInjectEnabled}=true 时消费。
+         */
+        private List<HeaderEnvMapping> headerEnvMappings;
+
         /** 子 Agent 业务编号列表(仅 SUPERVISOR / ROUTER) */
         private List<String> childAgentNums;
 
@@ -167,6 +178,20 @@ public class AgentDTO {
 
         /** 每日预算(次数 / token,按运营协议口径) */
         private Integer dailyBudget;
+
+        /**
+         * 入站请求头 → 沙箱环境变量映射项（与 domain {@code HeaderEnvMapping} 镜像）。
+         */
+        @Data
+        @Builder
+        @AllArgsConstructor
+        @NoArgsConstructor
+        public static class HeaderEnvMapping {
+            /** 入站请求头名（大小写不敏感）。 */
+            private String headerName;
+            /** 沙箱环境变量名。 */
+            private String envName;
+        }
 
         /** Skill 版本引用。 */
         @Data

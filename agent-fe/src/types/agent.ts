@@ -108,12 +108,31 @@ export interface ConfigSnapshot {
    * <p>来自沙箱管理「在线」沙箱的 num；空表示不挂载沙箱。
    */
   sandboxRef?: string;
+  /**
+   * 是否将 Invoke 入站请求头按 headerEnvMappings 注入沙箱环境变量。
+   * <p>缺省 false；仅绑定沙箱时有意义。
+   */
+  headerEnvInjectEnabled?: boolean;
+  /**
+   * 请求头 → 沙箱环境变量映射表；仅 headerEnvInjectEnabled=true 时消费。
+   */
+  headerEnvMappings?: HeaderEnvMapping[];
   childAgentNums?: string[];
   memoryConfig?: MemoryConfig;
   qps?: number;
   dailyBudget?: number;
   /** 接入式 5 mode 的差异化配置 */
   modeConfig?: ApiModeConfig | Record<string, any>;
+}
+
+/**
+ * 入站请求头 → 沙箱环境变量映射项。
+ */
+export interface HeaderEnvMapping {
+  /** 请求头名（大小写不敏感） */
+  headerName: string;
+  /** 沙箱环境变量名 */
+  envName: string;
 }
 
 /**
@@ -379,6 +398,10 @@ export interface AgentCreateParam {
   toolRefs?: ToolRefParam[];
   /** 沙箱引用（由 sandboxSpec 维护后回写） */
   sandboxRef?: string;
+  /** 是否将 Invoke 请求头注入沙箱环境变量 */
+  headerEnvInjectEnabled?: boolean;
+  /** 请求头 → 环境变量映射 */
+  headerEnvMappings?: HeaderEnvMapping[];
   /** Agent 内嵌沙箱规格 */
   sandboxSpec?: SandboxSpecParam;
   childAgentNums?: string[];

@@ -1,7 +1,7 @@
 /**
  * Agent 编辑页「沙箱」独立区块。
  * 放在系统提示词与「工具与上下文」之间，不进 Tab。默认开启。
- * 启用后可配置规格与容器环境变量（创建沙箱时注入）。
+ * 启用后可配置规格、容器环境变量，以及 Invoke 请求头→环境变量映射。
  */
 import { Button, Empty, Input, InputNumber, Space, Switch, Typography } from 'antd';
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
@@ -21,12 +21,34 @@ export const DEFAULT_SANDBOX_SPEC = {
   sandboxAliveMinutes: 10,
   sandboxMaxConcurrent: 8,
   sandboxEnv: [] as SandboxEnvRow[],
+  headerEnvInjectEnabled: false,
+  headerEnvMappings: [] as HeaderEnvMappingRow[],
 } as const;
 
 /** 环境变量编辑行（前端表单态；提交时压成 Record）。 */
 export interface SandboxEnvRow {
   key: string;
   value: string;
+}
+
+/** 请求头 → 环境变量映射编辑行。 */
+export interface HeaderEnvMappingRow {
+  headerName: string;
+  envName: string;
+}
+
+/** 将映射行压成提交用数组；跳过空 header / env。 */
+export function headerEnvMappingsToParam(
+  rows?: HeaderEnvMappingRow[] | null,
+): HeaderEnvMappingRow[] | undefined {
+  if (!rows?.length) return undefined;
+  const out = rows
+    .map((r) => ({
+      headerName: r.headerName?.trim() ?? '',
+      envName: r.envName?.trim() ?? '',
+    }))
+    .filter((r) => r.headerName && r.envName);
+  return out.length ? out : undefined;
 }
 
 export interface SandboxSpecSectionProps {
@@ -66,6 +88,8 @@ export default function SandboxSpecSection({
   const patch = (p: Partial<ToolsContextValue>) => onChange({ ...value, ...p });
   const enabled = value.sandboxEnabled !== false;
   const envRows = value.sandboxEnv ?? [];
+  const headerInject = Boolean(value.headerEnvInjectEnabled);
+  const headerRows = value.headerEnvMappings ?? [];
 
   const patchEnvRow = (index: number, next: Partial<SandboxEnvRow>) => {
     const rows = envRows.map((r, i) => (i === index ? { ...r, ...next } : r));
@@ -78,6 +102,21 @@ export default function SandboxSpecSection({
 
   const removeEnvRow = (index: number) => {
     patch({ sandboxEnv: envRows.filter((_, i) => i !== index) });
+  };
+
+  const patchHeaderRow = (index: number, next: Partial<HeaderEnvMappingRow>) => {
+    const rows = headerRows.map((r, i) => (i === index ? { ...r, ...next } : r));
+    patch({ headerEnvMappings: rows });
+  };
+
+  const addHeaderRow = () => {
+    patch({
+      headerEnvMappings: [...headerRows, { headerName: '', envName: '' }],
+    });
+  };
+
+  const removeHeaderRow = (index: number) => {
+    patch({ headerEnvMappings: headerRows.filter((_, i) => i !== index) });
   };
 
   return (
@@ -100,6 +139,8 @@ export default function SandboxSpecSection({
               sandboxMaxConcurrent:
                 value.sandboxMaxConcurrent ?? DEFAULT_SANDBOX_SPEC.sandboxMaxConcurrent,
               sandboxEnv: value.sandboxEnv ?? [],
+              headerEnvInjectEnabled: value.headerEnvInjectEnabled ?? false,
+              headerEnvMappings: value.headerEnvMappings ?? [],
             })
           }
         />
@@ -190,6 +231,65 @@ export default function SandboxSpecSection({
             >
               添加环境变量
             </Button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <Space align="center">
+              <span style={{ color: COLOR.textSecondary }}>
+                是否将接口请求头转换为环境变量？
+              </span>
+              <Switch
+                checked={headerInject}
+                onChange={(checked) =>
+                  patch({
+                    headerEnvInjectEnabled: checked,
+                    headerEnvMappings: value.headerEnvMappings ?? [],
+                  })
+                }
+              />
+            </Space>
+            {headerInject ? (
+              <>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  Invoke / 调试调用时，按下列映射把入站请求头写入沙箱环境变量（仅本
+                  Agent 生效）
+                </Typography.Text>
+                {headerRows.map((row, index) => (
+                  <Space key={index} align="start" style={{ width: '100%' }} wrap>
+                    <Input
+                      placeholder="请求头名，如 X-User-Id"
+                      value={row.headerName}
+                      style={{ width: 240 }}
+                      onChange={(e) =>
+                        patchHeaderRow(index, { headerName: e.target.value })
+                      }
+                    />
+                    <Input
+                      placeholder="环境变量名，如 USER_ID"
+                      value={row.envName}
+                      style={{ width: 240 }}
+                      onChange={(e) =>
+                        patchHeaderRow(index, { envName: e.target.value })
+                      }
+                    />
+                    <Button
+                      type="text"
+                      danger
+                      icon={<MinusCircleOutlined />}
+                      onClick={() => removeHeaderRow(index)}
+                      aria-label="删除请求头映射"
+                    />
+                  </Space>
+                ))}
+                <Button
+                  type="dashed"
+                  icon={<PlusOutlined />}
+                  onClick={addHeaderRow}
+                  style={{ width: 240, borderColor: COLOR.border }}
+                >
+                  添加映射
+                </Button>
+              </>
+            ) : null}
           </div>
         </>
       ) : (
