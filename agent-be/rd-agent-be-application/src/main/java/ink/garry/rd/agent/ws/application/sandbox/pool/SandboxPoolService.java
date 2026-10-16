@@ -11,6 +11,7 @@ import ink.garry.rd.agent.ws.domain.sandbox.repository.SandboxRuntimeInstanceRep
 import ink.garry.rd.agent.ws.domain.sandbox.valueobject.SandboxRuntimeStatus;
 import ink.garry.rd.agent.ws.domain.sandbox.valueobject.SandboxStatus;
 import ink.garry.rd.agent.ws.domain.sandbox.valueobject.SessionWorkspaceMount;
+import ink.garry.rd.agent.ws.application.agentrunner.run.AgentRunEventStore;
 import ink.garry.rd.agent.ws.domain.session.Session;
 import ink.garry.rd.agent.ws.domain.session.repository.SessionRepository;
 import ink.garry.rd.agent.ws.facade.exception.BusinessException;
@@ -62,6 +63,9 @@ public class SandboxPoolService {
     private SessionRepository sessionRepository;
     @Resource
     private RedissonClient redissonClient;
+    /** 会话上若有 RUNNING AgentRun，空闲回收必须跳过（SSE 长跑保活）。 */
+    @Resource
+    private AgentRunEventStore agentRunEventStore;
 
     /** 同会话 in-flight 绑定（合并预热与 invoke）。 */
     private final ConcurrentHashMap<String, CompletableFuture<String>> inflightBySession =
@@ -289,6 +293,12 @@ public class SandboxPoolService {
                 runtimeRepository.listBoundInactiveBefore(horizon);
         for (SandboxRuntimeInstanceRecord r : candidates) {
             try {
+                if (StrUtil.isNotBlank(r.sessionNum())
+                        && agentRunEventStore.findRunningRunId(r.sessionNum()).isPresent()) {
+                    log.debug("[sandbox-pool] skip reclaim: SSE/run active sessionNum={} instanceId={}",
+                            r.sessionNum(), r.opensandboxInstanceId());
+                    continue;
+                }
                 Sandbox asset = sandboxFactory.buildSandboxByNum(r.sandboxNum());
                 if (asset == null) {
                     releaseOrDestroy(r, "system", false);

@@ -25,12 +25,14 @@ import java.util.stream.Collectors;
 /**
  * 将 {@link SandboxRunner} 适配为 Harness OpenSandbox 执行桥（真实网关）。
  * <p>
- * {@code sandbox.mock=true} 时改用 {@link DockerOpenSandboxExecBridge}（本机 Docker）。
+ * {@code sandbox.provider=acs} 时改用 {@link AcsAgentSandboxExecBridge}；
+ * {@code sandbox.mock=true} 时改用 {@link DockerOpenSandboxExecBridge}。
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 @ConditionalOnProperty(prefix = "sandbox", name = "mock", havingValue = "false", matchIfMissing = true)
+@ConditionalOnProperty(prefix = "sandbox", name = "provider", havingValue = "opensandbox", matchIfMissing = true)
 public class SandboxRunnerOpenSandboxExecBridge implements OpenSandboxExecBridge {
 
     private final SandboxRunner sandboxRunner;

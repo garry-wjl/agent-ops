@@ -9,6 +9,7 @@ import ink.garry.rd.agent.ws.application.attachment.command.AttachmentCommandSer
 import ink.garry.rd.agent.ws.application.common.prompt.SysPromptVariableSubstitutor;
 import ink.garry.rd.agent.ws.application.debugconsole.SegmentAccumulator;
 import ink.garry.rd.agent.ws.application.sandbox.lifecycle.SessionSandboxLifecycleService;
+import ink.garry.rd.agent.ws.application.sandbox.pool.SandboxPoolService;
 import ink.garry.rd.agent.ws.application.session.SessionCommandService;
 import ink.garry.rd.agent.ws.client.session.dto.SessionDTO;
 import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContextHolder;
@@ -28,16 +29,19 @@ import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import jakarta.annotation.Resource;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Slf4j
 @Service
@@ -64,6 +68,12 @@ public class AgentRunnerService {
 
     @Resource
     private SessionSandboxLifecycleService sessionSandboxLifecycleService;
+
+    @Resource
+    private SandboxPoolService sandboxPoolService;
+
+    /** SSE/流式执行期间沙箱心跳间隔：刷新 lastActiveAt + 远程 renew。 */
+    private static final Duration SANDBOX_HEARTBEAT_INTERVAL = Duration.ofSeconds(60);
 
     /**
      * 运行 Agent（生产/默认入口：当前在线版本）。
@@ -251,12 +261,51 @@ public class AgentRunnerService {
                 .doOnComplete(() -> harnessUserMemorySync.capture(
                         agentNum, targetVersion, finalSessionNum, operatorId));
 
+        AtomicReference<Disposable> heartbeat = new AtomicReference<>();
         // publish 避免 merge + takeUntilOther 对冷流双重订阅导致 Agent 跑两遍
-        return agentFrames.publish(shared -> Flux.merge(
-                sessionSandboxLifecycleService.subscribe(finalSessionNum)
-                        .map(AgentInvokeFrame::sandboxStatus)
-                        .takeUntilOther(shared.ignoreElements()),
-                shared));
+        return agentFrames
+                .doOnSubscribe(s -> startSandboxHeartbeat(finalSessionNum, heartbeat))
+                .doFinally(sig -> stopSandboxHeartbeat(heartbeat))
+                .publish(shared -> Flux.merge(
+                        sessionSandboxLifecycleService.subscribe(finalSessionNum)
+                                .map(AgentInvokeFrame::sandboxStatus)
+                                .takeUntilOther(shared.ignoreElements()),
+                        shared));
+    }
+
+    /**
+     * SSE 全程保活：立即 markSessionActive，并按间隔续期，避免空闲回收 / ACS timeout 误杀沙箱。
+     */
+    private void startSandboxHeartbeat(String sessionNum, AtomicReference<Disposable> holder) {
+        try {
+            sandboxPoolService.markSessionActive(sessionNum);
+        } catch (Exception e) {
+            log.debug("[sandbox-heartbeat] initial mark failed sessionNum={}: {}",
+                    sessionNum, e.getMessage());
+        }
+        Disposable previous = holder.getAndSet(Flux.interval(SANDBOX_HEARTBEAT_INTERVAL)
+                .subscribeOn(Schedulers.boundedElastic())
+                .subscribe(
+                        tick -> {
+                            try {
+                                sandboxPoolService.markSessionActive(sessionNum);
+                            } catch (Exception e) {
+                                log.warn("[sandbox-heartbeat] mark failed sessionNum={}: {}",
+                                        sessionNum, e.getMessage());
+                            }
+                        },
+                        err -> log.warn("[sandbox-heartbeat] stream error sessionNum={}: {}",
+                                sessionNum, err.toString())));
+        if (previous != null) {
+            previous.dispose();
+        }
+    }
+
+    private static void stopSandboxHeartbeat(AtomicReference<Disposable> holder) {
+        Disposable d = holder.getAndSet(null);
+        if (d != null) {
+            d.dispose();
+        }
     }
 
     private static NormalizedInvokeContent textOnly(String input) {

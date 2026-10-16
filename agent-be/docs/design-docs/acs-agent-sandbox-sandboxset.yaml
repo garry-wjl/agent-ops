@@ -1,0 +1,32 @@
+apiVersion: agents.kruise.io/v1alpha1
+kind: SandboxSet
+metadata:
+  name: code-interpreter
+  namespace: agent-sandbox
+spec:
+  runtimes:
+  - name: agent-runtime
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        alibabacloud.com/acs: "true"
+        alibabacloud.com/compute-class: agent-sandbox
+        alibabacloud.com/compute-qos: default
+      annotations:
+        scaling.alibabacloud.com/enable-inplace-resource-resize: "true"
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - name: sandbox
+        image: registry-cn-shenzhen-vpc.ack.aliyuncs.com/acs/code-interpreter:v1.6
+        imagePullPolicy: IfNotPresent
+        resources:
+          limits:
+            cpu: "500m"
+            memory: 1Gi
+          requests:
+            cpu: "500m"
+            memory: 1Gi
+            ephemeral-storage: 30Gi
+      terminationGracePeriodSeconds: 30
