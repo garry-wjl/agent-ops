@@ -23,7 +23,8 @@
 
 - `sandbox.provider=acs`：走 `AcsE2bSandboxClient` + `AcsAgentSandboxContainerGateway` + `AcsAgentSandboxExecBridge`。
 - `sandbox.oss.enabled` 固定 false；`isolatesWorkspaceBySession()` 恒 false。
-- 会话绑定逻辑不变：同 `sessionNum` 复用同一 `sandboxId` → 会话期间磁盘不丢；实例死亡则 rebind + 重投 skill。
+- 会话绑定逻辑：创建会话不领取容器；首次 exec / 写文件时 `ensureBound` 从预热池领取。同 `sessionNum` 复用同一 `sandboxId`；实例死亡则 rebind + 重投 skill。
+- `SANDBOX_API_KEY` 只从环境变量注入，配置文件不写默认密钥。
 
 ### 关键
 

@@ -137,8 +137,8 @@ app:
 sandbox:
   # opensandbox（默认）| acs（ACS Agent Sandbox / E2B）
   provider: ${SANDBOX_PROVIDER:acs}
-  # API Key 必须走 K8s Secret / 环境变量，禁止明文落 git
-  api-key: ${SANDBOX_API_KEY:4a56f29b-d33e-4eae-80d7-be6b36ce1f3f}
+  # API Key 只允许环境变量 / K8s Secret 注入，禁止默认值落库
+  api-key: ${SANDBOX_API_KEY:}
   # 逻辑域名（ACS：E2B domain，如 agent-sandbox.yldfuture.com；OpenSandbox：网关 host）
   domain: ${SANDBOX_DOMAIN:agent-sandbox.yldfuture.com}
   protocol: ${SANDBOX_PROTOCOL:https}
