@@ -764,6 +764,10 @@ function BasicTab(props: { detail: AgentDetailVO }) {
         value={cfg?.enableLongTermMemory ? '已开启' : '关闭'}
       />
       <Field
+        label="是否启用表单填写"
+        value={cfg?.enableUserFormInput ? '已开启' : '关闭'}
+      />
+      <Field
         label="压缩触发消息数"
         value={String(cfg?.compaction?.triggerMessages ?? 50)}
       />

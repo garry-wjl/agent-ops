@@ -85,6 +85,8 @@ export interface ConfigSnapshot {
   maxIters?: number;
   /** 开启后才把该用户的长期记忆写入数据库 */
   enableLongTermMemory?: boolean;
+  /** 开启后运行时注册 request_user_input，Agent 可暂停向用户索取表单 */
+  enableUserFormInput?: boolean;
   /** Harness 上下文压缩策略 */
   compaction?: CompactionSetting;
   skillNums?: string[];
@@ -387,6 +389,8 @@ export interface AgentCreateParam {
   maxIters?: number;
   /** 开启后才把该用户的长期记忆写入数据库 */
   enableLongTermMemory?: boolean;
+  /** 开启后运行时注册 request_user_input，Agent 可暂停向用户索取表单 */
+  enableUserFormInput?: boolean;
   /** Harness 上下文压缩策略 */
   compaction?: CompactionSetting;
   skillNums?: string[];

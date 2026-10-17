@@ -63,6 +63,7 @@ rd-agent-be/
 | **合规审计报告（架构优化分支）** | [docs/质量检查/](docs/质量检查/) |
 | 编码规范(注释 / 命名 / 风格 / 工具库选型) | [docs/CODING-CONVENTIONS.md](docs/CODING-CONVENTIONS.md) |
 | 设计总章与设计决策档案 | [docs/DESIGN.md](docs/DESIGN.md) → [docs/design-docs/](docs/design-docs/) |
+| 用户表单 HITL（request_user_input / Open respond / SSE） | [docs/design-docs/2026-10-17-user-form-input-hitl.md](docs/design-docs/2026-10-17-user-form-input-hitl.md)；产品侧 curl 见 Agent 详情「API 信息」Tab |
 | 产品规格 / 业务需求 | [docs/product-specs/](docs/product-specs/)(原始 PRD 在 `../docs/agent-sphere/PRD-MVP.md`) |
 | 当前进行中的执行计划 | [docs/PLANS.md](docs/PLANS.md) → [docs/exec-plans/](docs/exec-plans/) |
 | 数据库 schema(自动生成) | [docs/generated/](docs/generated/) |

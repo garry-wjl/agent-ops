@@ -125,7 +125,7 @@ const EVENT_RESPONSE_GROUPS: FieldGroup[] = [
         type: 'dispatch',
         required: true,
         description:
-          '若 event 为 run_started | run_finished | Sandbox.Status → 走控制帧；若无 event 行 → 按 data.type 走业务帧',
+          '若 event 为 run_started | run_finished | Sandbox.Status | user_input.* → 走控制帧；若无 event 行 → 按 data.type 走业务帧',
       },
       {
         name: 'step3',
@@ -138,14 +138,14 @@ const EVENT_RESPONSE_GROUPS: FieldGroup[] = [
         type: 'lifecycle',
         required: true,
         description:
-          'run_started：记 runId/sessionNum；业务帧：渲染；run_finished：结束 loading（status=FAILED 当失败）',
+          'run_started：记 runId/sessionNum；业务帧：渲染；user_input.required：展示表单并保持 SSE 不断开，POST …/user-input/respond；run_finished：结束 loading（status=FAILED 当失败）',
       },
       {
         name: 'step5',
         type: 'resume',
         required: true,
         description:
-          '网络断开：同一接口 POST，resume=true + lastEventId（或 Header Last-Event-ID），input/attachments 留空；从断点后续帧开始，无重复、不重跑',
+          '网络断开：同一接口 POST，resume=true + lastEventId（或 Header Last-Event-ID），input/attachments 留空；从断点后续帧开始，无重复、不重跑。HITL 挂起期间断线亦可用续传接回同一 run',
       },
     ],
   },
@@ -165,7 +165,7 @@ const EVENT_RESPONSE_GROUPS: FieldGroup[] = [
         type: 'string',
         required: false,
         description:
-          '有则三选一：run_started | run_finished | Sandbox.Status；无 event 行 = AgentScope 业务帧',
+          '有则：run_started | run_finished | Sandbox.Status | user_input.required | user_input.accepted | user_input.rejected；无 event 行 = AgentScope 业务帧',
       },
       {
         name: 'data',
@@ -178,7 +178,7 @@ const EVENT_RESPONSE_GROUPS: FieldGroup[] = [
   {
     title: '③ 控制帧总览（有 event 名）',
     description:
-      '先匹配 event，再解析 data。run_started / run_finished 的 data 字段值均为 JSON 字符串（非 number/boolean）。',
+      '先匹配 event，再解析 data。run_started / run_finished 的 data 字段值均为 JSON 字符串（非 number/boolean）。user_input.* 仅当 Agent 开启 enableUserFormInput 且模型调用 request_user_input 时出现。',
     fields: [
       {
         name: 'run_started',
@@ -195,6 +195,27 @@ const EVENT_RESPONSE_GROUPS: FieldGroup[] = [
           '沙箱状态（Agent 未挂沙箱工具时可能整轮不下发）。data: { sessionNum, phase, instanceId?, message?, ts }；phase=IDLE|PREPARING|READY|FAILED；ts 为 number（epoch ms）',
       },
       {
+        name: 'user_input.required',
+        type: 'control',
+        required: false,
+        description:
+          'HITL 待填表单。data: { runId, sessionId, replyId, requestId, toolCallId, toolName:"request_user_input", form:{ title, description?, fields:[{name,label,type,required?,options?,…}] } }。收到后须保持本 SSE 连接，向 POST /command/user-input/respond 提交；勿因随后的挂起态 AGENT_RESULT 关闭连接',
+      },
+      {
+        name: 'user_input.accepted',
+        type: 'control',
+        required: false,
+        description:
+          'respond 成功后、Agent 续跑前。data: { runId, requestId, status:"submitted"|"cancelled" }。其后继续有业务帧，直至 run_finished',
+      },
+      {
+        name: 'user_input.rejected',
+        type: 'control',
+        required: false,
+        description:
+          '挂起失效/超时等拒绝。data 含 message/reason 类说明；客户端应提示用户并勿再对该 requestId respond',
+      },
+      {
         name: 'run_finished',
         type: 'control',
         required: true,
@@ -206,7 +227,7 @@ const EVENT_RESPONSE_GROUPS: FieldGroup[] = [
   {
     title: '④ 业务帧 · Event.type（无 event 名时看 data.type）',
     description:
-      'data 为 AgentScope Event JSON。典型顺序：多次 REASONING（流式）↔ TOOL_RESULT（多轮 ReAct）→ AGENT_RESULT → 随后还有 run_finished。ALL 仅作服务端过滤，一般不下发。',
+      'data 为 AgentScope Event JSON。典型顺序：多次 REASONING（流式）↔ TOOL_RESULT（多轮 ReAct）→ AGENT_RESULT → 随后还有 run_finished。HITL 时：AGENT_RESULT（TOOL_SUSPENDED）→ user_input.required →（respond）→ user_input.accepted → 续跑 REASONING… → AGENT_RESULT → run_finished。',
     fields: [
       {
         name: 'REASONING',
@@ -233,7 +254,7 @@ const EVENT_RESPONSE_GROUPS: FieldGroup[] = [
         type: 'EventType',
         required: true,
         description:
-          '本轮 Agent 业务结束帧。message.usage 为本轮汇总 Token（多轮 ReAct 已累加）。内容可能与 REASONING 重复，UI 通常只取 usage；流尚未结束，仍须等 run_finished',
+          '本轮 Agent 业务结束帧。message.usage 为本轮汇总 Token。若 message.metadata.agentscope_generate_reason=TOOL_SUSPENDED 且含 tool_use name=request_user_input：这是 HITL 挂起，其后还有 user_input.required，客户端不得据此 abort SSE；真正结束仍看 run_finished',
       },
       {
         name: 'SUMMARY',
@@ -716,7 +737,7 @@ function buildSpecs(agentNum: string): ApiSpec[] {
         },
       ],
       responseSummary:
-        '成功为 text/event-stream。分发：有 event → 控制帧（run_started / Sandbox.Status / run_finished）；无 event → 业务帧看 data.type（REASONING|TOOL_RESULT|HINT|AGENT_RESULT|SUMMARY）。每帧保存 id。以 run_finished 结束订阅（AGENT_RESULT 只表示业务收尾，其后仍有 run_finished）。tool_use 须按 id 拼接 __fragment__ 的 content。取消订阅不取消服务端 run。',
+        '成功为 text/event-stream。分发：有 event → 控制帧（run_started / Sandbox.Status / user_input.* / run_finished）；无 event → 业务帧看 data.type（REASONING|TOOL_RESULT|HINT|AGENT_RESULT|SUMMARY）。每帧保存 id。以 run_finished 结束订阅（AGENT_RESULT 只表示业务收尾；HITL 挂起态 AGENT_RESULT 后还有 user_input.required，勿关连接）。tool_use 须按 id 拼接 __fragment__ 的 content。取消订阅不取消服务端 run。Agent 须开启 enableUserFormInput 才会出现表单 HITL。',
       responseGroups: EVENT_RESPONSE_GROUPS,
       curl: `# —— 开跑 ——
 curl -N -X POST '${base}/api/v1/open/agents/command/invoke' \\
@@ -789,13 +810,138 @@ data: {"runId":"RUN2109…","status":"DONE"}
 
 :heartbeat
 
+# —— HITL 示例（enableUserFormInput=true 且模型调用 request_user_input）——
+# 挂起态 AGENT_RESULT（勿 abort）→ user_input.required → 客户端 POST respond → accepted → 续跑
+id: RUN2109…:40
+data: {"type":"AGENT_RESULT","isLast":true,"message":{"id":"mH","role":"ASSISTANT","metadata":{"agentscope_generate_reason":"TOOL_SUSPENDED"},"content":[{"type":"tool_use","id":"call_u1","name":"request_user_input","input":{"title":"补充信息","fields":[{"name":"city","label":"城市","type":"string","required":true}]}}]}}
+
+id: RUN2109…:41
+event: user_input.required
+data: {"runId":"RUN2109…","sessionId":"SES-xxx","replyId":"mH","requestId":"UIR…","toolCallId":"call_u1","toolName":"request_user_input","form":{"title":"补充信息","fields":[{"name":"city","label":"城市","type":"string","required":true}]}}
+
+# 客户端另开 HTTP：POST /api/v1/open/agents/command/user-input/respond
+# {"sessionNum":"SES-xxx","runId":"RUN2109…","requestId":"UIR…","action":"submit","values":{"city":"深圳"}}
+
+id: RUN2109…:42
+event: user_input.accepted
+data: {"runId":"RUN2109…","requestId":"UIR…","status":"submitted"}
+
+# 随后继续 REASONING / AGENT_RESULT / run_finished …
+
 # 对接要点：
 # 1) 分发：有 event → 控制帧；无 event → data.type
 # 2) 每帧保存 id；断线 resume + lastEventId，勿重发 input
-# 3) 结束条件：run_finished（不是 AGENT_RESULT）
+# 3) 结束条件：run_finished（不是 AGENT_RESULT；HITL 挂起更不能关）
 # 4) tool_use：同 id 拼接 content；name=__fragment__ 不覆盖工具名
-# 5) 非 SSE 错误：{"code":2017,"message":"缺少有效秘钥","data":null,"traceId":"..."}
-# 6) 会话忙：{"code":4008,"message":"会话已有进行中的调用",...}`,
+# 5) user_input.required → POST …/user-input/respond（同连接等待 accepted 后续帧）
+# 6) 非 SSE 错误：{"code":2017,"message":"缺少有效秘钥","data":null,"traceId":"..."}
+# 7) 会话忙：{"code":4008,"message":"会话已有进行中的调用",...}`,
+    },
+    {
+      method: 'POST',
+      path: '/api/v1/open/agents/command/user-input/respond',
+      title: '用户表单 HITL 回传（submit / cancel）',
+      description:
+        '当 Invoke SSE 收到 event:user_input.required 后，用本接口提交或取消表单，唤醒同一次 run 继续推理（方案 A：原 SSE 连接不结束）。须携带 required 帧中的 requestId；建议带 sessionNum/runId 做一致性校验。action=submit 时 values 为表单键值；action=cancel 时 values 可空（Agent 将收到 status=cancelled）。前提：Agent 配置开启 enableUserFormInput。调试台等价路径：POST /api/v1/debug-console/user-input/respond（Cookie JWT + X-Workspace-Num，body 字段推荐 snake_case）。',
+      requestContentType: 'application/json',
+      responseContentType: 'application/json',
+      headers: [...AUTH_HEADERS, JSON_CONTENT_HEADER],
+      requestParams: [
+        {
+          name: 'requestId',
+          location: 'body',
+          type: 'string',
+          required: true,
+          description: '来自 user_input.required 的 requestId（形如 UIR…）；亦接受 JSON 键 request_id',
+        },
+        {
+          name: 'action',
+          location: 'body',
+          type: 'string',
+          required: true,
+          description: 'submit | cancel（大小写不敏感）',
+        },
+        {
+          name: 'values',
+          location: 'body',
+          type: 'object',
+          required: false,
+          description: 'submit 时的表单值，key 与 form.fields[].name 对齐；cancel 可省略',
+        },
+        {
+          name: 'sessionNum',
+          location: 'body',
+          type: 'string',
+          required: false,
+          description:
+            '会话编号；与 required 帧 sessionId 一致时校验。亦接受 session_num / session_id',
+        },
+        {
+          name: 'runId',
+          location: 'body',
+          type: 'string',
+          required: false,
+          description: '本轮 runId；与 required 帧一致时校验。亦接受 run_id',
+        },
+        {
+          name: 'replyId',
+          location: 'body',
+          type: 'string',
+          required: false,
+          description: '可选，来自 required 帧 replyId。亦接受 reply_id',
+        },
+        {
+          name: 'toolCallId',
+          location: 'body',
+          type: 'string',
+          required: false,
+          description: '可选，来自 required 帧 toolCallId。亦接受 tool_call_id',
+        },
+      ],
+      responseSummary:
+        'application/json Result：code=0 表示已唤醒挂起；失败常见为 requestId 不存在/已处理、action 非法、runId/session 不一致（业务码多为参数类）。成功后原 Invoke SSE 会下发 user_input.accepted 并续跑。',
+      responseGroups: [
+        {
+          title: 'Result',
+          fields: RESULT_FIELDS,
+        },
+      ],
+      curl: `curl -X POST '${base}/api/v1/open/agents/command/user-input/respond' \\
+  -H 'Authorization: Bearer ak-xxxxxxxx' \\
+  -H 'Content-Type: application/json' \\
+  -d '{
+    "sessionNum": "SES-xxx",
+    "runId": "RUN2109…",
+    "requestId": "UIR…",
+    "replyId": "mH",
+    "toolCallId": "call_u1",
+    "action": "submit",
+    "values": { "city": "深圳" }
+  }'
+
+# 取消示例
+curl -X POST '${base}/api/v1/open/agents/command/user-input/respond' \\
+  -H 'Authorization: Bearer ak-xxxxxxxx' \\
+  -H 'Content-Type: application/json' \\
+  -d '{
+    "sessionNum": "SES-xxx",
+    "requestId": "UIR…",
+    "action": "cancel"
+  }'`,
+      responseExample: `{
+  "code": 0,
+  "message": "success",
+  "data": null,
+  "traceId": "…"
+}
+
+# 失败示例：表单已处理或不存在
+{
+  "code": 1001,
+  "message": "表单请求不存在或已处理: UIR…",
+  "data": null,
+  "traceId": "…"
+}`,
     },
     {
       method: 'POST',
@@ -865,7 +1011,7 @@ data: {"runId":"RUN2109…","status":"DONE"}
         },
       ],
       responseSummary:
-        '成功时为 SSE：每条 data 为一个 A2UI v0.9.1 envelope（version + 四选一消息体）。',
+        '成功时为 SSE：每条 data 为一个 A2UI v0.9.1 envelope（version + 四选一消息体）。若 Agent 开启 enableUserFormInput 且中途 HITL：会额外下发 updateComponents（表单 Column/TextField/Button，按钮 action.name=submit_user_input|cancel_user_input）与 updateDataModel（含 hitlRequestId、values 等）；客户端填完后走 a2ui/action HITL 分支。',
       responseGroups: A2UI_RESPONSE_GROUPS,
       curl: `curl -N -X POST '${base}/api/v1/open/agents/command/a2ui/invoke' \\
   -H 'Authorization: Bearer ak-xxxxxxxx' \\
@@ -887,6 +1033,11 @@ data:{"version":"v0.9.1","updateComponents":{"surfaceId":"main","components":[{"
 
 data:{"version":"v0.9.1","updateDataModel":{"surfaceId":"main","path":"/assistantText","value":"好的，我来帮你…"}}
 
+# HITL 表单（示意）：含 TextField + Button(submit_user_input/cancel_user_input) + dataModel.hitl*
+data:{"version":"v0.9.1","type":"updateComponents","surfaceId":"main","components":[{"id":"root","component":"Column","children":["user_form_title","user_form_field_0","user_form_submit","user_form_cancel"]},{"id":"user_form_title","component":"Text","text":{"literalString":"补充信息"}},{"id":"user_form_field_0","component":"TextField","label":{"literalString":"城市"},"text":{"path":"/values/city"}},{"id":"user_form_submit","component":"Button","label":{"literalString":"提交并继续"},"action":{"name":"submit_user_input"}},{"id":"user_form_cancel","component":"Button","label":{"literalString":"取消"},"action":{"name":"cancel_user_input"}}]}
+
+data:{"version":"v0.9.1","type":"updateDataModel","surfaceId":"main","path":"/","value":{"hitlRequestId":"UIR…","hitlRunId":"RUN…","hitlSessionId":"SES-xxx","values":{}}}
+
 data:{"version":"v0.9.1","updateDataModel":{"surfaceId":"main","path":"/tokenUsage","value":{"inputTokens":100,"outputTokens":20,"cachedTokens":0,"time":1.2,"totalTokens":120}}}`,
     },
     {
@@ -894,7 +1045,7 @@ data:{"version":"v0.9.1","updateDataModel":{"surfaceId":"main","path":"/tokenUsa
       path: '/api/v1/open/agents/command/a2ui/action',
       title: 'A2UI Action（客户端回传 → v0.9.1 SSE）',
       description:
-        '客户端交互回传（协议 action）。服务端转为 Agent 输入后，继续以 A2UI v0.9.1 SSE 返回 UI 更新。建议携带 sessionNum。结束帧同样可能下发 /tokenUsage。',
+        '客户端交互回传（协议 action）。普通 action：服务端转为 Agent 文本输入后继续 A2UI SSE。HITL 专用：action.name 为 submit_user_input / cancel_user_input 时，不新开一轮 Agent，只唤醒挂起的 request_user_input（等同 user-input/respond）；须从 a2ui/invoke 下发的 dataModel 带回 hitlRequestId（及可选 hitlRunId/hitlSessionId），表单值放在 clientDataModel.values（或根级 values）。建议携带 sessionNum。结束帧同样可能下发 /tokenUsage。',
       requestContentType: 'application/json',
       responseContentType: 'text/event-stream',
       headers: [...AUTH_HEADERS, JSON_CONTENT_HEADER, SSE_ACCEPT_HEADER],
@@ -911,7 +1062,7 @@ data:{"version":"v0.9.1","updateDataModel":{"surfaceId":"main","path":"/tokenUsa
           location: 'body',
           type: 'string',
           required: false,
-          description: '会话编号；建议携带以延续对话',
+          description: '会话编号；建议携带以延续对话 / HITL',
         },
         {
           name: 'operatorId',
@@ -932,14 +1083,15 @@ data:{"version":"v0.9.1","updateDataModel":{"surfaceId":"main","path":"/tokenUsa
           location: 'body',
           type: 'object',
           required: false,
-          description: '客户端 data model 快照；推荐 surfaceId → model',
+          description:
+            '客户端 data model 快照。HITL：含 hitlRequestId / hitlReplyId / hitlToolCallId / hitlRunId / hitlSessionId 与 values（字段名→值）',
         },
         {
           name: 'context',
           location: 'body',
           type: 'object',
           required: false,
-          description: '额外调用上下文',
+          description: '额外调用上下文；HITL 时也可把 hitl* 放在 action.context',
         },
       ],
       requestGroups: [
@@ -951,7 +1103,8 @@ data:{"version":"v0.9.1","updateDataModel":{"surfaceId":"main","path":"/tokenUsa
               location: 'body',
               type: 'string',
               required: true,
-              description: '动作名',
+              description:
+                '动作名。HITL：submit_user_input（提交）| cancel_user_input（取消）；其它名走普通文本续聊',
             },
             {
               name: 'action.surfaceId',
@@ -965,7 +1118,7 @@ data:{"version":"v0.9.1","updateDataModel":{"surfaceId":"main","path":"/tokenUsa
               location: 'body',
               type: 'string',
               required: true,
-              description: '触发组件 ID',
+              description: '触发组件 ID（如表单提交按钮 user_form_submit）',
             },
             {
               name: 'action.timestamp',
@@ -979,14 +1132,17 @@ data:{"version":"v0.9.1","updateDataModel":{"surfaceId":"main","path":"/tokenUsa
               location: 'body',
               type: 'object',
               required: true,
-              description: '动作上下文（可为空对象）',
+              description:
+                '动作上下文（可为空对象）。HITL 可放 hitlRequestId 等元数据',
             },
           ],
         },
       ],
-      responseSummary: '与 a2ui/invoke 相同：SSE 下发 A2UI v0.9.1 envelope。',
+      responseSummary:
+        '普通 action：与 a2ui/invoke 相同，SSE 下发 A2UI v0.9.1 envelope。HITL submit/cancel：短 SSE，含 bootstrap + updateDataModel path=/hitlStatus value=submitted|cancelled；原 a2ui/invoke 连接上的 Agent 会续跑并继续推 UI。',
       responseGroups: A2UI_RESPONSE_GROUPS,
-      curl: `curl -N -X POST '${base}/api/v1/open/agents/command/a2ui/action' \\
+      curl: `# —— 普通 action（续聊）——
+curl -N -X POST '${base}/api/v1/open/agents/command/a2ui/action' \\
   -H 'Authorization: Bearer ak-xxxxxxxx' \\
   -H 'Content-Type: application/json' \\
   -H 'Accept: text/event-stream' \\
@@ -1005,12 +1161,43 @@ data:{"version":"v0.9.1","updateDataModel":{"surfaceId":"main","path":"/tokenUsa
       "main": { "email": "user@example.com", "name": "Alice" }
     },
     "context": null
+  }'
+
+# —— HITL：提交用户表单（submit_user_input）——
+curl -N -X POST '${base}/api/v1/open/agents/command/a2ui/action' \\
+  -H 'Authorization: Bearer ak-xxxxxxxx' \\
+  -H 'Content-Type: application/json' \\
+  -H 'Accept: text/event-stream' \\
+  -d '{
+    "agentNum": "${agentNum}",
+    "sessionNum": "SES-xxx",
+    "action": {
+      "name": "submit_user_input",
+      "surfaceId": "main",
+      "sourceComponentId": "user_form_submit",
+      "timestamp": "2026-10-17T14:00:00Z",
+      "context": {}
+    },
+    "clientDataModel": {
+      "hitlRequestId": "UIR…",
+      "hitlReplyId": "mH",
+      "hitlToolCallId": "call_u1",
+      "hitlRunId": "RUN…",
+      "hitlSessionId": "SES-xxx",
+      "values": { "city": "深圳" }
+    }
   }'`,
-      responseExample: `data:{"version":"v0.9.1","createSurface":{"surfaceId":"main","catalogId":"https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json","sendDataModel":true}}
+      responseExample: `# 普通 action 续聊
+data:{"version":"v0.9.1","createSurface":{"surfaceId":"main","catalogId":"https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json","sendDataModel":true}}
 
 data:{"version":"v0.9.1","updateDataModel":{"surfaceId":"main","path":"/assistantText","value":"已收到提交，正在处理…"}}
 
-data:{"version":"v0.9.1","updateDataModel":{"surfaceId":"main","path":"/tokenUsage","value":{"inputTokens":80,"outputTokens":15,"cachedTokens":0,"time":0.9,"totalTokens":95}}}`,
+data:{"version":"v0.9.1","updateDataModel":{"surfaceId":"main","path":"/tokenUsage","value":{"inputTokens":80,"outputTokens":15,"cachedTokens":0,"time":0.9,"totalTokens":95}}}
+
+# HITL ack（短流）
+data:{"version":"v0.9.1","createSurface":{"surfaceId":"main",…}}
+
+data:{"version":"v0.9.1","surfaceId":"main","type":"updateDataModel","path":"/hitlStatus","value":"submitted"}`,
     },
     {
       method: 'POST',

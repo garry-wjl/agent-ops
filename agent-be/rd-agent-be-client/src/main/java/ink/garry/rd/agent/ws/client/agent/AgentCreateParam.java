@@ -51,6 +51,9 @@ public class AgentCreateParam {
     /** 开启后才把该用户的长期记忆写入数据库；缺省 false */
     private Boolean enableLongTermMemory;
 
+    /** 开启后注册内置表单填写工具 request_user_input；缺省 false */
+    private Boolean enableUserFormInput;
+
     /** Harness 上下文压缩策略 */
     private CompactionSetting compaction;
 

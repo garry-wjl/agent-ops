@@ -5,12 +5,15 @@ import cn.hutool.core.lang.Assert;
 import cn.hutool.core.util.StrUtil;
 import ink.garry.rd.agent.ws.application.agentrunner.factory.AgentRunnerFactory;
 import ink.garry.rd.agent.ws.application.agentrunner.harness.HarnessUserMemorySync;
+import ink.garry.rd.agent.ws.application.agentrunner.hitl.RequestUserInputTool;
+import ink.garry.rd.agent.ws.application.agentrunner.hitl.UserInputHitlService;
 import ink.garry.rd.agent.ws.application.attachment.command.AttachmentCommandService;
 import ink.garry.rd.agent.ws.application.common.prompt.SysPromptVariableSubstitutor;
 import ink.garry.rd.agent.ws.application.debugconsole.SegmentAccumulator;
 import ink.garry.rd.agent.ws.application.sandbox.lifecycle.SessionSandboxLifecycleService;
 import ink.garry.rd.agent.ws.application.sandbox.pool.SandboxPoolService;
 import ink.garry.rd.agent.ws.application.session.SessionCommandService;
+import ink.garry.rd.agent.ws.client.agentrunner.UserInputRequiredEvent;
 import ink.garry.rd.agent.ws.client.session.dto.SessionDTO;
 import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContextHolder;
 import io.a2a.client.transport.jsonrpc.JSONRPCTransport;
@@ -22,9 +25,13 @@ import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import lombok.extern.slf4j.Slf4j;
@@ -38,8 +45,10 @@ import jakarta.annotation.Resource;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -71,6 +80,9 @@ public class AgentRunnerService {
 
     @Resource
     private SandboxPoolService sandboxPoolService;
+
+    @Resource
+    private UserInputHitlService userInputHitlService;
 
     /** SSE/流式执行期间沙箱心跳间隔：刷新 lastActiveAt + 远程 renew。 */
     private static final Duration SANDBOX_HEARTBEAT_INTERVAL = Duration.ofSeconds(60);
@@ -156,6 +168,16 @@ public class AgentRunnerService {
                                                    String sessionNum, String operatorId,
                                                    String targetVersion, String origin,
                                                    Map<String, Object> context) {
+        return runAgentFrames(agentNum, content, sessionNum, operatorId, targetVersion, origin, context, null);
+    }
+
+    /**
+     * @param runId 由 {@code AgentRunCoordinator} 分配；HITL 事件携带，便于 respond 关联
+     */
+    public Flux<AgentInvokeFrame> runAgentFrames(String agentNum, NormalizedInvokeContent content,
+                                                   String sessionNum, String operatorId,
+                                                   String targetVersion, String origin,
+                                                   Map<String, Object> context, String runId) {
         Assert.notNull(content, "invoke content 不能为空");
         //1. 确定会话(沙箱工具按 sessionNum 绑定复用容器,故须先于 build 确定)
         Map<String, Object> sessionContext;
@@ -200,6 +222,7 @@ public class AgentRunnerService {
         //4. 调用
         Msg msg = agentMsgFactory.build(content, workspaceNum);
         String finalSessionNum = sessionNum;
+        String finalRunId = runId;
         // 累积器:订阅 PostReasoning / PostActing 的 isLast=true 帧,把 thinking / text / tool_use /
         // tool_result 按到达顺序收成 AssistantSegment 列表,最终随 assistant message 一并持久化。
         // 这样历史消息 FE 直接渲染,与本轮流式视觉一致(见技术方案 2026-05-28)。
@@ -227,39 +250,9 @@ public class AgentRunnerService {
         }
         RuntimeContext runtimeContext = runtimeBuilder.build();
 
-        // 注意：agent.stream(...) 是惰性 Flux；HarnessAgent 使用带 RuntimeContext 的重载以隔离 (userId, sessionId)。
-        Flux<Event> eventFlux = agent instanceof HarnessAgent harnessAgent
-                ? harnessAgent.stream(msg, runtimeContext)
-                : agent.stream(msg);
-
-        Flux<AgentInvokeFrame> agentFrames = eventFlux
-                .map(event -> transformEvent(event, inThinkTag))
-                .doOnNext(acc::accept)
-                .doOnNext(usageAcc::accept)
-                .map(usageAcc::ensureOnAgentResult)
-                .flatMap(event -> {
-                    //如果是最后一条消息，则先追加到数据库，再推送
-                    if (event.isLast() && EventType.AGENT_RESULT.equals(event.getType())) {
-                        return Mono.fromRunnable(() ->
-                                        sessionCommandService.appendAssistantMessage(
-                                                finalSessionNum,
-                                                acc.toContentText(),
-                                                acc.toStepChain(),
-                                                acc.getSegments(),
-                                                acc.toContentBlocksJson(),
-                                                finalSessionNum,
-                                                operatorId))
-                                .subscribeOn(Schedulers.boundedElastic())
-                                .then(Mono.just(AgentInvokeFrame.agent(event)));
-                    }
-                    return Flux.just(AgentInvokeFrame.agent(event));
-                })
-                // AGENT_RESULT 后主动 complete，避免上游 agent.stream 挂起导致 SSE 半关闭、前端 loading 卡死
-                .takeUntil(frame -> frame.isAgentEvent()
-                        && frame.getAgentEvent().isLast()
-                        && EventType.AGENT_RESULT.equals(frame.getAgentEvent().getType()))
-                .doOnComplete(() -> harnessUserMemorySync.capture(
-                        agentNum, targetVersion, finalSessionNum, operatorId));
+        Flux<AgentInvokeFrame> agentFrames = streamWithUserInputHitl(
+                agent, msg, runtimeContext, finalSessionNum, finalRunId, operatorId,
+                agentNum, targetVersion, acc, usageAcc, inThinkTag);
 
         AtomicReference<Disposable> heartbeat = new AtomicReference<>();
         // publish 避免 merge + takeUntilOther 对冷流双重订阅导致 Agent 跑两遍
@@ -271,6 +264,137 @@ public class AgentRunnerService {
                                 .map(AgentInvokeFrame::sandboxStatus)
                                 .takeUntilOther(shared.ignoreElements()),
                         shared));
+    }
+
+    /**
+     * 流式执行；遇 {@code TOOL_SUSPENDED}+{@code request_user_input} 时发
+     * {@code user_input.required}，等待 respond 后以 ToolResult 续跑（方案 A：同连接不结束）。
+     */
+    private Flux<AgentInvokeFrame> streamWithUserInputHitl(
+            Agent agent, Msg input, RuntimeContext runtimeContext,
+            String sessionNum, String runId, String operatorId,
+            String agentNum, String targetVersion,
+            SegmentAccumulator acc, TokenUsageAccumulator usageAcc, AtomicBoolean inThinkTag) {
+
+        Flux<Event> eventFlux = agent instanceof HarnessAgent harnessAgent
+                ? harnessAgent.stream(input, runtimeContext)
+                : agent.stream(input);
+
+        return eventFlux
+                .map(event -> transformEvent(event, inThinkTag))
+                .doOnNext(acc::accept)
+                .doOnNext(usageAcc::accept)
+                .map(usageAcc::ensureOnAgentResult)
+                .concatMap(event -> {
+                    if (!isTerminalAgentResult(event)) {
+                        return Flux.just(AgentInvokeFrame.agent(event));
+                    }
+                    if (isUserFormSuspended(event)) {
+                        return handleUserFormSuspend(
+                                agent, event, runtimeContext, sessionNum, runId, operatorId,
+                                agentNum, targetVersion, acc, usageAcc, inThinkTag);
+                    }
+                    return Mono.fromRunnable(() ->
+                                    sessionCommandService.appendAssistantMessage(
+                                            sessionNum,
+                                            acc.toContentText(),
+                                            acc.toStepChain(),
+                                            acc.getSegments(),
+                                            acc.toContentBlocksJson(),
+                                            sessionNum,
+                                            operatorId))
+                            .subscribeOn(Schedulers.boundedElastic())
+                            .thenMany(Flux.just(AgentInvokeFrame.agent(event)))
+                            .doOnComplete(() -> harnessUserMemorySync.capture(
+                                    agentNum, targetVersion, sessionNum, operatorId));
+                })
+                .takeUntil(frame -> frame.isAgentEvent()
+                        && isTerminalAgentResult(frame.getAgentEvent())
+                        && !isUserFormSuspended(frame.getAgentEvent()));
+    }
+
+    private Flux<AgentInvokeFrame> handleUserFormSuspend(
+            Agent agent, Event suspendEvent, RuntimeContext runtimeContext,
+            String sessionNum, String runId, String operatorId,
+            String agentNum, String targetVersion,
+            SegmentAccumulator acc, TokenUsageAccumulator usageAcc, AtomicBoolean inThinkTag) {
+
+        ToolUseBlock toolCall = extractRequestUserInputTool(suspendEvent.getMessage());
+        if (toolCall == null) {
+            log.warn("[user-input-hitl] TOOL_SUSPENDED without request_user_input, treat as finish");
+            return Flux.just(AgentInvokeFrame.agent(suspendEvent));
+        }
+        Map<String, Object> form = toolCall.getInput() == null
+                ? Map.of()
+                : new HashMap<>(toolCall.getInput());
+        String replyId = StrUtil.blankToDefault(
+                suspendEvent.getMessage() != null ? suspendEvent.getMessage().getId() : null,
+                UUID.randomUUID().toString().replace("-", ""));
+        UserInputHitlService.Pending pending = userInputHitlService.register(
+                sessionNum, runId, replyId, toolCall, form);
+        UserInputRequiredEvent required = UserInputRequiredEvent.builder()
+                .runId(runId)
+                .sessionId(sessionNum)
+                .replyId(replyId)
+                .requestId(pending.getRequestId())
+                .toolCallId(toolCall.getId())
+                .toolName(RequestUserInputTool.NAME)
+                .form(form)
+                .build();
+
+        return Flux.concat(
+                Flux.just(AgentInvokeFrame.agent(suspendEvent)),
+                Flux.just(AgentInvokeFrame.userInputRequired(required)),
+                userInputHitlService.awaitAnswer(pending.getRequestId())
+                        .flatMapMany(answer -> {
+                            Map<String, Object> accepted = Map.of(
+                                    "runId", StrUtil.blankToDefault(runId, ""),
+                                    "requestId", pending.getRequestId(),
+                                    "status", "cancel".equals(answer.getAction())
+                                            ? "cancelled" : "submitted");
+                            ToolResultBlock result = UserInputHitlService.toToolResult(pending, answer);
+                            String agentName = agent.getName() != null ? agent.getName() : "agent";
+                            Msg resumeMsg = ToolResultMessageBuilder.buildToolResultMsg(
+                                    result, toolCall, agentName);
+                            return Flux.concat(
+                                    Flux.just(AgentInvokeFrame.userInputAccepted(accepted)),
+                                    streamWithUserInputHitl(
+                                            agent, resumeMsg, runtimeContext, sessionNum, runId,
+                                            operatorId, agentNum, targetVersion,
+                                            acc, usageAcc, inThinkTag));
+                        }));
+    }
+
+    static boolean isTerminalAgentResult(Event event) {
+        return event != null
+                && event.isLast()
+                && EventType.AGENT_RESULT.equals(event.getType());
+    }
+
+    static boolean isUserFormSuspended(Event event) {
+        if (!isTerminalAgentResult(event) || event.getMessage() == null) {
+            return false;
+        }
+        if (event.getMessage().getGenerateReason() != GenerateReason.TOOL_SUSPENDED) {
+            return false;
+        }
+        return extractRequestUserInputTool(event.getMessage()) != null;
+    }
+
+    static ToolUseBlock extractRequestUserInputTool(Msg msg) {
+        if (msg == null) {
+            return null;
+        }
+        List<ToolUseBlock> uses = msg.getContentBlocks(ToolUseBlock.class);
+        if (uses == null || uses.isEmpty()) {
+            return null;
+        }
+        for (ToolUseBlock use : uses) {
+            if (use != null && RequestUserInputTool.NAME.equals(use.getName())) {
+                return use;
+            }
+        }
+        return null;
     }
 
     /**

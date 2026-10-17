@@ -3,6 +3,16 @@
  */
 
 import type { AttachmentRef } from './attachment';
+import type { PendingUserInput } from './userInput';
+
+export type { PendingUserInput } from './userInput';
+export type {
+  UserInputFieldDef,
+  UserInputFieldOption,
+  UserInputFieldType,
+  UserInputRespondAction,
+  UserInputRespondParam,
+} from './userInput';
 
 export type MessageRole = 'USER' | 'ASSISTANT' | 'TOOL';
 export type InputType = 'TEXT' | 'JSON' | 'MULTIMODAL';
@@ -205,11 +215,16 @@ export interface SandboxStatusPayload {
   ts?: number;
 }
 
+export type UserInputSsePayload = PendingUserInput & Record<string, unknown>;
+
 export type SsePlatformEvent =
   | { event: 'message'; data: AgentScopeEvent; id?: string }
   | { event: 'Sandbox.Status'; data: SandboxStatusPayload; id?: string }
   | { event: 'run_started'; data: { runId?: string; sessionNum?: string; status?: string }; id?: string }
   | { event: 'run_finished'; data: { runId?: string; status?: string }; id?: string }
+  | { event: 'user_input.required'; data: UserInputSsePayload; id?: string }
+  | { event: 'user_input.accepted'; data: Record<string, unknown>; id?: string }
+  | { event: 'user_input.rejected'; data: Record<string, unknown>; id?: string }
   | { event: 'error'; data: { code?: number; message: string; trace_id?: string }; id?: string };
 
 /* ============================================================

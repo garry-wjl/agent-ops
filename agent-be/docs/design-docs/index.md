@@ -33,6 +33,7 @@
 | audit | <!-- TODO: design-docs/audit/overview.md(切片 1) --> |
 | 智能体管理 | <!-- TODO: design-docs/agents/overview.md(切片 2) --> |
 | prompt | <!-- TODO: design-docs/prompt/overview.md(切片 3) --> |
+| 用户表单 HITL | [2026-10-17-user-form-input-hitl.md](2026-10-17-user-form-input-hitl.md) |
 
 ---
 

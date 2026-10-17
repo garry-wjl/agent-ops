@@ -270,6 +270,11 @@ public class AgentRunnerFactory {
                 toolkit.registerTool(new ReadAttachmentTool(attachmentQueryService, ws));
             }
 
+            //3.1.3 启用表单填写时注册内置 external 工具 request_user_input
+            if (Boolean.TRUE.equals(agent.getConfigSnapshot().getEnableUserFormInput())) {
+                ink.garry.rd.agent.ws.application.agentrunner.hitl.RequestUserInputTool.register(toolkit);
+            }
+
             //3.2 按快照勾选预加载 Skill → BoundSkillRepository（Harness skillRepository）
             List<AgentSkill> boundSkills = loadBoundSkills(agent.getConfigSnapshot());
             BoundSkillRepository boundSkillRepository = new BoundSkillRepository(boundSkills);

@@ -36,8 +36,9 @@ import MarkdownContent from '@/components/MarkdownContent';
 import StepChainView from '@/components/StepChainView';
 import ThinkingPanel from '@/components/ThinkingPanel';
 import AssistantSegmentList from '@/components/AssistantSegmentList';
+import UserInputFormCard from '@/components/UserInputFormCard';
 import { useInvokeStream } from '@/hooks/useInvokeStream';
-import { AgentApi, SessionApi } from '@/services';
+import { AgentApi, DebugConsoleApi, SessionApi } from '@/services';
 import { evalApi } from '@/services/evaluation';
 import { useAgentDebugVersionsQuery } from '@/services/agent';
 import type {
@@ -46,6 +47,7 @@ import type {
   AssistantSegment,
   AttachmentRef,
   MessageVO,
+  PendingUserInput,
   SessionListVO,
 } from '@/types';
 import { copyToClipboard, relativeTime } from '@/utils/format';
@@ -88,6 +90,15 @@ interface ChatMessage {
   usageLabel?: string;
   /** 会话沙箱状态（Sandbox.Status） */
   sandboxPhase?: string;
+  /**
+   * 本轮 HITL 用户表单（挂在助手消息上，进入对话记录）。
+   * pending 可填；submitted/cancelled 只读回放。
+   */
+  userForm?: {
+    form: PendingUserInput;
+    status: 'pending' | 'submitted' | 'cancelled';
+    values?: Record<string, unknown>;
+  };
 };
 
 const COLOR = {
@@ -188,6 +199,7 @@ export default function ConsolePage() {
   ]);
 
   const stream = useInvokeStream();
+  const [userInputSubmitting, setUserInputSubmitting] = useState(false);
   const activeAgent = useMemo(
     () => agents.find((a) => a.num === agentNum),
     [agents, agentNum],
@@ -418,6 +430,8 @@ export default function ConsolePage() {
             ? undefined
             : formatUsageLabel(stream.usage),
           sandboxPhase: stream.sandboxPhase,
+          // 流式同步勿冲掉已挂上的 HITL 表单记录
+          userForm: last.userForm,
         };
       }
       return next;
@@ -440,6 +454,93 @@ export default function ConsolePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stream.sessionNum]);
 
+  useEffect(() => {
+    if (stream.userInputRejectedMessage) {
+      antdMessage.warning(stream.userInputRejectedMessage);
+    }
+  }, [stream.userInputRejectedMessage]);
+
+  /** SSE user_input.required → 挂到当前助手消息，进入对话流 */
+  useEffect(() => {
+    const pending = stream.pendingUserInput;
+    if (!pending) return;
+    setMessages((prev) => {
+      const next = [...prev];
+      for (let i = next.length - 1; i >= 0; i--) {
+        if (next[i].role !== 'assistant') continue;
+        const existing = next[i].userForm;
+        // 已结算的同 requestId 不回退成 pending
+        if (
+          existing &&
+          existing.form.requestId === pending.requestId &&
+          existing.status !== 'pending'
+        ) {
+          return prev;
+        }
+        if (
+          existing?.form.requestId === pending.requestId &&
+          existing.status === 'pending'
+        ) {
+          return prev;
+        }
+        next[i] = {
+          ...next[i],
+          userForm: { form: pending, status: 'pending' },
+        };
+        return next;
+      }
+      return prev;
+    });
+  }, [stream.pendingUserInput]);
+
+  const respondUserInput = async (
+    action: 'submit' | 'cancel',
+    values?: Record<string, unknown>,
+  ) => {
+    const pending = stream.pendingUserInput;
+    const sessionNum = stream.sessionNum ?? activeSession;
+    if (!pending || !sessionNum) {
+      antdMessage.warning('缺少会话或表单上下文，无法提交');
+      return;
+    }
+    setUserInputSubmitting(true);
+    try {
+      await DebugConsoleApi.userInputRespond({
+        session_num: sessionNum,
+        run_id: stream.runId,
+        request_id: pending.requestId,
+        reply_id: pending.replyId,
+        tool_call_id: pending.toolCallId,
+        action,
+        values: action === 'submit' ? values : undefined,
+      });
+      setMessages((prev) => {
+        const next = [...prev];
+        for (let i = next.length - 1; i >= 0; i--) {
+          const uf = next[i].userForm;
+          if (!uf || uf.form.requestId !== pending.requestId) continue;
+          next[i] = {
+            ...next[i],
+            userForm: {
+              form: uf.form,
+              status: action === 'submit' ? 'submitted' : 'cancelled',
+              values: action === 'submit' ? values : undefined,
+            },
+          };
+          break;
+        }
+        return next;
+      });
+      if (action === 'cancel') {
+        antdMessage.info('已取消表单填写');
+      }
+    } catch {
+      // 全局拦截器已 toast
+    } finally {
+      setUserInputSubmitting(false);
+    }
+  };
+
   /* ----- handlers ----- */
   const handleSend = async (
     input: string | Record<string, any>,
@@ -448,6 +549,10 @@ export default function ConsolePage() {
   ) => {
     if (!agentNum) {
       antdMessage.warning('请先选择 Agent');
+      return;
+    }
+    if (stream.pendingUserInput) {
+      antdMessage.warning('请先完成或取消当前表单');
       return;
     }
     const context = tryBuildContext(contextRows);
@@ -933,6 +1038,19 @@ export default function ConsolePage() {
                     <AssistantMessage
                       msg={m}
                       userInput={prevUser?.content}
+                      userFormSubmitting={
+                        m.userForm?.status === 'pending' ? userInputSubmitting : false
+                      }
+                      onUserFormSubmit={
+                        m.userForm?.status === 'pending'
+                          ? (values) => respondUserInput('submit', values)
+                          : undefined
+                      }
+                      onUserFormCancel={
+                        m.userForm?.status === 'pending'
+                          ? () => respondUserInput('cancel')
+                          : undefined
+                      }
                       onAppendToDataset={
                         m.status === 'done' || m.status === 'error'
                           ? () => openAppendModal(prevUser?.content, m.content)
@@ -970,7 +1088,7 @@ export default function ConsolePage() {
           />
           <DebugSender
             loading={stream.loading}
-            disabled={!agentNum}
+            disabled={!agentNum || !!stream.pendingUserInput}
             agentNum={agentNum}
             mode={mode}
             onSubmit={handleSend}
@@ -1186,9 +1304,18 @@ function UserMessage({ msg }: { msg: ChatMessage }) {
 function AssistantMessage(props: {
   msg: ChatMessage;
   userInput?: string;
+  userFormSubmitting?: boolean;
+  onUserFormSubmit?: (values: Record<string, unknown>) => void | Promise<void>;
+  onUserFormCancel?: () => void | Promise<void>;
   onAppendToDataset?: () => void;
 }) {
-  const { msg, onAppendToDataset } = props;
+  const {
+    msg,
+    onAppendToDataset,
+    userFormSubmitting,
+    onUserFormSubmit,
+    onUserFormCancel,
+  } = props;
   const statusChip =
     msg.status === 'streaming' ? (
       <span
@@ -1266,22 +1393,35 @@ function AssistantMessage(props: {
             segments={msg.segments}
             streaming={msg.status === 'streaming'}
           />
-        ) : msg.status === 'streaming' ? (
+        ) : msg.status === 'streaming' && !msg.userForm ? (
           // 已发请求但首帧未到 — 显示 timeline 风格脉冲占位,与后续段衔接自然
           <StreamingPlaceholder sandboxPhase={msg.sandboxPhase} />
-        ) : (
+        ) : !msg.segments?.length ? (
           // 历史回放降级：thinking → 正文 → 工具链（BE 持久化未保留交错顺序）
           // 此分支必然非 streaming(上层已分流),streaming 参数固定 false
           <>
             {msg.thinking ? (
               <ThinkingPanel content={msg.thinking} streaming={false} />
             ) : null}
-            <MarkdownContent content={msg.content} streaming={false} />
+            {msg.content ? (
+              <MarkdownContent content={msg.content} streaming={false} />
+            ) : null}
             {msg.stepChain && msg.stepChain.steps.length > 0 ? (
               <StepChainView chain={msg.stepChain as any} />
             ) : null}
           </>
-        )}
+        ) : null}
+
+        {msg.userForm ? (
+          <UserInputFormCard
+            pending={msg.userForm.form}
+            status={msg.userForm.status}
+            values={msg.userForm.values}
+            submitting={userFormSubmitting}
+            onSubmit={onUserFormSubmit}
+            onCancel={onUserFormCancel}
+          />
+        ) : null}
 
         {msg.status === 'done' || msg.status === 'error' ? (
           <div

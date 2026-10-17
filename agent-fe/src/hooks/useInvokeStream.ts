@@ -15,7 +15,8 @@
  *   若为 isLast 且带 usage，先记入 pendingMeta（被 chunk 去重跳过内容时仍保留 usage）
  * - TOOL_RESULT：遍历 message.content blocks，逐块走 applyToolResult 按 id 回填
  * - AGENT_RESULT：读取 message.usage（本轮汇总），写入 totalTokens / usage；内容不展示；
- *   并以业务终态结束 loading（不单依赖 HTTP 连接关闭，避免半关闭 chunked 导致前端卡在「处理中」）
+ *   并以业务终态结束 loading（不单依赖 HTTP 连接关闭，避免半关闭 chunked 导致前端卡在「处理中」）。
+ *   例外：TOOL_SUSPENDED + request_user_input 时不 abort，等待同连接的 user_input.* 后续帧。
  * - HINT / SUMMARY：本期不展示，仅 console.debug
  *
  * 出字速率：跟随 SSE 到达速率，rAF 合并到下一帧 setState。
@@ -28,8 +29,14 @@ import type {
   AssistantSegment,
   ChatUsage,
   DebugInvokeRequest,
+  PendingUserInput,
   SsePlatformEvent,
 } from '@/types';
+import {
+  isUserFormSuspendedAgentResult,
+  parseUserInputRequiredPayload,
+  userInputRejectedMessage,
+} from './userInputSse';
 
 export interface UseInvokeStreamState {
   loading: boolean;
@@ -52,6 +59,10 @@ export interface UseInvokeStreamState {
   /** 会话沙箱状态（event: Sandbox.Status）；纯对话无此字段 */
   sandboxPhase?: string;
   sandboxStatusMessage?: string;
+  /** SSE user_input.required 触发的待填表单；accepted/rejected 后清空 */
+  pendingUserInput?: PendingUserInput;
+  /** user_input.rejected 时的说明（可选） */
+  userInputRejectedMessage?: string;
 }
 
 const initial: UseInvokeStreamState = {
@@ -535,6 +546,39 @@ export function useInvokeStream() {
               flushFinal({ resuming: false });
               return;
             }
+            if (parsed.event === 'user_input.required') {
+              const pending = parseUserInputRequiredPayload(parsed.data);
+              if (pending) {
+                setState((prev) => ({
+                  ...prev,
+                  pendingUserInput: pending,
+                  userInputRejectedMessage: undefined,
+                  lastEventId: parsed.id ?? prev.lastEventId,
+                }));
+              } else if (import.meta.env.DEV) {
+                console.warn('[useInvokeStream] user_input.required 解析失败', parsed.data);
+              }
+              return;
+            }
+            if (parsed.event === 'user_input.accepted') {
+              setState((prev) => ({
+                ...prev,
+                pendingUserInput: undefined,
+                userInputRejectedMessage: undefined,
+                lastEventId: parsed.id ?? prev.lastEventId,
+              }));
+              return;
+            }
+            if (parsed.event === 'user_input.rejected') {
+              const msg = userInputRejectedMessage(parsed.data);
+              setState((prev) => ({
+                ...prev,
+                pendingUserInput: undefined,
+                userInputRejectedMessage: msg,
+                lastEventId: parsed.id ?? prev.lastEventId,
+              }));
+              return;
+            }
             if (parsed.event === 'Sandbox.Status') {
               const phase = parsed.data?.phase;
               const message = parsed.data?.message;
@@ -560,7 +604,10 @@ export function useInvokeStream() {
                 break;
               case 'AGENT_RESULT':
                 handleAgentResult(evt);
-                finishStream();
+                // HITL 挂起：后面还有 user_input.required，切勿 abort 同连接
+                if (!isUserFormSuspendedAgentResult(evt)) {
+                  finishStream();
+                }
                 break;
               case 'HINT':
               case 'SUMMARY':
