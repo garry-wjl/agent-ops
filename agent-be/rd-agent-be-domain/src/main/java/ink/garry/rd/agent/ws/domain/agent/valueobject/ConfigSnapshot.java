@@ -78,6 +78,12 @@ public class ConfigSnapshot {
      */
     private Boolean enableLongTermMemory;
 
+    /**
+     * 是否启用内置表单填写（{@code request_user_input} external tool）。
+     * <p>缺省 false：不注册该工具；为 true 时 Agent 可在执行中暂停向用户索取表单。
+     */
+    private Boolean enableUserFormInput;
+
     /** Harness 上下文压缩策略 */
     private CompactionPolicy compaction;
     /** 挂载的 Skill 业务编号列表（多选） */

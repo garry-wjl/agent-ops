@@ -94,6 +94,7 @@ interface AgentDraft {
   /** Harness / ReAct 最大迭代轮次，默认 10 */
   maxIters?: number;
   enableLongTermMemory?: boolean;
+  enableUserFormInput?: boolean;
   compaction: CompactionSetting;
   ctx: ToolsContextValue;
 }
@@ -118,6 +119,7 @@ function emptyDraft(): AgentDraft {
     enablePlan: false,
     maxIters: 10,
     enableLongTermMemory: false,
+    enableUserFormInput: false,
     compaction: defaultCompaction(),
     ctx: {
       skillNums: [],
@@ -250,6 +252,7 @@ export default function AgentEditorPage() {
           enablePlan: snap?.enablePlan ?? false,
           maxIters: snap?.maxIters ?? 10,
           enableLongTermMemory: snap?.enableLongTermMemory ?? false,
+          enableUserFormInput: snap?.enableUserFormInput ?? false,
           compaction: {
             ...defaultCompaction(),
             ...snap?.compaction,
@@ -352,6 +355,7 @@ export default function AgentEditorPage() {
       enablePlan: draft.enablePlan ?? false,
       maxIters: draft.maxIters ?? 10,
       enableLongTermMemory: draft.enableLongTermMemory ?? false,
+      enableUserFormInput: draft.enableUserFormInput ?? false,
       compaction: draft.compaction,
       skillNums: draft.ctx.skillNums,
       skillRefs: draft.ctx.skillRefs,
@@ -373,6 +377,7 @@ export default function AgentEditorPage() {
       enablePlan: draft.enablePlan ?? false,
       maxIters: draft.maxIters ?? 10,
       enableLongTermMemory: draft.enableLongTermMemory ?? false,
+      enableUserFormInput: draft.enableUserFormInput ?? false,
       compaction: draft.compaction,
       skillNums: draft.ctx.skillNums,
       skillRefs: draft.ctx.skillRefs,
@@ -681,6 +686,21 @@ export default function AgentEditorPage() {
                 </Radio.Group>
                 <div style={{ marginTop: 6, fontSize: 12, color: COLOR.textMuted }}>
                   关闭时不记录任何用户的长期记忆。开启后按用户写入数据库，跨会话保留，不放进会话沙箱。
+                </div>
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ marginBottom: 8, fontSize: 13 }}>是否启用表单填写</div>
+                  <Radio.Group
+                    value={draft.enableUserFormInput ? 'ON' : 'OFF'}
+                    onChange={(e) =>
+                      patch({ enableUserFormInput: e.target.value === 'ON' })
+                    }
+                  >
+                    <Radio value="OFF">关闭</Radio>
+                    <Radio value="ON">开启</Radio>
+                  </Radio.Group>
+                  <div style={{ marginTop: 6, fontSize: 12, color: COLOR.textMuted }}>
+                    开启后 Agent 可在调试台执行中暂停，向用户展示表单并等待填写（request_user_input）。
+                  </div>
                 </div>
               </Form.Item>
 

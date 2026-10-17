@@ -6,8 +6,11 @@ import ink.garry.rd.agent.ws.adapter.common.SseKeepAlive;
 import ink.garry.rd.agent.ws.adapter.config.BaseController;
 import ink.garry.rd.agent.ws.application.agentrunner.InvokeContentNormalizer;
 import ink.garry.rd.agent.ws.application.agentrunner.NormalizedInvokeContent;
+import ink.garry.rd.agent.ws.application.agentrunner.hitl.UserInputHitlService;
 import ink.garry.rd.agent.ws.application.agentrunner.run.AgentRunCoordinator;
+import ink.garry.rd.agent.ws.client.agentrunner.UserInputRespondParam;
 import ink.garry.rd.agent.ws.client.debugconsole.DebugInvokeRequest;
+import ink.garry.rd.agent.ws.facade.common.Result;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +34,7 @@ public class DebugInvokeController extends BaseController {
 
     private final AgentRunCoordinator agentRunCoordinator;
     private final InvokeContentNormalizer invokeContentNormalizer;
+    private final UserInputHitlService userInputHitlService;
 
     /**
      * 成功时 text/event-stream；进入 SSE 前的业务/参数异常须能协商为 application/json。
@@ -62,6 +66,18 @@ public class DebugInvokeController extends BaseController {
                                 req.getTargetVersion(),
                                 "DEBUG_CONSOLE",
                                 req.getContext())));
+    }
+
+    /**
+     * 用户表单 HITL 回传：提交或取消后唤醒挂起的 Agent 续跑。
+     * <p>
+     * Body 推荐 snake_case（{@code request_id} / {@code session_num} / {@code run_id}）；
+     * 契约见 {@code docs/design-docs/2026-10-17-user-form-input-hitl.md}。
+     */
+    @PostMapping("/user-input/respond")
+    public Result<Void> respondUserInput(@RequestBody UserInputRespondParam param) {
+        userInputHitlService.respond(param);
+        return Result.ok();
     }
 
     private static boolean isBlankInvoke(DebugInvokeRequest req) {

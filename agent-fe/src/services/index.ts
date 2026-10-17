@@ -1,6 +1,7 @@
 export { agentApi, agentQueryKeys } from './agent';
 export { skillApi, skillQueryKeys } from './skill';
 export { sessionApi } from './session';
+export { debugConsoleApi } from './debugConsole';
 export { evalApi } from './evaluation';
 export { commonApi, uploadFile } from './common';
 export type { UploadFileOptions, UploadFileResult } from './common';
@@ -16,6 +17,7 @@ export { userApi, userQueryKeys } from './user';
 export { agentApi as AgentApi } from './agent';
 export { skillApi as SkillApi } from './skill';
 export { sessionApi as SessionApi } from './session';
+export { debugConsoleApi as DebugConsoleApi } from './debugConsole';
 export { evalApi as EvalApi } from './evaluation';
 export { commonApi as CommonApi } from './common';
 export { workspaceApi as WorkspaceApi } from './workspace';

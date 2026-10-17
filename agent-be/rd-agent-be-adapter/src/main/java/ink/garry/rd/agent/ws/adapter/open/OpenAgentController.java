@@ -8,8 +8,10 @@ import ink.garry.rd.agent.ws.adapter.security.ApiKeyAuthenticationFilter;
 import ink.garry.rd.agent.ws.application.agent.OpenAgentInvokeService;
 import ink.garry.rd.agent.ws.application.agentrunner.InvokeContentNormalizer;
 import ink.garry.rd.agent.ws.application.agentrunner.NormalizedInvokeContent;
+import ink.garry.rd.agent.ws.application.agentrunner.hitl.UserInputHitlService;
 import ink.garry.rd.agent.ws.application.agentrunner.run.AgentRunCoordinator;
 import ink.garry.rd.agent.ws.client.agent.OpenInvokeParam;
+import ink.garry.rd.agent.ws.client.agentrunner.UserInputRespondParam;
 import ink.garry.rd.agent.ws.client.agent.OpenSessionCreateParam;
 import ink.garry.rd.agent.ws.client.agent.OpenSessionListQuery;
 import ink.garry.rd.agent.ws.client.attachment.OpenUploadAttachmentParam;
@@ -61,6 +63,7 @@ public class OpenAgentController {
     private final OpenAgentInvokeService openAgentInvokeService;
     private final InvokeContentNormalizer invokeContentNormalizer;
     private final AgentRunCoordinator agentRunCoordinator;
+    private final UserInputHitlService userInputHitlService;
 
     /**
      * 开放上传附件（预签名 + 登记）。
@@ -130,6 +133,20 @@ public class OpenAgentController {
             return b.trim();
         }
         return null;
+    }
+
+    /**
+     * 用户表单 HITL 回传（开放面）。
+     * <p>
+     * 契约见设计文档 {@code docs/design-docs/2026-10-17-user-form-input-hitl.md}
+     * 与前端 Agent 详情「API 信息」Tab。
+     */
+    @PostMapping("/command/user-input/respond")
+    public Result<Void> respondUserInput(@RequestBody UserInputRespondParam param,
+                                         HttpServletRequest req) {
+        bindOpenWorkspace(req);
+        userInputHitlService.respond(param);
+        return Result.ok();
     }
 
     /**

@@ -116,7 +116,7 @@ public class AgentRunCoordinator {
                         "status", AgentRunStatus.RUNNING.name())));
 
         Flux<AgentInvokeFrame> frames = agentRunnerService.runAgentFrames(
-                agentNum, content, ensuredSession, operatorId, targetVersion, origin, context);
+                agentNum, content, ensuredSession, operatorId, targetVersion, origin, context, runId);
 
         // 与 HTTP 解耦：独立订阅，客户端断开不停跑
         frames.concatMap(frame -> Mono.fromCallable(() -> {
@@ -243,6 +243,16 @@ public class AgentRunCoordinator {
                 return new SerializedFrame(
                         SandboxStatusEvent.SSE_EVENT,
                         objectMapper.writeValueAsString(status));
+            }
+            if (frame.isUserInputRequired()) {
+                return new SerializedFrame(
+                        frame.getSseEventName(),
+                        objectMapper.writeValueAsString(frame.getUserInputRequired()));
+            }
+            if (frame.isUserInputStatus()) {
+                return new SerializedFrame(
+                        frame.getSseEventName(),
+                        objectMapper.writeValueAsString(frame.getUserInputStatusPayload()));
             }
             JsonNode root = objectMapper.valueToTree(frame.getAgentEvent());
             return new SerializedFrame(null, objectMapper.writeValueAsString(root));
