@@ -6,6 +6,7 @@ import cn.hutool.core.util.StrUtil;
 import ink.garry.rd.agent.ws.application.agent.AgentQueryService;
 import ink.garry.rd.agent.ws.application.agentrunner.harness.BoundSkillRepository;
 import ink.garry.rd.agent.ws.application.agentrunner.harness.HarnessRuntimeOptions;
+import ink.garry.rd.agent.ws.application.agentrunner.harness.SandboxToolPathRewriter;
 import ink.garry.rd.agent.ws.application.agentrunner.harness.HarnessUserMemorySync;
 import ink.garry.rd.agent.ws.application.agentrunner.tool.FunctionCallTool;
 import ink.garry.rd.agent.ws.application.agentrunner.tool.JsonFormatTool;
@@ -428,7 +429,12 @@ public class AgentRunnerFactory {
             } else {
                 harnessBuilder.disableFilesystemTools();
             }
-            return harnessBuilder.build();
+            Agent built = harnessBuilder.build();
+            if (sandboxBound && built instanceof HarnessAgent harnessAgent) {
+                SandboxToolPathRewriter.rewrite(
+                        harnessAgent.getToolkit(), sandboxProperties.resolveWorkspaceRoot());
+            }
+            return built;
         } else {
             log.error("Agent创建模式错误：{}", agent.getCreationMode());
             throw new IllegalArgumentException("Agent创建模式错误");
@@ -682,7 +688,8 @@ public class AgentRunnerFactory {
                 log.debug("Skill {} has no resources to upload", skillId);
                 continue;
             }
-            String skillWorkDir = sandboxProperties.resolveWorkspaceRoot() + "/skills/" + skillId;
+            String skillWorkDir = BoundSkillRepository.skillCacheDir(
+                    sandboxProperties.resolveWorkspaceRoot(), skillId);
             try {
                 openSandboxExecBridge.exec(
                         instanceId, sessionNum, Map.of(), 30L, "mkdir -p " + skillWorkDir);

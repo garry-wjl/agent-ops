@@ -3,6 +3,7 @@ package ink.garry.rd.agent.ws.application.sandbox.lifecycle;
 import cn.hutool.core.collection.CollectionUtil;
 import cn.hutool.core.util.StrUtil;
 import io.agentscope.core.skill.AgentSkill;
+import ink.garry.rd.agent.ws.application.agentrunner.harness.BoundSkillRepository;
 import ink.garry.rd.agent.ws.infra.agentscope.harness.opensandbox.OpenSandboxExecBridge;
 import ink.garry.rd.agent.ws.infra.common.client.sandbox.SandboxProperties;
 import jakarta.annotation.Resource;
@@ -76,7 +77,8 @@ public class SessionSandboxSkillProjector {
             if (resources == null || resources.isEmpty()) {
                 continue;
             }
-            String skillWorkDir = sandboxProperties.resolveWorkspaceRoot() + "/skills/" + skillId;
+            String skillWorkDir = BoundSkillRepository.skillCacheDir(
+                    sandboxProperties.resolveWorkspaceRoot(), skillId);
             try {
                 openSandboxExecBridge.exec(
                         instanceId, sessionNum, Map.of(), 30L, "mkdir -p " + skillWorkDir);
