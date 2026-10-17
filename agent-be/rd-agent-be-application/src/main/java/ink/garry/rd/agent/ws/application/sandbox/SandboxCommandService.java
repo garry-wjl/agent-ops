@@ -333,6 +333,27 @@ public class SandboxCommandService {
         });
     }
 
+    /**
+     * 对账软删：资产绑定的远程 instanceId 已不存在时逻辑删除（方案 A）。
+     * <p>
+     * ACS 规格资产（无 instanceId）不应调用；由 {@link SandboxRunner#reconcile} 判活后回调。
+     *
+     * @param num        沙箱业务编号
+     * @param operatorId 对账系统账号
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void reconcileSoftDeleteRemoteGone(String num, String operatorId) {
+        Assert.notBlank(num, "沙箱业务编号不能为空");
+        Assert.notBlank(operatorId, "operatorId 不能为空");
+
+        String lockKey = LockKeyConstant.SANDBOX_COMMAND_LOCK_PREFIX + num;
+        runWithLock(lockKey, () -> {
+            Sandbox sandbox = requireByNum(num);
+            sandbox.reconcileSoftDeleteRemoteGone(operatorId);
+            return null;
+        });
+    }
+
     // ============================================================
     // helpers
     // ============================================================

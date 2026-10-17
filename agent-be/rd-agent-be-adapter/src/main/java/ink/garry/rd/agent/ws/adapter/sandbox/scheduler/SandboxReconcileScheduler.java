@@ -19,10 +19,11 @@ import java.util.concurrent.TimeUnit;
 /**
  * 沙箱脏态对账定时任务（adapter 层入站调度入口）。
  * <p>
- * 周期：取在线资产 → {@link SandboxRunner#reconcile} 清理死亡 runtime →
+ * 周期：取在线资产 → {@link SandboxRunner#reconcile}（清死亡 runtime；
+ * 资产仍绑定远程 instanceId 且已死则逻辑删除）→
  * {@link SandboxPoolService#reclaimInactiveSessions} 回收空闲超时 BOUND →
  * 开池资产 {@link SandboxPoolService#replenish} 补水位。
- * 会话隔离模型下资产 ONLINE 表示规格就绪，不再因资产表 instanceId 为空/死亡而下线资产。
+ * ACS 规格资产（instanceId 空）只清 runtime，不删资产。
  * 本类只负责调度 + 分布式锁。
  *
  * <h3>并发控制</h3>
