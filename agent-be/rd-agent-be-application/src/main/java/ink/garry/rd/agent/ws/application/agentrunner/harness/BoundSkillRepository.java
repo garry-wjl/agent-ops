@@ -21,6 +21,16 @@ public class BoundSkillRepository implements AgentSkillRepository {
 
     private static final String REPO_TYPE = "rd-agent-bound";
     private static final String REPO_LOCATION = "invoke-snapshot-skillRefs";
+    /** Harness files-root 使用的仓库 source。 */
+    public static final String SOURCE = REPO_TYPE + "_" + REPO_LOCATION;
+
+    public static String skillCacheDir(String workspaceRoot, String skillName) {
+        String root = workspaceRoot == null || workspaceRoot.isBlank() ? "/workspace" : workspaceRoot;
+        if (root.endsWith("/")) {
+            root = root.substring(0, root.length() - 1);
+        }
+        return root + "/.skills-cache/" + SOURCE + "/" + skillName;
+    }
 
     private final Map<String, AgentSkill> byName = new LinkedHashMap<>();
     private boolean writeable;

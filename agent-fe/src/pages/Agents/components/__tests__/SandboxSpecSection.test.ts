@@ -12,7 +12,8 @@ import {
 describe('SandboxSpecSection env helpers', () => {
   it('DEFAULT_SANDBOX_SPEC keeps sandbox on by default', () => {
     expect(DEFAULT_SANDBOX_SPEC.sandboxEnabled).toBe(true);
-    expect(DEFAULT_SANDBOX_SPEC.sandboxCpu).toBe(1);
+    expect(DEFAULT_SANDBOX_SPEC.sandboxCpu).toBe(0.5);
+    expect(DEFAULT_SANDBOX_SPEC.sandboxMemoryMb).toBe(1024);
     expect(DEFAULT_SANDBOX_SPEC.sandboxEnv).toEqual([]);
     expect(DEFAULT_SANDBOX_SPEC.headerEnvInjectEnabled).toBe(false);
     expect(DEFAULT_SANDBOX_SPEC.headerEnvMappings).toEqual([]);

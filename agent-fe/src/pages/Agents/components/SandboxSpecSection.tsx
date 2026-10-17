@@ -16,8 +16,8 @@ const COLOR = {
 /** 新建 Agent 时的沙箱默认值（默认开启）。 */
 export const DEFAULT_SANDBOX_SPEC = {
   sandboxEnabled: true,
-  sandboxCpu: 1,
-  sandboxMemoryMb: 2048,
+  sandboxCpu: 0.5,
+  sandboxMemoryMb: 1024,
   sandboxAliveMinutes: 10,
   sandboxMaxConcurrent: 8,
   sandboxEnv: [] as SandboxEnvRow[],
@@ -160,7 +160,7 @@ export default function SandboxSpecSection({
                 max={16}
                 step={0.5}
                 value={value.sandboxCpu ?? DEFAULT_SANDBOX_SPEC.sandboxCpu}
-                onChange={(v) => patch({ sandboxCpu: Number(v) || 1 })}
+                onChange={(v) => patch({ sandboxCpu: Number(v) || 0.5 })}
               />
             </span>
             <span>
@@ -170,7 +170,7 @@ export default function SandboxSpecSection({
                 max={65536}
                 step={128}
                 value={value.sandboxMemoryMb ?? DEFAULT_SANDBOX_SPEC.sandboxMemoryMb}
-                onChange={(v) => patch({ sandboxMemoryMb: Number(v) || 2048 })}
+                onChange={(v) => patch({ sandboxMemoryMb: Number(v) || 1024 })}
               />
             </span>
             <span>

@@ -64,8 +64,8 @@ public class SandboxSpecService {
             return null;
         }
         // enabled=true 或未传 enabled：需要完整规格
-        BigDecimal cpu = spec.getCpu() != null ? spec.getCpu() : new BigDecimal("1.0");
-        int memoryMb = spec.getMemoryMb() != null ? spec.getMemoryMb() : 2048;
+        BigDecimal cpu = spec.getCpu() != null ? spec.getCpu() : new BigDecimal("0.5");
+        int memoryMb = spec.getMemoryMb() != null ? spec.getMemoryMb() : 1024;
         int aliveMinutes = spec.getAliveMinutes() != null ? spec.getAliveMinutes() : 10;
         int maxConcurrent = spec.getMaxConcurrent() != null ? spec.getMaxConcurrent() : 8;
         int idleTtl = spec.getSessionIdleTtlMinutes() != null ? spec.getSessionIdleTtlMinutes() : 10;
