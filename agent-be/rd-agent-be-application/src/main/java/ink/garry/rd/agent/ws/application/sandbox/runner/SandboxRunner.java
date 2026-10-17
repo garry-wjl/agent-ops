@@ -94,8 +94,6 @@ public class SandboxRunner {
     private SandboxCommandService sandboxCommandService;
     @Resource
     private SandboxPoolService sandboxPoolService;
-    @Resource
-    private SandboxContainerGateway sandboxContainerGateway;
 
     @Resource
     private RedissonClient redissonClient;
