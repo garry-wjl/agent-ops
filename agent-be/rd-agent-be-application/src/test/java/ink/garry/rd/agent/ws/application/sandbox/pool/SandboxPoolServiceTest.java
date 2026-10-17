@@ -1,5 +1,6 @@
 package ink.garry.rd.agent.ws.application.sandbox.pool;
 
+import ink.garry.rd.agent.ws.application.agentrunner.run.AgentRunEventStore;
 import ink.garry.rd.agent.ws.domain.sandbox.Sandbox;
 import ink.garry.rd.agent.ws.domain.sandbox.factory.SandboxFactory;
 import ink.garry.rd.agent.ws.domain.sandbox.gateway.SandboxContainerGateway;
@@ -72,6 +73,8 @@ class SandboxPoolServiceTest {
     private RedissonClient redissonClient;
     @Mock
     private RLock rLock;
+    @Mock
+    private AgentRunEventStore agentRunEventStore;
 
     @InjectMocks
     private SandboxPoolService sandboxPoolService;
@@ -243,6 +246,38 @@ class SandboxPoolServiceTest {
 
         verify(runtimeRepository).update(any());
         verify(sandboxContainerGateway).renew(eq("os-1"), eq(30));
+    }
+
+    @Test
+    void reclaimInactiveSessions_skipsWhenAgentRunRunning() {
+        Sandbox asset = onlineAsset(false, 1, 8);
+        when(sandboxFactory.buildSandboxByNum("SBX1")).thenReturn(asset);
+        SandboxRuntimeInstanceRecord stale = new SandboxRuntimeInstanceRecord(
+                "SRI1", "SBX1", "WS1", "os-run", SandboxRuntimeStatus.BOUND,
+                "SES-RUN", LocalDateTime.now().minusMinutes(30), null, "u1", "u1");
+        when(runtimeRepository.listBoundInactiveBefore(any())).thenReturn(List.of(stale));
+        when(agentRunEventStore.findRunningRunId("SES-RUN")).thenReturn(Optional.of("run-1"));
+
+        sandboxPoolService.reclaimInactiveSessions();
+
+        verify(sandboxContainerGateway, never()).kill(anyString());
+        verify(runtimeRepository, never()).softDelete(anyString());
+    }
+
+    @Test
+    void reclaimInactiveSessions_releasesWhenIdleAndNoRunningRun() {
+        Sandbox asset = onlineAsset(false, 1, 8);
+        when(sandboxFactory.buildSandboxByNum("SBX1")).thenReturn(asset);
+        SandboxRuntimeInstanceRecord stale = new SandboxRuntimeInstanceRecord(
+                "SRI1", "SBX1", "WS1", "os-idle", SandboxRuntimeStatus.BOUND,
+                "SES-IDLE", LocalDateTime.now().minusMinutes(30), null, "u1", "u1");
+        when(runtimeRepository.listBoundInactiveBefore(any())).thenReturn(List.of(stale));
+        when(agentRunEventStore.findRunningRunId("SES-IDLE")).thenReturn(Optional.empty());
+
+        sandboxPoolService.reclaimInactiveSessions();
+
+        verify(sandboxContainerGateway).kill("os-idle");
+        verify(runtimeRepository).softDelete("SRI1");
     }
 
     @Test

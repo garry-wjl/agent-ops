@@ -9,6 +9,7 @@ import ink.garry.rd.agent.ws.domain.common.DomainEventConstant;
 import ink.garry.rd.agent.ws.domain.sandbox.dto.SandboxDomainEventDTO;
 import ink.garry.rd.agent.ws.facade.domain.DomainEventDTO;
 import ink.garry.rd.agent.ws.facade.exception.BusinessException;
+import ink.garry.rd.agent.ws.domain.sandbox.gateway.SandboxContainerGateway;
 import ink.garry.rd.agent.ws.infra.common.client.sandbox.SandboxClient;
 import ink.garry.rd.agent.ws.infra.common.constant.LockKeyConstant;
 import ink.garry.rd.agent.ws.infra.common.constant.RedisKeyConstant;
@@ -17,6 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RBucket;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -79,8 +81,13 @@ public class SandboxRunner {
     /** session 映射 value 分隔符:{@code sandboxId::execdSessionId}。 */
     private static final String SESSION_VALUE_SEP = "::";
 
+    /**
+     * OpenSandbox SDK 客户端；{@code provider=acs} / {@code mock=true} 时可能不存在。
+     */
     @Resource
-    private SandboxClient sandboxClient;
+    private ObjectProvider<SandboxClient> sandboxClientProvider;
+    @Resource
+    private SandboxContainerGateway sandboxContainerGateway;
     @Resource
     private SandboxCommandService sandboxCommandService;
     @Resource
@@ -208,7 +215,8 @@ public class SandboxRunner {
      * @return session
      */
     public SandboxSession obtainSession(String sandboxId, String sessionNum, Map<String, String> env, long ttlMinutes) {
-        String execdSessionId = obtainExecdSession(sandboxId, sessionNum, env, ttlMinutes);
+        SandboxClient sandboxClient = requireOpenSandboxClient();
+        String execdSessionId = obtainExecdSession(sandboxClient, sandboxId, sessionNum, env, ttlMinutes);
         Sandbox sandbox = sandboxClient.connect(sandboxId);
         return new SandboxSession(sandbox, execdSessionId);
     }
@@ -218,7 +226,8 @@ public class SandboxRunner {
      * <p>
      * 校验映射中的 sandboxId 是否与当前容器一致:不一致(容器已重建)则丢弃旧 session 重新创建。
      */
-    private String obtainExecdSession(String sandboxId, String sessionNum, Map<String, String> env, long ttlMinutes) {
+    private String obtainExecdSession(SandboxClient sandboxClient, String sandboxId, String sessionNum,
+                                      Map<String, String> env, long ttlMinutes) {
         RBucket<String> bucket = sessionBucket(sessionNum);
         String mapped = bucket.get();
         if (mapped != null) {
@@ -249,6 +258,15 @@ public class SandboxRunner {
         });
     }
 
+    private SandboxClient requireOpenSandboxClient() {
+        SandboxClient client = sandboxClientProvider.getIfAvailable();
+        if (client == null) {
+            throw new BusinessException(BizCode.SYSTEM_BUSY.getCode(),
+                    "当前沙箱后端不支持 OpenSandbox session（请使用 ACS/Docker 执行桥）");
+        }
+        return client;
+    }
+
     private RBucket<String> sessionBucket(String sessionNum) {
         return redissonClient.getBucket(RedisKeyConstant.SANDBOX_SESSION_PREFIX + sessionNum);
     }
@@ -259,10 +277,11 @@ public class SandboxRunner {
      * 连接失败抛异常由调用方转入供给失败分支。
      */
     private void probeReady(String instanceId) {
-        try (Sandbox sandbox = sandboxClient.connect(instanceId)) {
-            // 能成功建立连接句柄即视为容器就绪
-            log.debug("[sandbox-provision] probe ready ok, instanceId={}", sandbox.getId());
+        if (sandboxContainerGateway.isAlive(instanceId)) {
+            log.debug("[sandbox-provision] probe ready ok, instanceId={}", instanceId);
+            return;
         }
+        throw new IllegalStateException("sandbox not alive: " + instanceId);
     }
 
     /** kill 容器，失败仅 WARN（TTL 兜底回收），不上抛。 */
@@ -271,7 +290,7 @@ public class SandboxRunner {
             return;
         }
         try {
-            sandboxClient.kill(instanceId);
+            sandboxContainerGateway.kill(instanceId);
         } catch (Exception e) {
             log.warn("[sandbox] kill container failed, rely on TTL recycle. instanceId={}, reason={}",
                     instanceId, e.getMessage());

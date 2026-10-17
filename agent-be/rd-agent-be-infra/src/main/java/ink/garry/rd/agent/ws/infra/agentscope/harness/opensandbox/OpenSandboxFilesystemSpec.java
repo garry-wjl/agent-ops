@@ -126,6 +126,9 @@ public class OpenSandboxFilesystemSpec extends SandboxFilesystemSpec {
      */
     public OpenSandboxFilesystemSpec workspaceRoot(String workspaceRoot) {
         options.workspaceRoot(workspaceRoot);
+        if (workspaceRoot != null && !workspaceRoot.isBlank()) {
+            defaultWorkspaceSpec.setRoot(workspaceRoot.trim());
+        }
         return this;
     }
 

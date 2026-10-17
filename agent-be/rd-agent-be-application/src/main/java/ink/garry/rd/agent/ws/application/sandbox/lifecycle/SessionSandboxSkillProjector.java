@@ -4,6 +4,7 @@ import cn.hutool.core.collection.CollectionUtil;
 import cn.hutool.core.util.StrUtil;
 import io.agentscope.core.skill.AgentSkill;
 import ink.garry.rd.agent.ws.infra.agentscope.harness.opensandbox.OpenSandboxExecBridge;
+import ink.garry.rd.agent.ws.infra.common.client.sandbox.SandboxProperties;
 import jakarta.annotation.Resource;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +25,9 @@ public class SessionSandboxSkillProjector {
     @Lazy
     @Resource
     private OpenSandboxExecBridge openSandboxExecBridge;
+
+    @Resource
+    private SandboxProperties sandboxProperties;
 
     /**
      * 登记待上传技能资源（覆盖同会话旧登记）。
@@ -72,7 +76,7 @@ public class SessionSandboxSkillProjector {
             if (resources == null || resources.isEmpty()) {
                 continue;
             }
-            String skillWorkDir = "/workspace/skills/" + skillId;
+            String skillWorkDir = sandboxProperties.resolveWorkspaceRoot() + "/skills/" + skillId;
             try {
                 openSandboxExecBridge.exec(
                         instanceId, sessionNum, Map.of(), 30L, "mkdir -p " + skillWorkDir);

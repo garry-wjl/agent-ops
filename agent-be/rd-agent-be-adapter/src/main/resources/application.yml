@@ -133,26 +133,32 @@ app:
       - text/plain
       - text/markdown
 
-# OpenSandbox 远程沙箱接入（会话级容器复用）
+# 远程沙箱接入（会话级容器复用；会话内数据靠同实例保活，已去掉会话级 OSS subPath）
 sandbox:
-  # API Key 必须走 K8s Secret / 环境变量，禁止明文落 git
-  api-key: ${SANDBOX_API_KEY:4a56f29b-d33e-4eae-80d7-be6b36ce1f3f}
-  # 沙箱服务网关域名（不含协议）
-  domain: ${SANDBOX_DOMAIN:10.246.6.133:8090}
-  protocol: ${SANDBOX_PROTOCOL:http}
-  # 固定容器镜像（OpenSandbox 生产用）
+  # opensandbox（默认）| acs（ACS Agent Sandbox / E2B）
+  provider: ${SANDBOX_PROVIDER:acs}
+  # API Key 只允许环境变量 / K8s Secret 注入，禁止默认值落库
+  api-key: ${SANDBOX_API_KEY:}
+  # 逻辑域名（ACS：E2B domain，如 agent-sandbox.yldfuture.com；OpenSandbox：网关 host）
+  domain: ${SANDBOX_DOMAIN:agent-sandbox.yldfuture.com}
+  protocol: ${SANDBOX_PROTOCOL:https}
+  # ACS 可选直连（本地 port-forward）；生产走 Ingress 时可留空
+  manager-endpoint: ${SANDBOX_MANAGER_ENDPOINT:}
+  gateway-endpoint: ${SANDBOX_GATEWAY_ENDPOINT:}
+  # OpenSandbox 固定镜像；ACS 用 template 从预热池领取
   image: ${SANDBOX_IMAGE:opensandbox/code-interpreter:v1.0.2}
+  template: ${SANDBOX_TEMPLATE:code-interpreter}
+  # 容器内 workspace 根；空则 ACS=/home/user、OpenSandbox=/workspace
+  workspace-root: ${SANDBOX_WORKSPACE_ROOT:}
   # 容器存活 / Redis 映射 / 滑动续期窗口（分钟），默认 10
   ttl-minutes: ${SANDBOX_TTL_MINUTES:10}
   request-timeout-seconds: ${SANDBOX_REQUEST_TIMEOUT_SECONDS:30}
-  # true=本地 Docker 沙箱（真实 exec）；false=远程 OpenSandbox。勿再使用空 Mock。
+  # true=本地 Docker；false=按 provider 走远程。勿再使用空 Mock。
   mock: ${SANDBOX_MOCK:false}
-  # 仅 mock=true 时生效：本机 docker run 镜像（需已拉取或可拉取）
   docker-image: ${SANDBOX_DOCKER_IMAGE:ubuntu:22.04}
-  # 会话工作空间：开启后按 workspace/agent/session 挂 PVC（ACS OSS CSI），不再复用热池空闲容器
-  # PVC/Secret/CSI 在 OpenSandbox 命名空间由运维创建；本服务只传 claimName + subPath
+  # 会话级 OSS subPath 已下线，保持 false
   oss:
-    enabled: ${SANDBOX_OSS_ENABLED:false}
+    enabled: false
     pvc-claim-name: ${SANDBOX_OSS_PVC_CLAIM_NAME:agent-ops-workspace}
 
 # rd-agent Control Plane 自有配置

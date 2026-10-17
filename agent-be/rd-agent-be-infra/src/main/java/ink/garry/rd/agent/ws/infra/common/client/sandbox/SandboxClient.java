@@ -35,6 +35,10 @@ import java.util.Map;
  */
 @Slf4j
 @Component
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+        prefix = "sandbox", name = "mock", havingValue = "false", matchIfMissing = true)
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+        prefix = "sandbox", name = "provider", havingValue = "opensandbox", matchIfMissing = true)
 public class SandboxClient {
 
     @Resource

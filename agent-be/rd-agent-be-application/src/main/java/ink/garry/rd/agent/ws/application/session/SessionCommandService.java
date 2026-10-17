@@ -5,7 +5,6 @@ import com.alibaba.fastjson2.JSON;
 import ink.garry.rd.agent.ws.application.agent.AgentQueryService;
 import ink.garry.rd.agent.ws.application.common.prompt.SysPromptVariableSubstitutor;
 import ink.garry.rd.agent.ws.application.sandbox.pool.SandboxPoolService;
-import ink.garry.rd.agent.ws.application.sandbox.pool.SandboxSessionPrewarmService;
 import ink.garry.rd.agent.ws.client.agent.dto.AgentDTO;
 import ink.garry.rd.agent.ws.client.common.BizCode;
 import ink.garry.rd.agent.ws.client.session.dto.MessageDTO;
@@ -56,11 +55,11 @@ public class SessionCommandService {
 
     private final SessionFactory sessionFactory;
     private final AgentQueryService agentQueryService;
-    private final SandboxSessionPrewarmService sandboxSessionPrewarmService;
     private final SandboxPoolService sandboxPoolService;
 
     /**
-     * 创建会话：校验 Agent 状态后落库；A2A / CONFIG 分支由 {@link #resolveSessionVersionNum} 内化。
+     * 创建会话：校验 Agent 状态后落库，不领取沙箱。
+     * 容器在首次 exec / 写文件时由执行桥懒绑定。A2A / CONFIG 分支由 {@link #resolveSessionVersionNum} 内化。
      * <p>
      * 若 {@code title} 为空，则兜底为 {@value #DEFAULT_TITLE}。
      *
@@ -97,9 +96,7 @@ public class SessionCommandService {
                 agentNum, sessionVersionNum, skillHint, operatorId, title, origin,
                 SysPromptVariableSubstitutor.toJson(context));
         session.save(operatorId);
-        SessionDTO dto = toDTO(session);
-        sandboxSessionPrewarmService.prewarmIfNeeded(agentNum, dto.getNum(), operatorId);
-        return dto;
+        return toDTO(session);
     }
 
     /**

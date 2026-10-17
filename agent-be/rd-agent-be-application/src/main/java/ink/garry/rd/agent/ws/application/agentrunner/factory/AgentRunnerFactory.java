@@ -23,6 +23,7 @@ import ink.garry.rd.agent.ws.application.tool.factory.ToolRunnerFactory;
 import ink.garry.rd.agent.ws.infra.agentscope.harness.opensandbox.OpenSandboxExecBridge;
 import ink.garry.rd.agent.ws.infra.agentscope.harness.opensandbox.OpenSandboxFilesystemSpec;
 import ink.garry.rd.agent.ws.infra.agentscope.harness.opensandbox.OpenSandboxUserManagedContextFactory;
+import ink.garry.rd.agent.ws.infra.common.client.sandbox.SandboxProperties;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContextHolder;
 import ink.garry.rd.agent.ws.client.agent.dto.AgentDTO;
@@ -122,6 +123,9 @@ public class AgentRunnerFactory {
 
     @Resource
     private OpenSandboxExecBridge openSandboxExecBridge;
+
+    @Resource
+    private SandboxProperties sandboxProperties;
 
     @Resource
     private HarnessUserMemorySync harnessUserMemorySync;
@@ -419,7 +423,8 @@ public class AgentRunnerFactory {
                         .sandboxNum(agent.getConfigSnapshot().getSandboxRef())
                         .agentNum(agent.getNum())
                         .env(env)
-                        .ttlMinutes(ttl));
+                        .ttlMinutes(ttl)
+                        .workspaceRoot(sandboxProperties.resolveWorkspaceRoot()));
             } else {
                 harnessBuilder.disableFilesystemTools();
             }
@@ -478,7 +483,8 @@ public class AgentRunnerFactory {
                 sandboxRef,
                 agent.getNum(),
                 env,
-                ttl);
+                ttl,
+                sandboxProperties.resolveWorkspaceRoot());
     }
 
     /**
@@ -676,7 +682,7 @@ public class AgentRunnerFactory {
                 log.debug("Skill {} has no resources to upload", skillId);
                 continue;
             }
-            String skillWorkDir = "/workspace/skills/" + skillId;
+            String skillWorkDir = sandboxProperties.resolveWorkspaceRoot() + "/skills/" + skillId;
             try {
                 openSandboxExecBridge.exec(
                         instanceId, sessionNum, Map.of(), 30L, "mkdir -p " + skillWorkDir);
