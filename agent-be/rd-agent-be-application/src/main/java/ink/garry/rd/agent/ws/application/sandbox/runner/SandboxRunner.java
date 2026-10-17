@@ -7,6 +7,7 @@ import ink.garry.rd.agent.ws.application.sandbox.pool.SandboxPoolService;
 import ink.garry.rd.agent.ws.client.common.BizCode;
 import ink.garry.rd.agent.ws.domain.common.DomainEventConstant;
 import ink.garry.rd.agent.ws.domain.sandbox.dto.SandboxDomainEventDTO;
+import ink.garry.rd.agent.ws.domain.sandbox.gateway.SandboxContainerGateway;
 import ink.garry.rd.agent.ws.facade.domain.DomainEventDTO;
 import ink.garry.rd.agent.ws.facade.exception.BusinessException;
 import ink.garry.rd.agent.ws.infra.common.client.sandbox.SandboxClient;
@@ -51,7 +52,8 @@ import java.util.function.Supplier;
  *       {@link SandboxCommandService#markProvisionFailed}；</li>
  *   <li>{@link #destroyContainer(DomainEventDTO)}（监听 {@code SANDBOX_OFFLINED} / {@code SANDBOX_DELETED}）：
  *       取载荷 instanceId 后 kill 容器（kill 失败仅 WARN，容器 TTL 兜底回收）；</li>
- *   <li>{@link #reconcile(String, String, String)}（供对账 Scheduler 调用）：判活，不存活则回写下线。</li>
+ *   <li>{@link #reconcile(String, String, String)}（供对账 Scheduler 调用）：清理死亡 runtime；
+ *       若资产仍绑定远程 instanceId 且已死，则逻辑删除该资产（方案 A）。</li>
  * </ul>
  *
  * <h3>幂等</h3>
@@ -85,6 +87,8 @@ public class SandboxRunner {
     private SandboxCommandService sandboxCommandService;
     @Resource
     private SandboxPoolService sandboxPoolService;
+    @Resource
+    private SandboxContainerGateway sandboxContainerGateway;
 
     @Resource
     private RedissonClient redissonClient;
@@ -168,28 +172,50 @@ public class SandboxRunner {
     // ============================================================
 
     /**
-     * 脏态对账：清理资产下已死亡的会话/池实例。
+     * 脏态对账：清理死亡 runtime；方案 A 下若资产绑定了远程 instanceId 且已死则逻辑删除资产。
      * <p>
-     * 会话隔离模型下，资产 ONLINE 表示「规格就绪」，不以资产表 {@code sandboxInstanceId}
-     * （可为空或仅为代表 id）判活下线；仅清 runtime 表中远程已死的行。
+     * ACS 规格资产（{@code instanceId} 为空）只清 runtime，不删资产（ONLINE 表示规格就绪）。
+     * 仍绑定非空 {@code sandboxInstanceId} 的遗留/旧模型资产：远程不存活 → 软删管理面记录。
      * 由 {@code adapter.sandbox.scheduler.SandboxReconcileScheduler} 持锁后逐一调用。
      *
      * @param num        沙箱业务编号
-     * @param instanceId 资产代表 instanceId（兼容旧签名，不再作为下线依据）
+     * @param instanceId 资产表绑定的远程 instanceId（可空）
      * @param operatorId 对账系统操作账号
      */
     public void reconcile(String num, String instanceId, String operatorId) {
         if (StrUtil.isBlank(num)) {
             return;
         }
+        String op = StrUtil.blankToDefault(operatorId, "system");
         int cleaned = sandboxPoolService.cleanupDeadInstances(num);
         if (cleaned > 0) {
             log.info("[sandbox-reconcile] cleaned dead runtimes num={} count={} representativeId={}",
                     num, cleaned, instanceId);
         }
-        // 开池资产清理后补水位（关池无操作）
+        // 方案 A：仅当资产仍挂远程 id 时探活；明确已死则逻辑删除。探活异常不删（防抖动误伤）
+        if (StrUtil.isNotBlank(instanceId)) {
+            final boolean alive;
+            try {
+                alive = sandboxContainerGateway.isAlive(instanceId);
+            } catch (Exception e) {
+                log.warn("[sandbox-reconcile] isAlive failed, skip asset delete num={} instanceId={}: {}",
+                        num, instanceId, e.getMessage());
+                return;
+            }
+            if (!alive) {
+                try {
+                    sandboxCommandService.reconcileSoftDeleteRemoteGone(num, op);
+                    log.info("[sandbox-reconcile] soft-deleted asset (remote gone) num={} instanceId={}",
+                            num, instanceId);
+                } catch (Exception e) {
+                    log.warn("[sandbox-reconcile] soft-delete asset failed num={} instanceId={}: {}",
+                            num, instanceId, e.getMessage());
+                }
+                return;
+            }
+        }
         try {
-            sandboxPoolService.replenish(num, StrUtil.blankToDefault(operatorId, "system"));
+            sandboxPoolService.replenish(num, op);
         } catch (Exception e) {
             log.warn("[sandbox-reconcile] replenish after cleanup failed num={}: {}",
                     num, e.getMessage());

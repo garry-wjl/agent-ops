@@ -48,6 +48,8 @@ import java.util.UUID;
  *   <li>{@link #reonline(String)}：下线 → 初始化（重走供给），发 {@code SANDBOX_SUBMITTED}。</li>
  *   <li>{@link #delete(String)}：软删；在线态禁删；发 {@code SANDBOX_DELETED}
  *       （{@code SandboxRunner} 监听后 kill 残留容器）。</li>
+ *   <li>{@link #reconcileSoftDeleteRemoteGone(String)}：对账专用；ONLINE 且已绑定远程 id
+ *       时强制软删（远程已死后由 {@code SandboxRunner} 调用）。</li>
  * </ul>
  */
 @Getter
@@ -465,6 +467,28 @@ public class Sandbox extends DomainEntity {
         sandboxRepository.save(this);
         // 6. 发布事件
         publishEvent(DomainEventConstant.SANDBOX_OFFLINED, operatorId, null);
+    }
+
+    /**
+     * 对账强制软删：资产仍绑定远程 instanceId，但远程已不存在时，跳过「先下线」人工流程直接逻辑删除。
+     * <p>
+     * 仅供对账调度使用；存活判定由应用层完成。ACS 规格资产（instanceId 为空）不得调用本方法。
+     * 发 {@code SANDBOX_DELETED}（载荷仍带原 instanceId），由 {@code SandboxRunner} 清理残留 runtime / 容器。
+     *
+     * @param operatorId 对账系统操作账号
+     */
+    public void reconcileSoftDeleteRemoteGone(String operatorId) {
+        this.initialize(operatorId);
+        Assert.isTrue(this.status == SandboxStatus.ONLINE, "仅在线态可对账软删");
+        Assert.notBlank(this.sandboxInstanceId, "对账软删要求资产已绑定远程 instanceId");
+        // 先落 OFFLINE（与人工「先下线再删」一致），再逻辑删除；事件仍用 SANDBOX_DELETED
+        this.status = SandboxStatus.OFFLINE;
+        this.validate();
+        sandboxRepository.save(this);
+        this.deleted = 1;
+        this.validate();
+        sandboxRepository.deleteByNum(this.num);
+        publishEvent(DomainEventConstant.SANDBOX_DELETED, operatorId, null);
     }
 
     // ---- 私有辅助 ----
