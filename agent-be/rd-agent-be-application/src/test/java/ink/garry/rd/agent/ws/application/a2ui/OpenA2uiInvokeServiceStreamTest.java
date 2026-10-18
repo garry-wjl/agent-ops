@@ -1,6 +1,8 @@
 package ink.garry.rd.agent.ws.application.a2ui;
 
 import ink.garry.rd.agent.ws.application.agent.OpenAgentInvokeService;
+import ink.garry.rd.agent.ws.application.agentrunner.AgentInvokeFrame;
+import ink.garry.rd.agent.ws.application.agentrunner.hitl.UserInputHitlService;
 import ink.garry.rd.agent.ws.client.agent.OpenA2uiActionParam;
 import ink.garry.rd.agent.ws.client.agent.OpenA2uiInvokeParam;
 import io.agentscope.core.agent.Event;
@@ -36,22 +38,26 @@ class OpenA2uiInvokeServiceStreamTest {
     @Mock
     private OpenAgentInvokeService openAgentInvokeService;
 
+    @Mock
+    private UserInputHitlService userInputHitlService;
+
     @InjectMocks
     private OpenA2uiInvokeService openA2uiInvokeService;
 
     @Test
     void invoke_shouldEmitBootstrapThenAssistantTextUpdates() {
-        when(openAgentInvokeService.invoke(eq("AGT1"), eq("hello"), isNull(), isNull(), isNull()))
+        when(openAgentInvokeService.invokeFrames(
+                eq("AGT1"), eq("hello"), isNull(), isNull(), isNull(), isNull()))
                 .thenReturn(Flux.just(
-                        new Event(EventType.REASONING,
+                        AgentInvokeFrame.agent(new Event(EventType.REASONING,
                                 Msg.builder().content(TextBlock.builder().text("嗨").build()).build(),
-                                false),
-                        new Event(EventType.REASONING,
+                                false)),
+                        AgentInvokeFrame.agent(new Event(EventType.REASONING,
                                 Msg.builder().content(TextBlock.builder().text("嗨呀").build()).build(),
-                                true),
-                        new Event(EventType.AGENT_RESULT,
+                                true)),
+                        AgentInvokeFrame.agent(new Event(EventType.AGENT_RESULT,
                                 Msg.builder().content(TextBlock.builder().text("嗨呀").build()).build(),
-                                true)));
+                                true))));
 
         OpenA2uiInvokeParam param = new OpenA2uiInvokeParam();
         param.setAgentNum("AGT1");
@@ -81,7 +87,8 @@ class OpenA2uiInvokeServiceStreamTest {
     @Test
     @SuppressWarnings("unchecked")
     void action_shouldForwardStructuredInputAndContextToAgent() {
-        when(openAgentInvokeService.invoke(eq("AGT1"), anyString(), eq("SES1"), eq("op-1"), any()))
+        when(openAgentInvokeService.invokeFrames(
+                eq("AGT1"), anyString(), isNull(), eq("SES1"), eq("op-1"), any()))
                 .thenReturn(Flux.empty());
 
         OpenA2uiActionParam param = new OpenA2uiActionParam();
@@ -104,8 +111,8 @@ class OpenA2uiInvokeServiceStreamTest {
 
         ArgumentCaptor<String> inputCap = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<Map<String, Object>> ctxCap = ArgumentCaptor.forClass(Map.class);
-        verify(openAgentInvokeService).invoke(
-                eq("AGT1"), inputCap.capture(), eq("SES1"), eq("op-1"), ctxCap.capture());
+        verify(openAgentInvokeService).invokeFrames(
+                eq("AGT1"), inputCap.capture(), isNull(), eq("SES1"), eq("op-1"), ctxCap.capture());
         assertTrue(inputCap.getValue().contains("submit_form"));
         assertTrue(inputCap.getValue().contains("u@example.com"));
         assertEquals("submit_form", ctxCap.getValue().get("a2uiActionName"));

@@ -150,6 +150,7 @@ class AgentRunResumeIntegrationTest {
                 eq("u1"),
                 isNull(),
                 eq("DEBUG_CONSOLE"),
+                any(),
                 any()))
                 .thenAnswer(inv -> {
                     runnerCalls.incrementAndGet();
@@ -244,7 +245,7 @@ class AgentRunResumeIntegrationTest {
 
         // 同一会话新开跑应被放行（旧 run 已 DONE）
         when(agentRunnerService.runAgentFrames(
-                anyString(), any(), anyString(), anyString(), any(), anyString(), any()))
+                anyString(), any(), anyString(), anyString(), any(), anyString(), any(), any()))
                 .thenReturn(Flux.empty());
         List<AgentRunStreamEvent> second = coordinator.invokeOrResume(
                         false,
@@ -268,7 +269,7 @@ class AgentRunResumeIntegrationTest {
     @DisplayName("SESSION_BUSY：同会话已有 RUNNING 时禁止再开跑")
     void sessionBusy_secondStartRejected() throws Exception {
         when(agentRunnerService.runAgentFrames(
-                anyString(), any(), anyString(), anyString(), any(), anyString(), any()))
+                anyString(), any(), anyString(), anyString(), any(), anyString(), any(), any()))
                 .thenReturn(Flux.never());
 
         String session = "SES-it-busy";
@@ -313,7 +314,7 @@ class AgentRunResumeIntegrationTest {
     @DisplayName("结束后已收齐：resume 补一条合成 run_finished，且不重跑")
     void resume_afterFullyCaughtUp_emitsSyntheticFinished() {
         when(agentRunnerService.runAgentFrames(
-                anyString(), any(), anyString(), anyString(), any(), anyString(), any()))
+                anyString(), any(), anyString(), anyString(), any(), anyString(), any(), any()))
                 .thenReturn(Flux.just(statusFrame("SES-done", "READY")));
 
         String session = "SES-it-done";
@@ -335,7 +336,7 @@ class AgentRunResumeIntegrationTest {
         AgentRunStreamEvent last = all.get(all.size() - 1);
         assertThat(last.getEvent()).isEqualTo("run_finished");
         verify(agentRunnerService, times(1)).runAgentFrames(
-                anyString(), any(), anyString(), anyString(), any(), anyString(), any());
+                anyString(), any(), anyString(), anyString(), any(), anyString(), any(), any());
 
         List<AgentRunStreamEvent> again = coordinator.invokeOrResume(
                         true,
@@ -355,7 +356,7 @@ class AgentRunResumeIntegrationTest {
         assertThat(again.get(0).getEvent()).isEqualTo("run_finished");
         assertThat(again.get(0).getSeq()).isEqualTo(last.getSeq() + 1);
         verify(agentRunnerService, times(1)).runAgentFrames(
-                anyString(), any(), anyString(), anyString(), any(), anyString(), any());
+                anyString(), any(), anyString(), anyString(), any(), anyString(), any(), any());
     }
 
     @Test
@@ -384,7 +385,7 @@ class AgentRunResumeIntegrationTest {
 
         assertThat(events).extracting(AgentRunStreamEvent::getId).containsExactly(runId + ":2");
         verify(agentRunnerService, times(0)).runAgentFrames(
-                anyString(), any(), anyString(), anyString(), any(), anyString(), any());
+                anyString(), any(), anyString(), anyString(), any(), anyString(), any(), any());
     }
 
     @Test
