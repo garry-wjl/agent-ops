@@ -430,8 +430,8 @@ export default function ConsolePage() {
             ? undefined
             : formatUsageLabel(stream.usage),
           sandboxPhase: stream.sandboxPhase,
-          // 流式同步勿冲掉已挂上的 HITL 表单记录
-          userForm: last.userForm,
+          // 段里已有同 requestId 的 user_form 时不再保留底部浮层卡片
+          userForm: dropUserFormIfSegmented(stream.segments, last.userForm),
         };
       }
       return next;
@@ -468,6 +468,13 @@ export default function ConsolePage() {
       const next = [...prev];
       for (let i = next.length - 1; i >= 0; i--) {
         if (next[i].role !== 'assistant') continue;
+        if (
+          next[i].segments?.some(
+            (s) => s.kind === 'user_form' && s.form.requestId === pending.requestId,
+          )
+        ) {
+          return prev;
+        }
         const existing = next[i].userForm;
         // 已结算的同 requestId 不回退成 pending
         if (
@@ -504,6 +511,12 @@ export default function ConsolePage() {
       return;
     }
     setUserInputSubmitting(true);
+    const status = action === 'submit' ? 'submitted' : 'cancelled';
+    const submittedValues = action === 'submit' ? values : undefined;
+    const committed = stream.commitUserForm(status, submittedValues);
+    if (committed) {
+      setMessages((prev) => clearUserForm(prev, pending.requestId));
+    }
     try {
       await DebugConsoleApi.userInputRespond({
         session_num: sessionNum,
@@ -512,30 +525,42 @@ export default function ConsolePage() {
         reply_id: pending.replyId,
         tool_call_id: pending.toolCallId,
         action,
-        values: action === 'submit' ? values : undefined,
+        values: submittedValues,
       });
-      setMessages((prev) => {
-        const next = [...prev];
-        for (let i = next.length - 1; i >= 0; i--) {
-          const uf = next[i].userForm;
-          if (!uf || uf.form.requestId !== pending.requestId) continue;
-          next[i] = {
-            ...next[i],
-            userForm: {
-              form: uf.form,
-              status: action === 'submit' ? 'submitted' : 'cancelled',
-              values: action === 'submit' ? values : undefined,
-            },
-          };
-          break;
-        }
-        return next;
-      });
+      if (!committed) {
+        setMessages((prev) => {
+          const next = [...prev];
+          for (let i = next.length - 1; i >= 0; i--) {
+            const uf = next[i].userForm;
+            if (!uf || uf.form.requestId !== pending.requestId) continue;
+            next[i] = {
+              ...next[i],
+              userForm: { form: uf.form, status, values: submittedValues },
+            };
+            break;
+          }
+          return next;
+        });
+      }
       if (action === 'cancel') {
         antdMessage.info('已取消表单填写');
       }
     } catch {
-      // 全局拦截器已 toast
+      if (committed) {
+        stream.rollbackUserForm(pending.requestId);
+        setMessages((prev) => {
+          const next = [...prev];
+          for (let i = next.length - 1; i >= 0; i--) {
+            if (next[i].role !== 'assistant') continue;
+            next[i] = {
+              ...next[i],
+              userForm: { form: pending, status: 'pending' },
+            };
+            break;
+          }
+          return next;
+        });
+      }
     } finally {
       setUserInputSubmitting(false);
     }
@@ -1530,6 +1555,28 @@ function normalizeContent(c: unknown): string {
   } catch {
     return String(c);
   }
+}
+
+function dropUserFormIfSegmented(
+  segments: AssistantSegment[] | undefined,
+  userForm: ChatMessage['userForm'],
+): ChatMessage['userForm'] {
+  if (!userForm) return undefined;
+  const covered = segments?.some(
+    (s) => s.kind === 'user_form' && s.form.requestId === userForm.form.requestId,
+  );
+  return covered ? undefined : userForm;
+}
+
+function clearUserForm(prev: ChatMessage[], requestId: string): ChatMessage[] {
+  const next = [...prev];
+  for (let i = next.length - 1; i >= 0; i--) {
+    const uf = next[i].userForm;
+    if (!uf || uf.form.requestId !== requestId) continue;
+    next[i] = { ...next[i], userForm: undefined };
+    break;
+  }
+  return next;
 }
 
 function toChatMessage(m: MessageVO): ChatMessage {

@@ -18,6 +18,7 @@ import lombok.Getter;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -161,6 +162,68 @@ public class SegmentAccumulator {
             }
         }
         segments.add(AssistantSegment.builder().kind("text").text(delta).build());
+    }
+
+    /**
+     * 在当前累积位置插入一张已结算的用户表单段。
+     * 须在续跑 REASONING 写入之前调用，这样历史回放里表单位于挂起前内容与续跑内容之间。
+     *
+     * @param form      模型给出的表单入参（title / description / fields）
+     * @param requestId 本次 HITL requestId
+     * @param status    {@code submitted} 或 {@code cancelled}
+     * @param values    提交值；取消可空
+     */
+    public void appendUserForm(Map<String, Object> form, String requestId, String status,
+                                Map<String, Object> values) {
+        if (requestId == null || requestId.isBlank()) {
+            return;
+        }
+        for (AssistantSegment existing : segments) {
+            if (!"user_form".equals(existing.getKind()) || existing.getForm() == null) {
+                continue;
+            }
+            Object id = existing.getForm().get("requestId");
+            if (requestId.equals(id)) {
+                return;
+            }
+        }
+        Map<String, Object> source = form == null ? Map.of() : form;
+        List<Map<String, Object>> fields = copyFieldList(source.get("fields"));
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("requestId", requestId);
+        copyIfPresent(snapshot, source, "title");
+        copyIfPresent(snapshot, source, "description");
+        snapshot.put("fields", fields);
+        segments.add(AssistantSegment.builder()
+                .kind("user_form")
+                .status(status)
+                .form(snapshot)
+                .fields(fields)
+                .values(values == null || values.isEmpty() ? null : new LinkedHashMap<>(values))
+                .build());
+    }
+
+    private static void copyIfPresent(Map<String, Object> target, Map<String, Object> source, String key) {
+        Object value = source.get(key);
+        if (value != null) {
+            target.put(key, value);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> copyFieldList(Object raw) {
+        List<Map<String, Object>> fields = new ArrayList<>();
+        if (!(raw instanceof List<?> list)) {
+            return fields;
+        }
+        for (Object item : list) {
+            if (item instanceof Map<?, ?> map) {
+                Map<String, Object> copy = new LinkedHashMap<>();
+                map.forEach((k, v) -> copy.put(String.valueOf(k), v));
+                fields.add(copy);
+            }
+        }
+        return fields;
     }
 
     /**

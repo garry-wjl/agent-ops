@@ -34,9 +34,11 @@ import type {
   SsePlatformEvent,
 } from '@/types';
 import {
+  insertUserFormSegment,
   isSuspendedAgentResult,
   parseUserInputRequiredPayload,
   userInputRejectedMessage,
+  type UserFormSegment,
 } from './userInputSse';
 
 export interface UseInvokeStreamState {
@@ -253,6 +255,9 @@ export function useInvokeStream() {
    * 用 ref 避免 onEvent 闭包读到过期 state；此期间任何 AGENT_RESULT 都不得 abort SSE。
    */
   const awaitingExternalInputRef = useRef(false);
+  /** 表单挂起时的段下标；提交后 user_form 插在这里，续跑内容落在其后。 */
+  const userFormAnchorRef = useRef<number | null>(null);
+  const pendingFormRef = useRef<PendingUserInput | undefined>(undefined);
   const runIdRef = useRef<string | undefined>(undefined);
   const lastEventIdRef = useRef<string | undefined>(undefined);
   const sessionNumRef = useRef<string | undefined>(undefined);
@@ -315,6 +320,8 @@ export function useInvokeStream() {
     if (finishedRef.current) return;
     finishedRef.current = true;
     awaitingExternalInputRef.current = false;
+    userFormAnchorRef.current = null;
+    pendingFormRef.current = undefined;
     flushFinal({ loading: false, resuming: false, pendingUserInput: undefined });
     abortRef.current?.abort();
     abortRef.current = null;
@@ -330,6 +337,8 @@ export function useInvokeStream() {
     finishedRef.current = false;
     userAbortRef.current = false;
     awaitingExternalInputRef.current = false;
+    userFormAnchorRef.current = null;
+    pendingFormRef.current = undefined;
     runIdRef.current = undefined;
     lastEventIdRef.current = undefined;
     sessionNumRef.current = undefined;
@@ -342,6 +351,8 @@ export function useInvokeStream() {
     userAbortRef.current = true;
     finishedRef.current = true;
     awaitingExternalInputRef.current = false;
+    userFormAnchorRef.current = null;
+    pendingFormRef.current = undefined;
     abortRef.current?.abort();
     abortRef.current = null;
     flushFinal({ loading: false, resuming: false, pendingUserInput: undefined });
@@ -471,6 +482,8 @@ export function useInvokeStream() {
         stepStartTimesRef.current = new Map();
         chunkedReasoningMsgIdsRef.current = new Set();
         awaitingExternalInputRef.current = false;
+        userFormAnchorRef.current = null;
+        pendingFormRef.current = undefined;
         runIdRef.current = undefined;
         lastEventIdRef.current = undefined;
         resumeAttemptRef.current = 0;
@@ -560,6 +573,8 @@ export function useInvokeStream() {
               const pending = parseUserInputRequiredPayload(parsed.data);
               if (pending) {
                 awaitingExternalInputRef.current = true;
+                userFormAnchorRef.current = pendingSegmentsRef.current.length;
+                pendingFormRef.current = pending;
                 setState((prev) => ({
                   ...prev,
                   pendingUserInput: pending,
@@ -573,6 +588,8 @@ export function useInvokeStream() {
             }
             if (parsed.event === 'user_input.accepted') {
               awaitingExternalInputRef.current = false;
+              userFormAnchorRef.current = null;
+              pendingFormRef.current = undefined;
               setState((prev) => ({
                 ...prev,
                 pendingUserInput: undefined,
@@ -583,6 +600,8 @@ export function useInvokeStream() {
             }
             if (parsed.event === 'user_input.rejected') {
               awaitingExternalInputRef.current = false;
+              userFormAnchorRef.current = null;
+              pendingFormRef.current = undefined;
               const msg = userInputRejectedMessage(parsed.data);
               setState((prev) => ({
                 ...prev,
@@ -667,5 +686,35 @@ export function useInvokeStream() {
     [connect],
   );
 
-  return { ...state, start, abort, reset };
+  /**
+   * 提交/取消成功前同步插入 user_form 段（锚点是 required 到达时的段下标）。
+   * 这样续跑 SSE 追加在段尾时，表单仍停在挂起位置。
+   */
+  const commitUserForm = useCallback(
+    (status: UserFormSegment['status'], values?: Record<string, unknown>) => {
+      const form = pendingFormRef.current;
+      if (!form) return false;
+      const anchor = userFormAnchorRef.current ?? pendingSegmentsRef.current.length;
+      const next = insertUserFormSegment(pendingSegmentsRef.current, anchor, {
+        kind: 'user_form',
+        status,
+        form,
+        values,
+      });
+      pendingSegmentsRef.current = next;
+      setState((prev) => ({ ...prev, segments: next }));
+      return true;
+    },
+    [],
+  );
+
+  const rollbackUserForm = useCallback((requestId: string) => {
+    const next = pendingSegmentsRef.current.filter(
+      (s) => !(s.kind === 'user_form' && s.form.requestId === requestId),
+    );
+    pendingSegmentsRef.current = next;
+    setState((prev) => ({ ...prev, segments: next }));
+  }, []);
+
+  return { ...state, start, abort, reset, commitUserForm, rollbackUserForm };
 }

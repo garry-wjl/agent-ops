@@ -5,12 +5,13 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
 import java.util.Map;
 
 /**
  * 助手消息按到达顺序的段（与 FE AssistantSegment 同构,见 rd-agent-fe/src/types/session.ts）。
  * <p>
- * 段类型由 {@link #kind} 判别,取值 {@code "thinking"} / {@code "text"} / {@code "tool_use"}。
+ * 段类型由 {@link #kind} 判别,取值 {@code "thinking"} / {@code "text"} / {@code "tool_use"} / {@code "user_form"}。
  * 同一对象同时持有所有可能字段,非当前 kind 用到的字段为 {@code null} —— FastJSON2 序列化时
  * 默认跳过 null,落库 JSON 自然与 FE union type 同形。
  * <p>
@@ -26,7 +27,7 @@ import java.util.Map;
 @NoArgsConstructor
 @AllArgsConstructor
 public class AssistantSegment {
-    /** 段类型判别字段:{@code "thinking"} / {@code "text"} / {@code "tool_use"} */
+    /** 段类型判别字段:{@code "thinking"} / {@code "text"} / {@code "tool_use"} / {@code "user_form"} */
     private String kind;
 
     /** thinking / text 段的文本(连续同类 chunk 已合并)。tool_use 段为 null。 */
@@ -44,7 +45,10 @@ public class AssistantSegment {
     /** tool_use 段:结构化参数对象。 */
     private Map<String, Object> input;
 
-    /** tool_use 段:执行状态,{@code "pending"} / {@code "success"} / {@code "error"}。 */
+    /**
+     * tool_use：{@code pending} / {@code success} / {@code error}。
+     * user_form：{@code submitted} / {@code cancelled}。
+     */
     private String status;
 
     /** tool_use 段:工具返回的扁平化输出(纯 text 块拼字符串,否则原 ContentBlock 数组)。 */
@@ -61,4 +65,16 @@ public class AssistantSegment {
 
     /** 标记此段 output 是否被字节上限截断;true 时 FE 展示"已截断,详见 trace ID"。 */
     private Boolean truncated;
+
+    /**
+     * user_form 段：表单快照，字段与前端 PendingUserInput 对齐
+     * （requestId / title / description / fields 等）。
+     */
+    private Map<String, Object> form;
+
+    /** user_form 段：用户提交的键值；取消时为空。 */
+    private Map<String, Object> values;
+
+    /** user_form 段：字段定义列表，与 form.fields 同内容，便于直接读段。 */
+    private List<Map<String, Object>> fields;
 }

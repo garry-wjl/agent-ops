@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  insertUserFormSegment,
   isSuspendedAgentResult,
   isUserFormSuspendedAgentResult,
   parseUserInputRequiredPayload,
@@ -156,6 +157,29 @@ describe('isSuspendedAgentResult', () => {
         message: { content: [{ type: 'text', text: 'done' }] },
       }),
     ).toBe(false);
+  });
+
+  it('inserts user_form at the suspend anchor even if continuation text already arrived', () => {
+    const form = {
+      requestId: 'req-1',
+      title: '补全',
+      fields: [{ name: 'city', type: 'string' as const, label: '城市' }],
+    };
+    const segs = insertUserFormSegment(
+      [
+        { kind: 'text', text: '挂起前' },
+        { kind: 'text', text: '续跑后' },
+      ],
+      1,
+      { kind: 'user_form', status: 'submitted', form, values: { city: '深圳' } },
+    );
+    expect(segs.map((s) => s.kind)).toEqual(['text', 'user_form', 'text']);
+    expect(insertUserFormSegment(segs, 1, {
+      kind: 'user_form',
+      status: 'submitted',
+      form,
+      values: { city: '北京' },
+    })).toBe(segs);
   });
 
   it('alias isUserFormSuspendedAgentResult stays compatible', () => {
