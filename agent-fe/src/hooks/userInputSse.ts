@@ -1,4 +1,5 @@
 import type {
+  AssistantSegment,
   PendingUserInput,
   UserInputFieldDef,
   UserInputFieldOption,
@@ -174,4 +175,26 @@ export function isSuspendedAgentResult(evt: unknown): boolean {
  */
 export function isUserFormSuspendedAgentResult(evt: unknown): boolean {
   return isSuspendedAgentResult(evt);
+}
+
+export type UserFormSegment = Extract<AssistantSegment, { kind: 'user_form' }>;
+
+/**
+ * 把已结算表单插到挂起时刻的段位置。续跑内容若已追加在末尾，表单仍留在锚点处。
+ * 同一 requestId 已存在则不重复插入。
+ */
+export function insertUserFormSegment(
+  segs: AssistantSegment[],
+  anchor: number,
+  segment: UserFormSegment,
+): AssistantSegment[] {
+  if (
+    segs.some(
+      (s) => s.kind === 'user_form' && s.form.requestId === segment.form.requestId,
+    )
+  ) {
+    return segs;
+  }
+  const at = Math.max(0, Math.min(anchor, segs.length));
+  return [...segs.slice(0, at), segment, ...segs.slice(at)];
 }

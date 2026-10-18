@@ -15,6 +15,7 @@ import { useState } from 'react';
 import MarkdownContent from './MarkdownContent';
 import StepNodeCard from './StepNodeCard';
 import ThinkingPanel from './ThinkingPanel';
+import UserInputFormCard from './UserInputFormCard';
 
 export interface AssistantSegmentListProps {
   segments: AssistantSegment[];
@@ -25,7 +26,7 @@ export interface AssistantSegmentListProps {
 function dotColorForSegment(seg: AssistantSegment): string {
   if (seg.kind === 'thinking') return 'var(--color-step-thinking)';
   if (seg.kind === 'text') return 'var(--color-step-text)';
-  // tool_use
+  if (seg.kind === 'user_form') return 'var(--color-step-text)';
   if (seg.status === 'error') return 'var(--color-step-error)';
   if (seg.status === 'success') return 'var(--color-step-tool-result)';
   return 'var(--color-step-tool-use)';
@@ -48,7 +49,11 @@ export default function AssistantSegmentList({
         const dotStyle = { background: dotColorForSegment(seg) };
 
         const key =
-          seg.kind === 'tool_use' ? `tool-${seg.toolCallId}` : `${seg.kind}-${i}`;
+          seg.kind === 'tool_use'
+            ? `tool-${seg.toolCallId}`
+            : seg.kind === 'user_form'
+              ? `form-${seg.form.requestId}`
+              : `${seg.kind}-${i}`;
 
         return (
           <div key={key} className="agent-timeline-item">
@@ -57,6 +62,12 @@ export default function AssistantSegmentList({
               <ThinkingPanel content={seg.text} streaming={stillStreaming} />
             ) : seg.kind === 'text' ? (
               <MarkdownContent content={seg.text} streaming={stillStreaming} />
+            ) : seg.kind === 'user_form' ? (
+              <UserInputFormCard
+                pending={seg.form}
+                status={seg.status}
+                values={seg.values}
+              />
             ) : (
               <ToolUseCard segment={seg} streaming={stillStreaming} />
             )}

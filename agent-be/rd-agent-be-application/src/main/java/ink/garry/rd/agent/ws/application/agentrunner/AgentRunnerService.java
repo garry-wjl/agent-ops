@@ -356,6 +356,11 @@ public class AgentRunnerService {
                             String agentName = agent.getName() != null ? agent.getName() : "agent";
                             Msg resumeMsg = ToolResultMessageBuilder.buildToolResultMsg(
                                     result, toolCall, agentName);
+                            acc.appendUserForm(
+                                    pending.getForm(),
+                                    pending.getRequestId(),
+                                    "cancel".equals(answer.getAction()) ? "cancelled" : "submitted",
+                                    answer.getValues());
                             return Flux.concat(
                                     Flux.just(AgentInvokeFrame.userInputAccepted(accepted)),
                                     streamWithUserInputHitl(

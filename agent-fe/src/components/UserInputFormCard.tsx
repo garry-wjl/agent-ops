@@ -192,13 +192,13 @@ export default function UserInputFormCard({
         key={`${pending.requestId}-${status}`}
         form={form}
         layout="vertical"
-        initialValues={buildInitialValues(pending.fields, values)}
+        initialValues={buildInitialValues(pending.fields ?? [], values)}
         onFinish={async (vals) => {
           if (readOnly || !onSubmit) return;
           await onSubmit(normalizeSubmitValues(pending.fields, vals));
         }}
       >
-        {pending.fields.map((f) => renderField(f, readOnly))}
+        {(pending.fields ?? []).map((f) => renderField(f, readOnly))}
         {!readOnly ? (
           <Form.Item style={{ marginBottom: 0 }}>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>

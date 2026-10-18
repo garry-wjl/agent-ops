@@ -8,7 +8,7 @@
 
 - Agent 执行中可暂停，向用户弹出结构化表单；用户提交或取消后**同一 run 续跑**（方案 A：原 SSE 连接不结束）。
 - 开关：`ConfigSnapshot.enableUserFormInput`（缺省 false）。为 true 时注册内置 external 工具 `request_user_input`。
-- **不**持久化表单 UI 快照到会话消息（调试台只读回放为前端本轮内存态）。历史会话不还原填表卡片。
+- 提交或取消后，表单快照作为助手消息的 `user_form` segment 落在挂起前内容与续跑内容之间。本轮流式与历史回放都用同一张只读卡片。run 未真正结束前助手消息尚未落库，中途刷新看不到这张卡片。
 
 ## 2. 运行时
 
@@ -75,5 +75,5 @@ Body（Open 推荐 camelCase；调试台可用 snake_case；Jackson 双向兼容
 ## 7. 已知限制
 
 - Open respond 无 body.agentNum；靠 API Key 工作空间 + 内存 `requestId`。
-- 表单 UI 不入会话持久化。
+- 表单快照随最终助手消息的 segments 持久化；run 结束前刷新不会出现该卡片。
 - 默认挂起等待约 30 分钟（`UserInputHitlService`）。

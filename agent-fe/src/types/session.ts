@@ -236,11 +236,19 @@ export type SsePlatformEvent =
  * - 类型切换开新段（thinking → text 之间不合并）
  * - tool_use 按 toolCallId 匹配，fragment 帧追加 argsBuffer
  *
- * 持久化无对应字段；只在实时流期间存在，刷新后历史消息走 MessageVO 降级渲染
+ * user_form 随助手消息 segments 落库，历史回放与本轮流式共用同一渲染。
  * ============================================================ */
 export type AssistantSegment =
   | { kind: 'thinking'; text: string }
   | { kind: 'text'; text: string }
+  | {
+      kind: 'user_form';
+      /** submitted | cancelled */
+      status: 'submitted' | 'cancelled';
+      /** 与 PendingUserInput 同形，供只读卡片渲染 */
+      form: PendingUserInput;
+      values?: Record<string, unknown>;
+    }
   | {
       kind: 'tool_use';
       toolCallId: string;
