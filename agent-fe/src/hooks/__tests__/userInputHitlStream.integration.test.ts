@@ -85,7 +85,7 @@ describe('HITL SSE keep-alive integration', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
-        signalCapture.current = init?.signal;
+        signalCapture.current = init?.signal ?? undefined;
         return Promise.resolve({
           ok: true,
           body: stream,
