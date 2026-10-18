@@ -138,7 +138,7 @@ const EVENT_RESPONSE_GROUPS: FieldGroup[] = [
         type: 'lifecycle',
         required: true,
         description:
-          'run_started：记 runId/sessionNum；业务帧：渲染；user_input.required：展示表单并保持 SSE 不断开，POST …/user-input/respond；run_finished：结束 loading（status=FAILED 当失败）',
+          'run_started：记 runId/sessionNum；业务帧：渲染；挂起 AGENT_RESULT / user_input.required：展示表单、保持 SSE，另 POST …/user-input/respond；accepted 后同连接续跑；run_finished：结束 loading（status=FAILED 当失败）。勿在挂起/待填时 abort',
       },
       {
         name: 'step5',
@@ -199,21 +199,21 @@ const EVENT_RESPONSE_GROUPS: FieldGroup[] = [
         type: 'control',
         required: false,
         description:
-          'HITL 待填表单。data: { runId, sessionId, replyId, requestId, toolCallId, toolName:"request_user_input", form:{ title, description?, fields:[{name,label,type,required?,options?,…}] } }。收到后须保持本 SSE 连接，向 POST /command/user-input/respond 提交；勿因随后的挂起态 AGENT_RESULT 关闭连接',
+          'HITL 待填表单。data: { runId, sessionId, replyId, requestId, toolCallId, toolName:"request_user_input", form:{ title, description?, fields:[{name,label,type,required?,options?,…}] } }。收到后必须保持本 SSE 不断开；另开 HTTP POST …/user-input/respond；在收到 accepted/rejected 前视为「等待外部输入」，期间即使再来 AGENT_RESULT 也勿 abort',
       },
       {
         name: 'user_input.accepted',
         type: 'control',
         required: false,
         description:
-          'respond 成功后、Agent 续跑前。data: { runId, requestId, status:"submitted"|"cancelled" }。其后继续有业务帧，直至 run_finished',
+          'respond 成功后、Agent 续跑前。data: { runId, requestId, status:"submitted"|"cancelled" }。其后同连接继续有业务帧（REASONING…），直至非挂起 AGENT_RESULT 与 run_finished',
       },
       {
         name: 'user_input.rejected',
         type: 'control',
         required: false,
         description:
-          '挂起失效/超时等拒绝。data 含 message/reason 类说明；客户端应提示用户并勿再对该 requestId respond',
+          '挂起失效/超时等拒绝。data 含 message/reason 类说明；客户端应提示用户并勿再对该 requestId respond；可结束本轮 loading',
       },
       {
         name: 'run_finished',
@@ -254,7 +254,7 @@ const EVENT_RESPONSE_GROUPS: FieldGroup[] = [
         type: 'EventType',
         required: true,
         description:
-          '本轮 Agent 业务结束帧。message.usage 为本轮汇总 Token。若 message.metadata.agentscope_generate_reason=TOOL_SUSPENDED 且含 tool_use name=request_user_input：这是 HITL 挂起，其后还有 user_input.required，客户端不得据此 abort SSE；真正结束仍看 run_finished',
+          '本轮 Agent 业务结束帧。message.usage 为本轮汇总 Token。挂起判定（任一即可，勿 abort SSE）：① metadata.agentscope_generate_reason=TOOL_SUSPENDED；② content 含 tool_result.metadata.agentscope_suspended=true；③ content 含 tool_use.name=request_user_input（state 常为 pending）。挂起后还有 user_input.required；真正结束看非挂起 AGENT_RESULT + run_finished',
       },
       {
         name: 'SUMMARY',
@@ -737,7 +737,7 @@ function buildSpecs(agentNum: string): ApiSpec[] {
         },
       ],
       responseSummary:
-        '成功为 text/event-stream。分发：有 event → 控制帧（run_started / Sandbox.Status / user_input.* / run_finished）；无 event → 业务帧看 data.type（REASONING|TOOL_RESULT|HINT|AGENT_RESULT|SUMMARY）。每帧保存 id。以 run_finished 结束订阅（AGENT_RESULT 只表示业务收尾；HITL 挂起态 AGENT_RESULT 后还有 user_input.required，勿关连接）。tool_use 须按 id 拼接 __fragment__ 的 content。取消订阅不取消服务端 run。Agent 须开启 enableUserFormInput 才会出现表单 HITL。',
+        '成功为 text/event-stream。分发：有 event → 控制帧（run_started / Sandbox.Status / user_input.* / run_finished）；无 event → 业务帧看 data.type（REASONING|TOOL_RESULT|HINT|AGENT_RESULT|SUMMARY）。每帧保存 id。结束订阅：优先 run_finished；仅当 AGENT_RESULT 非挂起态时可作业务收尾。HITL：挂起 AGENT_RESULT → user_input.required → POST respond（另连接）→ 原 SSE 收 accepted → 续跑；勿在挂起帧或待填期间 abort。tool_use 按 id 拼 __fragment__。取消订阅不取消服务端 run。表单 HITL 需 Agent 开启 enableUserFormInput。',
       responseGroups: EVENT_RESPONSE_GROUPS,
       curl: `# —— 开跑 ——
 curl -N -X POST '${base}/api/v1/open/agents/command/invoke' \\
@@ -811,29 +811,31 @@ data: {"runId":"RUN2109…","status":"DONE"}
 :heartbeat
 
 # —— HITL 示例（enableUserFormInput=true 且模型调用 request_user_input）——
-# 挂起态 AGENT_RESULT（勿 abort）→ user_input.required → 客户端 POST respond → accepted → 续跑
+# 真实挂起帧常同时带 tool_use(state=pending) + tool_result(agentscope_suspended=true)
+# 客户端判定挂起（任一）：generate_reason=TOOL_SUSPENDED | agentscope_suspended | name=request_user_input
 id: RUN2109…:40
-data: {"type":"AGENT_RESULT","isLast":true,"message":{"id":"mH","role":"ASSISTANT","metadata":{"agentscope_generate_reason":"TOOL_SUSPENDED"},"content":[{"type":"tool_use","id":"call_u1","name":"request_user_input","input":{"title":"补充信息","fields":[{"name":"city","label":"城市","type":"string","required":true}]}}]}}
+data: {"type":"AGENT_RESULT","isLast":true,"message":{"id":"mH","role":"ASSISTANT","metadata":{"agentscope_generate_reason":"TOOL_SUSPENDED"},"content":[{"type":"tool_use","id":"call_u1","name":"request_user_input","input":{"title":"补充信息","fields":[{"name":"city","label":"城市","type":"string","required":true}]},"state":"pending"},{"type":"tool_result","id":"call_u1","name":"request_user_input","output":[{"type":"text","text":"[Awaiting external execution]"}],"metadata":{"agentscope_suspended":true},"state":"running"}]}}
 
 id: RUN2109…:41
 event: user_input.required
 data: {"runId":"RUN2109…","sessionId":"SES-xxx","replyId":"mH","requestId":"UIR…","toolCallId":"call_u1","toolName":"request_user_input","form":{"title":"补充信息","fields":[{"name":"city","label":"城市","type":"string","required":true}]}}
 
-# 客户端另开 HTTP：POST /api/v1/open/agents/command/user-input/respond
+# 原 SSE 保持打开；另开 HTTP：
+# POST /api/v1/open/agents/command/user-input/respond
 # {"sessionNum":"SES-xxx","runId":"RUN2109…","requestId":"UIR…","action":"submit","values":{"city":"深圳"}}
 
 id: RUN2109…:42
 event: user_input.accepted
 data: {"runId":"RUN2109…","requestId":"UIR…","status":"submitted"}
 
-# 随后继续 REASONING / AGENT_RESULT / run_finished …
+# 同 SSE 继续 REASONING… →（非挂起）AGENT_RESULT → run_finished
 
 # 对接要点：
 # 1) 分发：有 event → 控制帧；无 event → data.type
 # 2) 每帧保存 id；断线 resume + lastEventId，勿重发 input
-# 3) 结束条件：run_finished（不是 AGENT_RESULT；HITL 挂起更不能关）
+# 3) 结束：run_finished；AGENT_RESULT 仅非挂起时可作业务收尾；挂起/待填期间禁止 abort
 # 4) tool_use：同 id 拼接 content；name=__fragment__ 不覆盖工具名
-# 5) user_input.required → POST …/user-input/respond（同连接等待 accepted 后续帧）
+# 5) HITL：required → POST respond（另连接）→ 原连接等 accepted 后续帧；respond 成功不代替 SSE 续传
 # 6) 非 SSE 错误：{"code":2017,"message":"缺少有效秘钥","data":null,"traceId":"..."}
 # 7) 会话忙：{"code":4008,"message":"会话已有进行中的调用",...}`,
     },
@@ -842,7 +844,7 @@ data: {"runId":"RUN2109…","requestId":"UIR…","status":"submitted"}
       path: '/api/v1/open/agents/command/user-input/respond',
       title: '用户表单 HITL 回传（submit / cancel）',
       description:
-        '当 Invoke SSE 收到 event:user_input.required 后，用本接口提交或取消表单，唤醒同一次 run 继续推理（方案 A：原 SSE 连接不结束）。须携带 required 帧中的 requestId；建议带 sessionNum/runId 做一致性校验。action=submit 时 values 为表单键值；action=cancel 时 values 可空（Agent 将收到 status=cancelled）。前提：Agent 配置开启 enableUserFormInput。调试台等价路径：POST /api/v1/debug-console/user-input/respond（Cookie JWT + X-Workspace-Num，body 字段推荐 snake_case）。',
+        'Invoke SSE 收到 user_input.required 后调用：提交或取消表单，唤醒同一次 run 续跑（方案 A：原 SSE 必须保持连接，respond 是另一条短 HTTP，不替代 SSE）。须带 required 中的 requestId；建议带 sessionNum/runId 校验。action=submit 时 values 为表单键值；cancel 时 values 可空。成功后原 SSE 先发 user_input.accepted，再继续业务帧直至 run_finished。前提：Agent 开启 enableUserFormInput。调试台：POST /api/v1/debug-console/user-input/respond（Cookie JWT + X-Workspace-Num，body 推荐 snake_case）。',
       requestContentType: 'application/json',
       responseContentType: 'application/json',
       headers: [...AUTH_HEADERS, JSON_CONTENT_HEADER],

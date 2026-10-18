@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isSuspendedAgentResult,
   isUserFormSuspendedAgentResult,
   parseUserInputRequiredPayload,
   userInputRejectedMessage,
@@ -64,19 +65,80 @@ describe('userInputRejectedMessage', () => {
   });
 });
 
-describe('isUserFormSuspendedAgentResult', () => {
-  it('detects TOOL_SUSPENDED metadata with request_user_input', () => {
+describe('isSuspendedAgentResult', () => {
+  it('detects TOOL_SUSPENDED metadata', () => {
     expect(
-      isUserFormSuspendedAgentResult({
+      isSuspendedAgentResult({
         type: 'AGENT_RESULT',
         isLast: true,
         message: {
           metadata: { agentscope_generate_reason: 'TOOL_SUSPENDED' },
+          content: [{ type: 'text', text: '' }],
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('detects AgentScope wire shape: tool_use pending + tool_result agentscope_suspended', () => {
+    // 与 agentscope buildSuspendedMsg 序列化一致；无 metadata 时也必须识别
+    expect(
+      isSuspendedAgentResult({
+        type: 'AGENT_RESULT',
+        isLast: true,
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 'c1',
+              name: 'request_user_input',
+              input: { title: '补全', fields: [] },
+              metadata: {},
+              state: 'pending',
+            },
+            {
+              type: 'tool_result',
+              id: 'c1',
+              name: 'request_user_input',
+              output: [{ type: 'text', text: '[Awaiting external execution]' }],
+              metadata: { agentscope_suspended: true },
+              state: 'running',
+            },
+          ],
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('detects request_user_input tool_use alone (state pending)', () => {
+    expect(
+      isSuspendedAgentResult({
+        type: 'AGENT_RESULT',
+        isLast: true,
+        message: {
           content: [
             {
               type: 'tool_use',
               name: 'request_user_input',
               id: 'c1',
+              state: 'pending',
+            },
+          ],
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('detects tool_result agentscope_suspended without form tool name', () => {
+    expect(
+      isSuspendedAgentResult({
+        type: 'AGENT_RESULT',
+        isLast: true,
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              id: 'x',
+              name: 'some_external_tool',
               metadata: { agentscope_suspended: true },
               state: 'running',
             },
@@ -88,11 +150,22 @@ describe('isUserFormSuspendedAgentResult', () => {
 
   it('ignores normal AGENT_RESULT', () => {
     expect(
-      isUserFormSuspendedAgentResult({
+      isSuspendedAgentResult({
         type: 'AGENT_RESULT',
         isLast: true,
         message: { content: [{ type: 'text', text: 'done' }] },
       }),
     ).toBe(false);
+  });
+
+  it('alias isUserFormSuspendedAgentResult stays compatible', () => {
+    expect(
+      isUserFormSuspendedAgentResult({
+        type: 'AGENT_RESULT',
+        message: {
+          metadata: { agentscope_generate_reason: 'TOOL_SUSPENDED' },
+        },
+      }),
+    ).toBe(true);
   });
 });

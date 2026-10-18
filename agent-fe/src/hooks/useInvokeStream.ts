@@ -16,7 +16,8 @@
  * - TOOL_RESULT：遍历 message.content blocks，逐块走 applyToolResult 按 id 回填
  * - AGENT_RESULT：读取 message.usage（本轮汇总），写入 totalTokens / usage；内容不展示；
  *   并以业务终态结束 loading（不单依赖 HTTP 连接关闭，避免半关闭 chunked 导致前端卡在「处理中」）。
- *   例外：TOOL_SUSPENDED + request_user_input 时不 abort，等待同连接的 user_input.* 后续帧。
+ *   例外：挂起态 AGENT_RESULT（TOOL_SUSPENDED / agentscope_suspended / request_user_input）
+ *   或已收到 user_input.required 尚未 accepted/rejected 时不 abort，等待同连接后续帧。
  * - HINT / SUMMARY：本期不展示，仅 console.debug
  *
  * 出字速率：跟随 SSE 到达速率，rAF 合并到下一帧 setState。
@@ -33,7 +34,7 @@ import type {
   SsePlatformEvent,
 } from '@/types';
 import {
-  isUserFormSuspendedAgentResult,
+  isSuspendedAgentResult,
   parseUserInputRequiredPayload,
   userInputRejectedMessage,
 } from './userInputSse';
@@ -247,6 +248,11 @@ export function useInvokeStream() {
   const finishedRef = useRef(false);
   /** 用户主动 abort：不自动续传 */
   const userAbortRef = useRef(false);
+  /**
+   * 已收到 user_input.required、尚未 accepted/rejected。
+   * 用 ref 避免 onEvent 闭包读到过期 state；此期间任何 AGENT_RESULT 都不得 abort SSE。
+   */
+  const awaitingExternalInputRef = useRef(false);
   const runIdRef = useRef<string | undefined>(undefined);
   const lastEventIdRef = useRef<string | undefined>(undefined);
   const sessionNumRef = useRef<string | undefined>(undefined);
@@ -308,7 +314,8 @@ export function useInvokeStream() {
   const finishStream = useCallback(() => {
     if (finishedRef.current) return;
     finishedRef.current = true;
-    flushFinal({ loading: false, resuming: false });
+    awaitingExternalInputRef.current = false;
+    flushFinal({ loading: false, resuming: false, pendingUserInput: undefined });
     abortRef.current?.abort();
     abortRef.current = null;
   }, [flushFinal]);
@@ -322,6 +329,7 @@ export function useInvokeStream() {
     chunkedReasoningMsgIdsRef.current = new Set();
     finishedRef.current = false;
     userAbortRef.current = false;
+    awaitingExternalInputRef.current = false;
     runIdRef.current = undefined;
     lastEventIdRef.current = undefined;
     sessionNumRef.current = undefined;
@@ -333,9 +341,10 @@ export function useInvokeStream() {
   const abort = useCallback(() => {
     userAbortRef.current = true;
     finishedRef.current = true;
+    awaitingExternalInputRef.current = false;
     abortRef.current?.abort();
     abortRef.current = null;
-    flushFinal({ loading: false, resuming: false });
+    flushFinal({ loading: false, resuming: false, pendingUserInput: undefined });
   }, [flushFinal]);
 
   useEffect(
@@ -461,6 +470,7 @@ export function useInvokeStream() {
         pendingMetaRef.current = {};
         stepStartTimesRef.current = new Map();
         chunkedReasoningMsgIdsRef.current = new Set();
+        awaitingExternalInputRef.current = false;
         runIdRef.current = undefined;
         lastEventIdRef.current = undefined;
         resumeAttemptRef.current = 0;
@@ -549,6 +559,7 @@ export function useInvokeStream() {
             if (parsed.event === 'user_input.required') {
               const pending = parseUserInputRequiredPayload(parsed.data);
               if (pending) {
+                awaitingExternalInputRef.current = true;
                 setState((prev) => ({
                   ...prev,
                   pendingUserInput: pending,
@@ -561,6 +572,7 @@ export function useInvokeStream() {
               return;
             }
             if (parsed.event === 'user_input.accepted') {
+              awaitingExternalInputRef.current = false;
               setState((prev) => ({
                 ...prev,
                 pendingUserInput: undefined,
@@ -570,6 +582,7 @@ export function useInvokeStream() {
               return;
             }
             if (parsed.event === 'user_input.rejected') {
+              awaitingExternalInputRef.current = false;
               const msg = userInputRejectedMessage(parsed.data);
               setState((prev) => ({
                 ...prev,
@@ -604,8 +617,11 @@ export function useInvokeStream() {
                 break;
               case 'AGENT_RESULT':
                 handleAgentResult(evt);
-                // HITL 挂起：后面还有 user_input.required，切勿 abort 同连接
-                if (!isUserFormSuspendedAgentResult(evt)) {
+                // 挂起态或已在等待外部输入：后面还有控制帧 / 续跑帧，切勿 abort 同连接
+                if (
+                  !isSuspendedAgentResult(evt) &&
+                  !awaitingExternalInputRef.current
+                ) {
                   finishStream();
                 }
                 break;
