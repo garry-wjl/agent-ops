@@ -5,6 +5,9 @@ import type {
   UserInputFieldType,
 } from '@/types';
 
+/** 平台内置表单 HITL 工具名（与 BE RequestUserInputTool.NAME 对齐） */
+export const REQUEST_USER_INPUT_TOOL = 'request_user_input';
+
 const FIELD_TYPES: UserInputFieldType[] = [
   'string',
   'textarea',
@@ -117,11 +120,28 @@ export function userInputRejectedMessage(data: unknown): string | undefined {
   return pickString(data, 'message', 'reason', 'error');
 }
 
+function contentBlocks(message: Record<string, unknown>): Record<string, unknown>[] {
+  const content = message.content;
+  if (!Array.isArray(content)) return [];
+  return content.filter(isRecord);
+}
+
 /**
- * AGENT_RESULT 是否为表单 HITL 挂起（TOOL_SUSPENDED + request_user_input）。
- * 此类终态帧后还会紧跟 user_input.required，前端不得 abort SSE。
+ * AGENT_RESULT 是否表示运行中挂起（AgentScope external / SchemaOnly 工具待回传）。
+ * <p>
+ * 此类帧后通常还有控制帧（如 {@code user_input.required}），客户端<strong>不得</strong>据此 abort SSE；
+ * 真正结束仍以 {@code run_finished}（或非挂起态的最终 AGENT_RESULT）为准。
+ * <p>
+ * 判定（任一命中即可，兼容字段裁剪）：
+ * <ol>
+ *   <li>{@code message.metadata.agentscope_generate_reason === "TOOL_SUSPENDED"}</li>
+ *   <li>content 含 {@code tool_result.metadata.agentscope_suspended === true}
+ *       （AgentScope 挂起帧常把该标记放在与 tool_use 同帧的 tool_result 上）</li>
+ *   <li>content 含 {@code tool_use.name === "request_user_input"}
+ *       （平台表单 HITL；tool_use.state 多为 {@code pending}，不是 {@code running}）</li>
+ * </ol>
  */
-export function isUserFormSuspendedAgentResult(evt: unknown): boolean {
+export function isSuspendedAgentResult(evt: unknown): boolean {
   if (!isRecord(evt) || evt.type !== 'AGENT_RESULT') return false;
   const message = evt.message;
   if (!isRecord(message)) return false;
@@ -131,31 +151,27 @@ export function isUserFormSuspendedAgentResult(evt: unknown): boolean {
     pickString(meta ?? {}, 'agentscope_generate_reason', 'generateReason') ??
     pickString(message, 'generateReason', 'generate_reason');
   if (reason === 'TOOL_SUSPENDED') {
-    const content = message.content;
-    if (Array.isArray(content)) {
-      for (const block of content) {
-        if (
-          isRecord(block) &&
-          block.type === 'tool_use' &&
-          block.name === 'request_user_input'
-        ) {
-          return true;
-        }
-      }
-    }
-    // 无 content 时仍信任 generate_reason（兼容字段裁剪）
     return true;
   }
 
-  const content = message.content;
-  if (!Array.isArray(content)) return false;
-  for (const block of content) {
-    if (!isRecord(block) || block.type !== 'tool_use') continue;
-    if (block.name !== 'request_user_input') continue;
-    const blockMeta = isRecord(block.metadata) ? block.metadata : undefined;
-    if (blockMeta?.agentscope_suspended === true || block.state === 'running') {
+  const blocks = contentBlocks(message);
+  for (const block of blocks) {
+    if (block.type === 'tool_result') {
+      const blockMeta = isRecord(block.metadata) ? block.metadata : undefined;
+      if (blockMeta?.agentscope_suspended === true) {
+        return true;
+      }
+    }
+    if (block.type === 'tool_use' && block.name === REQUEST_USER_INPUT_TOOL) {
       return true;
     }
   }
   return false;
+}
+
+/**
+ * @deprecated 使用 {@link isSuspendedAgentResult}；保留别名以免外部引用断裂。
+ */
+export function isUserFormSuspendedAgentResult(evt: unknown): boolean {
+  return isSuspendedAgentResult(evt);
 }

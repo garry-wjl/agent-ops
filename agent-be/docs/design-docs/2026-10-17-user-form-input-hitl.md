@@ -47,7 +47,20 @@ Body（Open 推荐 camelCase；调试台可用 snake_case；Jackson 双向兼容
 | `user_input.accepted` | 已应答，即将续跑 |
 | `user_input.rejected` | 挂起失效/超时等 |
 
-客户端**不得**在挂起态 `AGENT_RESULT` 上关闭 SSE。
+### 4.1 客户端使用（方案 A）
+
+1. **开跑**：`POST …/invoke`（或调试台等价路径）建 SSE，保存每帧 `id`。
+2. **识别挂起**（`data.type=AGENT_RESULT`，任一命中即勿 abort）：
+   - `message.metadata.agentscope_generate_reason === "TOOL_SUSPENDED"`
+   - content 含 `tool_result.metadata.agentscope_suspended === true`（与 `tool_use` 常同帧；`tool_use.state` 多为 `pending`）
+   - content 含 `tool_use.name === "request_user_input"`
+3. **收** `event:user_input.required` → 展示表单；标记「等待外部输入」（此期间任何 `AGENT_RESULT` 仍勿关连接）。
+4. **另开 HTTP** `POST …/user-input/respond`（submit/cancel）；**不要**关掉原 SSE。
+5. **收** `user_input.accepted` → 同连接继续 REASONING… → 非挂起 `AGENT_RESULT` → `run_finished` 再结束订阅。
+
+产品侧字段表与 curl：**Agent 详情 → API 信息 Tab**。
+
+客户端**不得**在挂起态 `AGENT_RESULT` 或待填期间关闭 SSE；误 abort 后 respond 仍可能成功，但 UI 收不到续跑帧。
 
 ## 5. A2UI
 
