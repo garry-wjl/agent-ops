@@ -12,6 +12,7 @@ import java.io.OutputStream;
 import java.math.BigDecimal;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -26,6 +27,7 @@ class AcsE2bSandboxClientTest {
     private AcsE2bSandboxClient client;
     private final AtomicInteger creates = new AtomicInteger();
     private final AtomicReference<String> lastTimeoutBody = new AtomicReference<>();
+    private final AtomicReference<String> lastCreateBody = new AtomicReference<>();
 
     @BeforeEach
     void setUp() throws Exception {
@@ -37,6 +39,7 @@ class AcsE2bSandboxClientTest {
             String path = exchange.getRequestURI().getPath();
             if ("POST".equals(method) && "/sandboxes".equals(path)) {
                 creates.incrementAndGet();
+                lastCreateBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
                 byte[] body = """
                         {"sandboxID":"sbx-test-1","envdAccessToken":"tok-1","state":"running"}
                         """.getBytes(StandardCharsets.UTF_8);
@@ -154,6 +157,23 @@ class AcsE2bSandboxClientTest {
     void renewPostsTimeout() {
         client.renew("sbx-test-1", 30);
         assertTrue(lastTimeoutBody.get() != null && lastTimeoutBody.get().contains("\"timeout\":1800"));
+    }
+
+    @Test
+    void createPostsEnvVarsInBody() {
+        client.create(BigDecimal.ONE, 1024, 10, Map.of("API_KEY", "secret", "MODE", "prod"));
+        String body = lastCreateBody.get();
+        assertTrue(body != null && body.contains("\"envVars\""), body);
+        assertTrue(body.contains("\"API_KEY\":\"secret\"") || body.contains("\"API_KEY\" : \"secret\""), body);
+        assertTrue(body.contains("\"MODE\":\"prod\"") || body.contains("\"MODE\" : \"prod\""), body);
+        assertTrue(body.contains("\"templateID\":\"code-interpreter\""), body);
+    }
+
+    @Test
+    void createOmitsEnvVarsWhenEmpty() {
+        client.create(BigDecimal.ONE, 1024, 10, Map.of());
+        String body = lastCreateBody.get();
+        assertTrue(body != null && !body.contains("envVars"), body);
     }
 
     private static void inject(Object target, String field, Object value) throws Exception {
