@@ -67,10 +67,14 @@ public class AcsE2bSandboxClient {
     public String create(BigDecimal cpu, int memoryMb, int aliveMinutes, Map<String, String> env) {
         int timeoutSec = aliveMinutes > 0 ? aliveMinutes * 60 : (int) (properties.getTtlMinutes() * 60);
         try {
-            String body = objectMapper.createObjectNode()
+            // E2B NewSandbox：templateID / timeout / envVars（静态环境变量在创建时注入）
+            var bodyNode = objectMapper.createObjectNode()
                     .put("templateID", properties.getTemplate())
-                    .put("timeout", timeoutSec)
-                    .toString();
+                    .put("timeout", timeoutSec);
+            if (env != null && !env.isEmpty()) {
+                bodyNode.set("envVars", objectMapper.valueToTree(env));
+            }
+            String body = bodyNode.toString();
             HttpRequest request = baseManager(HttpRequest.newBuilder(URI.create(managerUrl("/sandboxes"))))
                     .timeout(Duration.ofSeconds(properties.getRequestTimeoutSeconds()))
                     .header("Content-Type", "application/json")
