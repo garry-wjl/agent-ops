@@ -45,4 +45,29 @@ class SegmentAccumulatorUserFormTest {
         assertThat(acc.getSegments()).hasSize(1);
         assertThat(acc.getSegments().get(0).getValues()).containsEntry("city", "深圳");
     }
+
+    @Test
+    @DisplayName("写入表单时原地替换 request_user_input tool_use，并保留提交值")
+    void appendUserForm_replacesMatchingToolUseInPlace() {
+        SegmentAccumulator acc = new SegmentAccumulator();
+        acc.appendText("前");
+        AssistantSegment tool = AssistantSegment.builder()
+                .kind("tool_use")
+                .toolCallId("call-1")
+                .toolName("request_user_input")
+                .status("pending")
+                .input(Map.of("title", "城市", "fields", List.of(Map.of("name", "city", "type", "string"))))
+                .build();
+        acc.getSegments().add(tool);
+        acc.appendText("后");
+        acc.appendUserForm(
+                Map.of("title", "城市", "fields", List.of(Map.of("name", "city", "type", "string"))),
+                "UIR1",
+                "submitted",
+                Map.of("city", "深圳"),
+                "call-1");
+        assertThat(acc.getSegments()).extracting(AssistantSegment::getKind)
+                .containsExactly("text", "user_form", "text");
+        assertThat(acc.getSegments().get(1).getValues()).containsEntry("city", "深圳");
+    }
 }

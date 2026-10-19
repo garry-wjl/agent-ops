@@ -47,25 +47,42 @@ function buildInitialValues(
   return init;
 }
 
+/** 只读态把值格式化成可读字符串，避免 Ant Form initialValues 在 disabled 控件上偶发空白 */
+function formatReadOnlyValue(f: UserInputFieldDef, raw: unknown): string {
+  if (raw === undefined || raw === null || raw === '') return '—';
+  if (f.type === 'boolean') return raw === true || raw === 'true' ? '是' : '否';
+  if (f.type === 'multi_enum' && Array.isArray(raw)) {
+    return raw.length ? raw.map(String).join('、') : '—';
+  }
+  if (f.type === 'enum' && Array.isArray(f.options)) {
+    const hit = f.options.find((o) =>
+      typeof o === 'string' ? o === String(raw) : o.value === String(raw),
+    );
+    if (typeof hit === 'string') return hit;
+    if (hit && typeof hit === 'object') return hit.label ?? hit.value;
+  }
+  return String(raw);
+}
+
 function fieldRules(f: UserInputFieldDef, readOnly: boolean) {
   if (readOnly || !f.required) return [];
   return [{ required: true, message: `请填写${f.label ?? f.name}` }];
 }
 
-function renderField(f: UserInputFieldDef, readOnly: boolean) {
+function renderEditableField(f: UserInputFieldDef) {
   const label = f.label ?? f.name;
-  const rules = fieldRules(f, readOnly);
+  const rules = fieldRules(f, false);
   switch (f.type) {
     case 'textarea':
       return (
         <Form.Item key={f.name} name={f.name} label={label} rules={rules} extra={f.description}>
-          <Input.TextArea rows={4} placeholder={f.placeholder} disabled={readOnly} />
+          <Input.TextArea rows={4} placeholder={f.placeholder} />
         </Form.Item>
       );
     case 'number':
       return (
         <Form.Item key={f.name} name={f.name} label={label} rules={rules} extra={f.description}>
-          <InputNumber style={{ width: '100%' }} placeholder={f.placeholder} disabled={readOnly} />
+          <InputNumber style={{ width: '100%' }} placeholder={f.placeholder} />
         </Form.Item>
       );
     case 'boolean':
@@ -78,13 +95,13 @@ function renderField(f: UserInputFieldDef, readOnly: boolean) {
           rules={rules}
           extra={f.description}
         >
-          <Switch disabled={readOnly} />
+          <Switch />
         </Form.Item>
       );
     case 'date':
       return (
         <Form.Item key={f.name} name={f.name} label={label} rules={rules} extra={f.description}>
-          <DatePicker style={{ width: '100%' }} disabled={readOnly} />
+          <DatePicker style={{ width: '100%' }} />
         </Form.Item>
       );
     case 'enum': {
@@ -93,12 +110,7 @@ function renderField(f: UserInputFieldDef, readOnly: boolean) {
       );
       return (
         <Form.Item key={f.name} name={f.name} label={label} rules={rules} extra={f.description}>
-          <Select
-            allowClear={!readOnly}
-            placeholder={f.placeholder ?? '请选择'}
-            options={options}
-            disabled={readOnly}
-          />
+          <Select allowClear placeholder={f.placeholder ?? '请选择'} options={options} />
         </Form.Item>
       );
     }
@@ -110,10 +122,9 @@ function renderField(f: UserInputFieldDef, readOnly: boolean) {
         <Form.Item key={f.name} name={f.name} label={label} rules={rules} extra={f.description}>
           <Select
             mode="multiple"
-            allowClear={!readOnly}
+            allowClear
             placeholder={f.placeholder ?? '请选择'}
             options={options}
-            disabled={readOnly}
           />
         </Form.Item>
       );
@@ -122,10 +133,23 @@ function renderField(f: UserInputFieldDef, readOnly: boolean) {
     default:
       return (
         <Form.Item key={f.name} name={f.name} label={label} rules={rules} extra={f.description}>
-          <Input placeholder={f.placeholder} disabled={readOnly} />
+          <Input placeholder={f.placeholder} />
         </Form.Item>
       );
   }
+}
+
+function renderReadOnlyField(
+  f: UserInputFieldDef,
+  values?: Record<string, unknown>,
+) {
+  const label = f.label ?? f.name;
+  const raw = values && values[f.name] !== undefined ? values[f.name] : f.default;
+  return (
+    <Form.Item key={f.name} label={label} extra={f.description}>
+      <Input disabled value={formatReadOnlyValue(f, raw)} />
+    </Form.Item>
+  );
 }
 
 function normalizeSubmitValues(
@@ -158,6 +182,7 @@ export default function UserInputFormCard({
 }: UserInputFormCardProps) {
   const [form] = Form.useForm();
   const readOnly = status !== 'pending';
+  const fields = pending.fields ?? [];
 
   return (
     <Card
@@ -188,18 +213,22 @@ export default function UserInputFormCard({
           {pending.description}
         </Typography.Paragraph>
       ) : null}
-      <Form
-        key={`${pending.requestId}-${status}`}
-        form={form}
-        layout="vertical"
-        initialValues={buildInitialValues(pending.fields ?? [], values)}
-        onFinish={async (vals) => {
-          if (readOnly || !onSubmit) return;
-          await onSubmit(normalizeSubmitValues(pending.fields, vals));
-        }}
-      >
-        {(pending.fields ?? []).map((f) => renderField(f, readOnly))}
-        {!readOnly ? (
+      {readOnly ? (
+        <Form layout="vertical">
+          {fields.map((f) => renderReadOnlyField(f, values))}
+        </Form>
+      ) : (
+        <Form
+          key={`${pending.requestId}-${status}`}
+          form={form}
+          layout="vertical"
+          initialValues={buildInitialValues(fields, values)}
+          onFinish={async (vals) => {
+            if (!onSubmit) return;
+            await onSubmit(normalizeSubmitValues(fields, vals));
+          }}
+        >
+          {fields.map((f) => renderEditableField(f))}
           <Form.Item style={{ marginBottom: 0 }}>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <Button disabled={submitting} onClick={() => void onCancel?.()}>
@@ -210,8 +239,8 @@ export default function UserInputFormCard({
               </Button>
             </div>
           </Form.Item>
-        ) : null}
-      </Form>
+        </Form>
+      )}
     </Card>
   );
 }

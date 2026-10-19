@@ -356,11 +356,13 @@ public class AgentRunnerService {
                             String agentName = agent.getName() != null ? agent.getName() : "agent";
                             Msg resumeMsg = ToolResultMessageBuilder.buildToolResultMsg(
                                     result, toolCall, agentName);
+                            // 原地把挂起的 tool_use 换成带提交值的 user_form，历史回放可展示填写内容
                             acc.appendUserForm(
                                     pending.getForm(),
                                     pending.getRequestId(),
                                     "cancel".equals(answer.getAction()) ? "cancelled" : "submitted",
-                                    answer.getValues());
+                                    answer.getValues() == null ? Map.of() : answer.getValues(),
+                                    toolCall.getId());
                             return Flux.concat(
                                     Flux.just(AgentInvokeFrame.userInputAccepted(accepted)),
                                     streamWithUserInputHitl(

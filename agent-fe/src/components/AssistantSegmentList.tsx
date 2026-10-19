@@ -12,6 +12,7 @@
 import type { AssistantSegment, StepNodeVO } from '@/types';
 import { CaretDownOutlined, CaretRightOutlined } from '@ant-design/icons';
 import { useState } from 'react';
+import { normalizeSegmentsForDisplay } from '@/utils/userFormSegments';
 import MarkdownContent from './MarkdownContent';
 import StepNodeCard from './StepNodeCard';
 import ThinkingPanel from './ThinkingPanel';
@@ -36,12 +37,13 @@ export default function AssistantSegmentList({
   segments,
   streaming,
 }: AssistantSegmentListProps) {
-  if (!segments?.length) return null;
+  const displaySegments = normalizeSegmentsForDisplay(segments ?? []);
+  if (!displaySegments.length) return null;
 
   return (
     <div className="agent-timeline">
-      {segments.map((seg, i) => {
-        const isLast = i === segments.length - 1;
+      {displaySegments.map((seg, i) => {
+        const isLast = i === displaySegments.length - 1;
         const stillStreaming = streaming && isLast;
         const dotClass = `agent-timeline-dot${
           stillStreaming ? ' agent-timeline-dot-pulse' : ''

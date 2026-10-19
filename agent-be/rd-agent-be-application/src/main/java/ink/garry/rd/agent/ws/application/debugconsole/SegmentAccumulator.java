@@ -175,6 +175,14 @@ public class SegmentAccumulator {
      */
     public void appendUserForm(Map<String, Object> form, String requestId, String status,
                                 Map<String, Object> values) {
+        appendUserForm(form, requestId, status, values, null);
+    }
+
+    /**
+     * @param toolCallId 若非空，移除对应 {@code request_user_input} 的 tool_use 段，避免历史回放再渲染成 JSON 工具卡
+     */
+    public void appendUserForm(Map<String, Object> form, String requestId, String status,
+                                Map<String, Object> values, String toolCallId) {
         if (requestId == null || requestId.isBlank()) {
             return;
         }
@@ -194,13 +202,24 @@ public class SegmentAccumulator {
         copyIfPresent(snapshot, source, "title");
         copyIfPresent(snapshot, source, "description");
         snapshot.put("fields", fields);
-        segments.add(AssistantSegment.builder()
+        AssistantSegment formSeg = AssistantSegment.builder()
                 .kind("user_form")
                 .status(status)
                 .form(snapshot)
                 .fields(fields)
                 .values(values == null || values.isEmpty() ? null : new LinkedHashMap<>(values))
-                .build());
+                .build();
+        // 优先替换同位置的 request_user_input tool_use，保留时间线顺序并带上提交值
+        if (toolCallId != null && !toolCallId.isBlank()) {
+            for (int i = 0; i < segments.size(); i++) {
+                AssistantSegment s = segments.get(i);
+                if ("tool_use".equals(s.getKind()) && toolCallId.equals(s.getToolCallId())) {
+                    segments.set(i, formSeg);
+                    return;
+                }
+            }
+        }
+        segments.add(formSeg);
     }
 
     private static void copyIfPresent(Map<String, Object> target, Map<String, Object> source, String key) {
