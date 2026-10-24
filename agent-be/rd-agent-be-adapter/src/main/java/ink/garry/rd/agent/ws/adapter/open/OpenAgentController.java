@@ -119,6 +119,42 @@ public class OpenAgentController {
                                 param.getContext())));
     }
 
+    /**
+     * 对外流式调用 Agent（SSE，AgentScope {@code streamEvents} 细粒度事件）。
+     * <p>
+     * 请求体 / 鉴权 / 续传 / 控制帧与 {@link #invoke} 相同；业务帧为 {@code AgentEvent}
+     *（如 {@code TEXT_BLOCK_DELTA} / {@code TOOL_CALL_*}），不替代 {@code /command/invoke}。
+     */
+    @PostMapping(value = "/command/stream", produces = {
+            MediaType.TEXT_EVENT_STREAM_VALUE + ";charset=UTF-8",
+            MediaType.APPLICATION_JSON_VALUE
+    })
+    public Flux<ServerSentEvent<String>> stream(@Valid @RequestBody OpenInvokeParam param,
+                                                HttpServletRequest req) {
+        assertAgentMatch(param.getAgentNum(), req);
+        bindOpenWorkspace(req);
+        String lastEventId = firstNonBlank(param.getLastEventId(), req.getHeader("Last-Event-ID"));
+        boolean resume = Boolean.TRUE.equals(param.getResume())
+                || (StrUtil.isNotBlank(lastEventId) && isBlankOpenInvoke(param));
+        NormalizedInvokeContent content = resume
+                ? NormalizedInvokeContent.builder().text(null).build()
+                : invokeContentNormalizer.normalize(param.getInput(), param.getAttachments());
+        String operatorId = StrUtil.blankToDefault(param.getOperatorId(), "system");
+        return SseKeepAlive.withHeartbeat(
+                AgentInvokeSseMapper.toSseFromRun(
+                        agentRunCoordinator.invokeOrResumeStream(
+                                resume,
+                                lastEventId,
+                                param.getRunId(),
+                                param.getAgentNum(),
+                                content,
+                                param.getSessionNum(),
+                                operatorId,
+                                null,
+                                "API",
+                                param.getContext())));
+    }
+
     private static boolean isBlankOpenInvoke(OpenInvokeParam param) {
         boolean noInput = StrUtil.isBlank(param.getInput());
         boolean noAtt = param.getAttachments() == null || param.getAttachments().isEmpty();

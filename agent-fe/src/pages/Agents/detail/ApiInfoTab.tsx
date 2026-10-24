@@ -841,6 +841,116 @@ data: {"runId":"RUN2109…","requestId":"UIR…","status":"submitted"}
     },
     {
       method: 'POST',
+      path: '/api/v1/open/agents/command/stream',
+      title: 'Stream（SSE / AgentScope streamEvents 细粒度）',
+      description:
+        '与 /command/invoke 并存：鉴权、请求体 camelCase、续传、控制帧、HITL respond 路径相同。业务帧改为 AgentScope AgentEvent（TEXT_BLOCK_DELTA / TOOL_CALL_* / TOOL_RESULT_* / AGENT_RESULT 等），run_started 可含 protocol=agent_events_v2。调试台：POST /api/v1/debug-console/stream。详见 doc/技术方案/2026-10-24_Open-Agent-Stream开放接口文档.md。',
+      requestContentType: 'application/json',
+      responseContentType: 'text/event-stream',
+      headers: [
+        ...AUTH_HEADERS,
+        JSON_CONTENT_HEADER,
+        SSE_ACCEPT_HEADER,
+        LAST_EVENT_ID_HEADER,
+      ],
+      requestParams: [
+        {
+          name: 'agentNum',
+          location: 'body',
+          type: 'string',
+          required: true,
+          description: `目标 Agent 编号，须与秘钥归属一致（当前：${agentNum}）`,
+        },
+        {
+          name: 'input',
+          location: 'body',
+          type: 'string',
+          required: false,
+          description: '用户输入；开跑时与 attachments 至少一个有内容；续传留空',
+        },
+        {
+          name: 'attachments',
+          location: 'body',
+          type: 'array',
+          required: false,
+          description: '附件引用，同 invoke',
+        },
+        {
+          name: 'sessionNum',
+          location: 'body',
+          type: 'string',
+          required: false,
+          description: '会话编号；空则新建',
+        },
+        {
+          name: 'resume / runId / lastEventId',
+          location: 'body',
+          type: 'boolean | string',
+          required: false,
+          description: '续传字段同 /command/invoke',
+        },
+      ],
+      responseSummary:
+        '控制帧同 invoke。业务帧 data.type 为细粒度 AgentEvent：TEXT_BLOCK_DELTA / THINKING_BLOCK_DELTA / TOOL_CALL_* / TOOL_RESULT_* / REQUIRE_EXTERNAL_EXECUTION / AGENT_RESULT（result 字段）等。结束仍看 run_finished。',
+      responseGroups: [
+        {
+          title: 'Stream 业务帧（data.type，无 event 行）',
+          description:
+            '与 /command/invoke 的 REASONING/TOOL_RESULT 不同：本接口透传 AgentScope streamEvents。run_started 可含 protocol=agent_events_v2。控制帧（run_started / Sandbox.Status / user_input.* / run_finished）与 invoke 相同。',
+          fields: [
+            {
+              name: 'TEXT_BLOCK_DELTA / THINKING_BLOCK_DELTA',
+              type: 'event',
+              required: false,
+              description: '文本/思考增量；按 replyId/blockId 累加 delta',
+            },
+            {
+              name: 'TOOL_CALL_* / TOOL_RESULT_*',
+              type: 'event',
+              required: false,
+              description: '工具调用起止与结果增量；按 toolCallId 聚合',
+            },
+            {
+              name: 'REQUIRE_EXTERNAL_EXECUTION',
+              type: 'event',
+              required: false,
+              description: 'HITL 挂起（如 request_user_input）；随后仍有 user_input.required 控制帧',
+            },
+            {
+              name: 'AGENT_RESULT',
+              type: 'event',
+              required: false,
+              description: '本轮结果在 result（非 message）；仍须等 run_finished 结束订阅',
+            },
+          ],
+        },
+        ...EVENT_RESPONSE_GROUPS.filter((g) => g.title.startsWith('③') || g.title.startsWith('④')),
+      ],
+      curl: `curl -N -X POST '${base}/api/v1/open/agents/command/stream' \\
+  -H 'Authorization: Bearer ak-xxxxxxxx' \\
+  -H 'Content-Type: application/json' \\
+  -H 'Accept: text/event-stream' \\
+  -d '{
+    "agentNum": "${agentNum}",
+    "input": "你好",
+    "sessionNum": null
+  }'`,
+      responseExample: `id: RUN…:1
+event: run_started
+data: {"runId":"RUN…","sessionNum":"SES…","agentNum":"${agentNum}","status":"RUNNING","protocol":"agent_events_v2"}
+
+id: RUN…:2
+data: {"type":"TEXT_BLOCK_DELTA","replyId":"…","blockId":"…","delta":"你好"}
+
+id: RUN…:3
+data: {"type":"AGENT_RESULT","result":{"role":"ASSISTANT","content":[{"type":"text","text":"你好"}],"usage":{"inputTokens":10,"outputTokens":5}}}
+
+id: RUN…:4
+event: run_finished
+data: {"runId":"RUN…","status":"DONE"}`,
+    },
+    {
+      method: 'POST',
       path: '/api/v1/open/agents/command/user-input/respond',
       title: '用户表单 HITL 回传（submit / cancel）',
       description:

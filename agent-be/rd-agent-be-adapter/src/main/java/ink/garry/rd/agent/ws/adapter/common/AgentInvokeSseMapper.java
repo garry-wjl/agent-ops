@@ -63,8 +63,25 @@ public final class AgentInvokeSseMapper {
                         .data(objectMapper.writeValueAsString(status))
                         .build();
             }
-            JsonNode root = objectMapper.valueToTree(frame.getAgentEvent());
-            SseEventTransformer.transformFormatJsonResults(root);
+            if (frame.isUserInputRequired()) {
+                return ServerSentEvent.<String>builder()
+                        .event(frame.getSseEventName())
+                        .data(objectMapper.writeValueAsString(frame.getUserInputRequired()))
+                        .build();
+            }
+            if (frame.isUserInputStatus()) {
+                return ServerSentEvent.<String>builder()
+                        .event(frame.getSseEventName())
+                        .data(objectMapper.writeValueAsString(frame.getUserInputStatusPayload()))
+                        .build();
+            }
+            Object payload = frame.isScopeAgentEvent()
+                    ? frame.getScopeAgentEvent()
+                    : frame.getAgentEvent();
+            JsonNode root = objectMapper.valueToTree(payload);
+            if (frame.isAgentEvent()) {
+                SseEventTransformer.transformFormatJsonResults(root);
+            }
             return ServerSentEvent.<String>builder()
                     .data(objectMapper.writeValueAsString(root))
                     .build();

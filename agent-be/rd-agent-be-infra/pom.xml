@@ -80,6 +80,12 @@
             <artifactId>agentscope-spring-boot-starter</artifactId>
         </dependency>
 
+        <!-- 2.0.4+：starter 不再传递聚合包，显式引入以保留 OpenAI / Redis state 等扩展 -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-harness</artifactId>
@@ -88,6 +94,12 @@
         <dependency>
             <groupId>com.aliyun</groupId>
             <artifactId>alibabacloud-oss-v2</artifactId>
+        </dependency>
+
+        <!-- Harness OssSnapshotSpec（E2B 快照）需要旧版 OSS Java SDK -->
+        <dependency>
+            <groupId>com.aliyun.oss</groupId>
+            <artifactId>aliyun-sdk-oss</artifactId>
         </dependency>
 
         <dependency>

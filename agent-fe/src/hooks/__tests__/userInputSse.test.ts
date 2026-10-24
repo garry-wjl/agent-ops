@@ -159,6 +159,28 @@ describe('isSuspendedAgentResult', () => {
     ).toBe(false);
   });
 
+  it('detects REQUIRE_EXTERNAL_EXECUTION with request_user_input', () => {
+    expect(
+      isSuspendedAgentResult({
+        type: 'REQUIRE_EXTERNAL_EXECUTION',
+        toolCalls: [{ id: 'c1', name: 'request_user_input', input: {} }],
+      }),
+    ).toBe(true);
+  });
+
+  it('detects v2 AGENT_RESULT.result TOOL_SUSPENDED', () => {
+    expect(
+      isSuspendedAgentResult({
+        type: 'AGENT_RESULT',
+        result: {
+          role: 'ASSISTANT',
+          generateReason: 'TOOL_SUSPENDED',
+          content: [{ type: 'tool_use', id: 'c1', name: 'request_user_input' }],
+        },
+      }),
+    ).toBe(true);
+  });
+
   it('inserts user_form at the suspend anchor even if continuation text already arrived', () => {
     const form = {
       requestId: 'req-1',

@@ -69,8 +69,19 @@ public class AgentCreateParam {
     /** 挂载工具的版本引用；工具具备版本后按 versionNum 解析 */
     private List<ToolRefParam> toolRefs;
 
-    /** v4.0 - 关联沙箱引用标识（由 sandboxSpec 维护时可不传） */
+    /** v4.0 - 关联沙箱引用标识（由 sandboxSpec 维护时可不传；运行时忽略） */
     private String sandboxRef;
+
+    /**
+     * 是否启用远程沙箱（E2B filesystem）。
+     * <p>缺省 null：由 {@link #sandboxRef} / sandboxSpec 兼容推断。
+     */
+    private Boolean enableSandbox;
+
+    /**
+     * 沙箱隔离级别 SESSION / USER / AGENT / GLOBAL；缺省 SESSION。
+     */
+    private String isolationScope;
 
     /**
      * 是否将 Invoke 入站请求头按 {@link #headerEnvMappings} 注入沙箱环境变量。

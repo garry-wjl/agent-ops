@@ -143,9 +143,23 @@ function contentBlocks(message: Record<string, unknown>): Record<string, unknown
  * </ol>
  */
 export function isSuspendedAgentResult(evt: unknown): boolean {
-  if (!isRecord(evt) || evt.type !== 'AGENT_RESULT') return false;
-  const message = evt.message;
-  if (!isRecord(message)) return false;
+  if (!isRecord(evt)) return false;
+
+  // streamEvents：RequireExternalExecutionEvent
+  if (evt.type === 'REQUIRE_EXTERNAL_EXECUTION') {
+    const calls = evt.toolCalls;
+    if (Array.isArray(calls)) {
+      for (const c of calls) {
+        if (isRecord(c) && c.name === REQUEST_USER_INPUT_TOOL) return true;
+      }
+    }
+    return false;
+  }
+
+  if (evt.type !== 'AGENT_RESULT') return false;
+  // v1 Event.message；v2 AgentResultEvent.result
+  const message = isRecord(evt.message) ? evt.message : isRecord(evt.result) ? evt.result : null;
+  if (!message) return false;
 
   const meta = isRecord(message.metadata) ? message.metadata : undefined;
   const reason =

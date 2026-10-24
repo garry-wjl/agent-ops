@@ -15,20 +15,12 @@ import ink.garry.rd.agent.ws.application.agentrunner.tool.SandboxTool;
 import ink.garry.rd.agent.ws.application.attachment.query.AttachmentQueryService;
 import ink.garry.rd.agent.ws.application.common.prompt.SysPromptVariableSubstitutor;
 import ink.garry.rd.agent.ws.application.agentrunner.sandbox.HeaderEnvInjector;
-import ink.garry.rd.agent.ws.application.sandbox.SandboxQueryService;
-import ink.garry.rd.agent.ws.application.sandbox.lifecycle.SessionSandboxLifecycleService;
-import ink.garry.rd.agent.ws.application.sandbox.lifecycle.SessionSandboxSkillProjector;
-import ink.garry.rd.agent.ws.application.sandbox.pool.SandboxPoolService;
 import ink.garry.rd.agent.ws.application.tool.ToolQueryService;
 import ink.garry.rd.agent.ws.application.tool.factory.ToolRunnerFactory;
-import ink.garry.rd.agent.ws.infra.agentscope.harness.opensandbox.OpenSandboxExecBridge;
-import ink.garry.rd.agent.ws.infra.agentscope.harness.opensandbox.OpenSandboxFilesystemSpec;
-import ink.garry.rd.agent.ws.infra.agentscope.harness.opensandbox.OpenSandboxUserManagedContextFactory;
+import ink.garry.rd.agent.ws.infra.agentscope.harness.e2b.HarnessE2bFilesystemFactory;
 import ink.garry.rd.agent.ws.infra.common.client.sandbox.SandboxProperties;
-import io.agentscope.harness.agent.sandbox.SandboxContext;
 import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContextHolder;
 import ink.garry.rd.agent.ws.client.agent.dto.AgentDTO;
-import ink.garry.rd.agent.ws.client.sandbox.dto.SandboxDetailDTO;
 import ink.garry.rd.agent.ws.client.tool.dto.ToolDTO;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.AgentStatus;
 import ink.garry.rd.agent.ws.domain.agent.valueobject.CreationMode;
@@ -91,18 +83,6 @@ public class AgentRunnerFactory {
     @Resource
     private AgentScopeSkillRepositoryAdapter agentScopeSkillRepositoryAdapter;
 
-    @Resource
-    private SandboxQueryService sandboxQueryService;
-
-    @Resource
-    private SandboxPoolService sandboxPoolService;
-
-    @Resource
-    private SessionSandboxLifecycleService sessionSandboxLifecycleService;
-
-    @Resource
-    private SessionSandboxSkillProjector sessionSandboxSkillProjector;
-
     /** v4.0：按 ConfigSnapshot.modelId（模型管理 num）解析运行时凭证（modelId/baseUrl/解密 apiKey）。 */
     @Resource
     private ModelCredentialResolver modelCredentialResolver;
@@ -123,10 +103,10 @@ public class AgentRunnerFactory {
     private AttachmentQueryService attachmentQueryService;
 
     @Resource
-    private OpenSandboxExecBridge openSandboxExecBridge;
+    private SandboxProperties sandboxProperties;
 
     @Resource
-    private SandboxProperties sandboxProperties;
+    private HarnessE2bFilesystemFactory harnessE2bFilesystemFactory;
 
     @Resource
     private HarnessUserMemorySync harnessUserMemorySync;
@@ -135,7 +115,7 @@ public class AgentRunnerFactory {
      * 创建 AgentRunner（生产/默认入口：当前在线版本）。
      *
      * @param agentNum   Agent 业务编号
-     * @param sessionNum 会话编号;用于把 {@link SandboxTool} 绑定到该会话复用的沙箱容器
+     * @param sessionNum 会话编号（Harness defaultSessionId / IsolationScope 复用键）
      * @return AgentRunner
      */
     public Agent build(String agentNum, String sessionNum) {
@@ -239,22 +219,11 @@ public class AgentRunnerFactory {
             Map<String, String> env = new HashMap<>(HeaderEnvInjector.resolve(
                     agent.getConfigSnapshot(), HttpHeaderUtil.getHeaderMap()));
 
-            //3. 构建工具集（FC/MCP/内置）；沙箱走 Harness filesystem，不再注册 SandboxTool
+            //3. 构建工具集（FC/MCP/内置）；沙箱走 E2bFilesystemSpec，不再注册 SandboxTool / 池
             Toolkit toolkit = new Toolkit();
-            boolean sandboxBound = StrUtil.isNotBlank(agent.getConfigSnapshot().getSandboxRef());
-            SandboxDetailDTO sandboxDetailDTO = null;
-            if (sandboxBound) {
-                sandboxDetailDTO = sandboxQueryService.getDetail(agent.getConfigSnapshot().getSandboxRef());
-                // 懒绑定：不在 build 同步 ensureBound；优先用预热/已绑定实例，否则留给首次工具执行
-                String instanceId = StrUtil.blankToDefault(
-                        sessionSandboxLifecycleService.readyInstanceId(sessionNum),
-                        sandboxPoolService.boundInstanceId(sessionNum));
-                if (sandboxDetailDTO != null && sandboxDetailDTO.getSandbox() != null
-                        && StrUtil.isNotBlank(instanceId)) {
-                    sandboxDetailDTO.getSandbox().setSandboxInstanceId(instanceId);
-                }
-            } else {
-                // 未绑沙箱：禁用 Harness 默认文件系统工具，沿用本机 Shell/文件工具
+            boolean sandboxEnabled = isSandboxEnabled(agent.getConfigSnapshot());
+            if (!sandboxEnabled) {
+                // 未开沙箱：禁用 Harness 默认文件系统工具，沿用本机 Shell/文件工具
                 toolkit.registerTool(new io.agentscope.core.tool.coding.ShellCommandTool());
                 toolkit.registerTool(new io.agentscope.core.tool.file.ReadFileTool());
                 toolkit.registerTool(new io.agentscope.core.tool.file.WriteFileTool());
@@ -279,17 +248,7 @@ public class AgentRunnerFactory {
             List<AgentSkill> boundSkills = loadBoundSkills(agent.getConfigSnapshot());
             BoundSkillRepository boundSkillRepository = new BoundSkillRepository(boundSkills);
 
-            //3.2.1 若绑定了沙箱，将技能资源写入容器（已有实例则同步；否则 defer 到 READY）
-            if (sandboxBound && sandboxDetailDTO != null) {
-                String instanceId = sandboxDetailDTO.getSandbox() != null
-                        ? sandboxDetailDTO.getSandbox().getSandboxInstanceId() : null;
-                if (StrUtil.isNotBlank(instanceId)) {
-                    uploadSkillResourcesToSandbox(boundSkills, instanceId, sessionNum);
-                    sessionSandboxSkillProjector.cancel(sessionNum);
-                } else {
-                    sessionSandboxSkillProjector.defer(sessionNum, boundSkills);
-                }
-            }
+            // Skill 资源由 Harness / E2B filesystem 在首次工具路径写入，不再依赖池 instanceId 投影
             if (Boolean.TRUE.equals(agent.getConfigSnapshot().getEnableLongTermMemory())) {
                 String operatorId = vars == null ? null : vars.get("OPERATOR_ID");
                 harnessUserMemorySync.hydrate(agent.getNum(), targetVersion, sessionNum, operatorId);
@@ -376,7 +335,7 @@ public class AgentRunnerFactory {
             // 让 Agent 知晓已预装的运行时并遵循「先探测后安装」,避免重复初始化环境。
             String effectiveSysPrompt = buildSandboxAwareSysPrompt(
                     substitutedSysPrompt,
-                    sandboxBound);
+                    sandboxEnabled);
             // 挂载工具清单写入系统提示：避免模型只看 reset_equipped_tools（仅 META 分组）后误答「没有工具」。
             effectiveSysPrompt = appendMountedToolsSysPrompt(effectiveSysPrompt, toolkit);
             // 创建 BYPASS 权限上下文：允许所有工具调用（包括 Skill 加载工具），
@@ -418,24 +377,18 @@ public class AgentRunnerFactory {
             if (Boolean.TRUE.equals(agent.getConfigSnapshot().getEnablePlan())) {
                 harnessBuilder.enableTaskList(true);
             }
-            if (sandboxBound && sandboxDetailDTO != null) {
-                long ttl = sandboxDetailDTO.getSandbox().getAliveMinutes() != null
-                        ? sandboxDetailDTO.getSandbox().getAliveMinutes()
-                        : 10L;
-                harnessBuilder.filesystem(new OpenSandboxFilesystemSpec()
-                        .sessionRunner(openSandboxExecBridge)
-                        .instanceId(sandboxDetailDTO.getSandbox().getSandboxInstanceId())
-                        .sessionNum(sessionNum)
-                        .sandboxNum(agent.getConfigSnapshot().getSandboxRef())
-                        .agentNum(agent.getNum())
-                        .env(env)
-                        .ttlMinutes(ttl)
-                        .workspaceRoot(sandboxProperties.resolveWorkspaceRoot()));
+            if (sandboxEnabled) {
+                String workspaceNum = WorkspaceContextHolder.currentWorkspaceNum();
+                harnessBuilder.filesystem(harnessE2bFilesystemFactory.create(
+                        agent.getConfigSnapshot().getIsolationScope(),
+                        workspaceNum,
+                        agent.getNum(),
+                        env));
             } else {
                 harnessBuilder.disableFilesystemTools();
             }
             Agent built = harnessBuilder.build();
-            if (sandboxBound && built instanceof HarnessAgent harnessAgent) {
+            if (sandboxEnabled && built instanceof HarnessAgent harnessAgent) {
                 SandboxToolPathRewriter.rewrite(
                         harnessAgent.getToolkit(), sandboxProperties.resolveWorkspaceRoot());
             }
@@ -447,55 +400,17 @@ public class AgentRunnerFactory {
     }
 
     /**
-     * 为本轮 invoke 构造 Harness user-managed {@link SandboxContext}。
-     * <p>
-     * instanceId 可空（预热未完成）：首次工具执行经 bridge 懒绑定；注入后 SandboxManager
-     * 走 externalSandbox，release 不再 shutdown，会话 {@code /workspace} 跨轮保留。
-     *
-     * @param agentNum      Agent 编号
-     * @param sessionNum    会话编号
-     * @param targetVersion 调试目标版本（可空）
-     * @return 可注入的 context；无沙箱或未绑定时 null
+     * 是否启用远程沙箱（E2B）。
+     * <p>{@code enableSandbox=true} 优先；旧快照仅有 {@code sandboxRef} 时视为开启。
      */
-    public SandboxContext buildUserManagedSandboxContext(
-            String agentNum, String sessionNum, String targetVersion) {
-        if (StrUtil.isBlank(agentNum) || StrUtil.isBlank(sessionNum) || openSandboxExecBridge == null) {
-            return null;
+    static boolean isSandboxEnabled(AgentDTO.ConfigSnapshot snapshot) {
+        if (snapshot == null) {
+            return false;
         }
-        AgentDTO agent = agentQueryService.loadAgentForDebug(agentNum, targetVersion);
-        if (agent == null || agent.getConfigSnapshot() == null) {
-            return null;
+        if (snapshot.getEnableSandbox() != null) {
+            return Boolean.TRUE.equals(snapshot.getEnableSandbox());
         }
-        String sandboxRef = agent.getConfigSnapshot().getSandboxRef();
-        if (StrUtil.isBlank(sandboxRef)) {
-            return null;
-        }
-        String instanceId = StrUtil.blankToDefault(
-                sessionSandboxLifecycleService.readyInstanceId(sessionNum),
-                sandboxPoolService.boundInstanceId(sessionNum));
-        long ttl = 10L;
-        try {
-            SandboxDetailDTO detail = sandboxQueryService.getDetail(sandboxRef);
-            if (detail != null && detail.getSandbox() != null
-                    && detail.getSandbox().getAliveMinutes() != null) {
-                ttl = detail.getSandbox().getAliveMinutes();
-            }
-        } catch (Exception e) {
-            log.warn("[sandbox] resolve aliveMinutes for user-managed context failed ref={}: {}",
-                    sandboxRef, e.getMessage());
-        }
-        // 与 build() 一致：请求线程解析 header→env，写入 user-managed 上下文供后续 exec 使用
-        Map<String, String> env = HeaderEnvInjector.resolve(
-                agent.getConfigSnapshot(), HttpHeaderUtil.getHeaderMap());
-        return OpenSandboxUserManagedContextFactory.create(
-                openSandboxExecBridge,
-                instanceId,
-                sessionNum,
-                sandboxRef,
-                agent.getNum(),
-                env,
-                ttl,
-                sandboxProperties.resolveWorkspaceRoot());
+        return StrUtil.isNotBlank(snapshot.getSandboxRef());
     }
 
     /**
@@ -670,59 +585,6 @@ public class AgentRunnerFactory {
             }
         }
         return skills;
-    }
-
-    /**
-     * 将已绑定技能的资源文件写入沙箱容器文件系统。
-     *
-     * @param skills     已解析的 AgentSkill 列表
-     * @param instanceId OpenSandbox 容器实例 ID
-     * @param sessionNum 会话编号
-     */
-    private void uploadSkillResourcesToSandbox(List<AgentSkill> skills, String instanceId, String sessionNum) {
-        if (CollectionUtil.isEmpty(skills) || StrUtil.isBlank(instanceId)) {
-            return;
-        }
-        for (AgentSkill skill : skills) {
-            if (skill == null) {
-                continue;
-            }
-            String skillId = skill.getName();
-            Map<String, String> resources = skill.getResources();
-            if (resources == null || resources.isEmpty()) {
-                log.debug("Skill {} has no resources to upload", skillId);
-                continue;
-            }
-            String skillWorkDir = BoundSkillRepository.skillCacheDir(
-                    sandboxProperties.resolveWorkspaceRoot(), skillId);
-            try {
-                openSandboxExecBridge.exec(
-                        instanceId, sessionNum, Map.of(), 30L, "mkdir -p " + skillWorkDir);
-                for (Map.Entry<String, String> entry : resources.entrySet()) {
-                    String resourcePath = entry.getKey();
-                    String content = entry.getValue();
-                    if (resourcePath.endsWith("/")) {
-                        continue;
-                    }
-                    String targetPath = skillWorkDir + "/" + resourcePath;
-                    String utf8;
-                    if (content != null && content.startsWith("base64:")) {
-                        String base64Data = content.substring("base64:".length());
-                        byte[] decoded = cn.hutool.core.codec.Base64.decode(base64Data);
-                        utf8 = new String(decoded, java.nio.charset.StandardCharsets.ISO_8859_1);
-                    } else {
-                        utf8 = content;
-                    }
-                    openSandboxExecBridge.writeTextFile(
-                            instanceId, sessionNum, Map.of(), 30L, targetPath, utf8);
-                }
-                log.info("Uploaded {} resource files for skill {} to sandbox {}",
-                        resources.size(), skillId, instanceId);
-            } catch (Exception e) {
-                log.warn("Failed to upload skill resources for skill {} to sandbox {}, skip. reason={}",
-                        skillId, instanceId, e.getMessage());
-            }
-        }
     }
 
 }

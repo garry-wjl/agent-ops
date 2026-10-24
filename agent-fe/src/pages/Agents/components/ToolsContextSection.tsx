@@ -62,11 +62,13 @@ export interface ToolsContextValue {
   toolNums: string[];
   /** 具体工具绑定（FC 端点 / MCP tool） */
   toolRefs: ToolRefParam[];
-  /** 沙箱单选引用，可空（保存后由后端回写） */
+  /** 沙箱单选引用，可空（兼容旧数据；运行时忽略） */
   sandboxRef?: string;
-  /** 是否启用沙箱 */
+  /** 是否启用沙箱（E2B） */
   sandboxEnabled?: boolean;
-  /** CPU 核数 */
+  /** 隔离级别 SESSION / USER / AGENT / GLOBAL */
+  isolationScope?: 'SESSION' | 'USER' | 'AGENT' | 'GLOBAL';
+  /** CPU 核数（元数据资产，可选） */
   sandboxCpu?: number;
   /** 内存 MB */
   sandboxMemoryMb?: number;

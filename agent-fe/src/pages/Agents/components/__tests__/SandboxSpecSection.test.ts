@@ -10,8 +10,9 @@ import {
 } from '../SandboxSpecSection';
 
 describe('SandboxSpecSection env helpers', () => {
-  it('DEFAULT_SANDBOX_SPEC keeps sandbox on by default', () => {
+  it('DEFAULT_SANDBOX_SPEC keeps sandbox on by default with SESSION isolation', () => {
     expect(DEFAULT_SANDBOX_SPEC.sandboxEnabled).toBe(true);
+    expect(DEFAULT_SANDBOX_SPEC.isolationScope).toBe('SESSION');
     expect(DEFAULT_SANDBOX_SPEC.sandboxCpu).toBe(0.5);
     expect(DEFAULT_SANDBOX_SPEC.sandboxMemoryMb).toBe(1024);
     expect(DEFAULT_SANDBOX_SPEC.sandboxEnv).toEqual([]);

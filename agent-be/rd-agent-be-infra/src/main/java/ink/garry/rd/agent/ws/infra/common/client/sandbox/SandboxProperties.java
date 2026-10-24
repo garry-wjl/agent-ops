@@ -125,11 +125,39 @@ public class SandboxProperties {
 
     /**
      * 解析容器内 workspace 根：显式配置优先，否则 ACS 用 {@code /home/user}，其余用 {@code /workspace}。
+     * <p>E2B 路径统一默认 {@code /home/user}（与 ACS E2B 镜像一致）。
      */
     public String resolveWorkspaceRoot() {
         if (workspaceRoot != null && !workspaceRoot.isBlank()) {
             return workspaceRoot.trim();
         }
-        return isAcs() ? "/home/user" : "/workspace";
+        // Harness 已切 E2bFilesystemSpec：默认家目录；OpenSandbox 遗留路径仍可用显式配置覆盖
+        return isOpenSandbox() ? "/workspace" : "/home/user";
+    }
+
+    /**
+     * E2B / ACS manager API base URL。
+     * <p>优先 {@link #managerEndpoint}（本地 port-forward）；否则 {@code {protocol}://api.{domain}}。
+     */
+    public String resolveApiBaseUrl() {
+        String ep = managerEndpoint;
+        if (ep != null && !ep.isBlank()) {
+            String trimmed = ep.trim();
+            if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+                return trimmed.endsWith("/") ? trimmed.substring(0, trimmed.length() - 1) : trimmed;
+            }
+            String proto = protocol == null || protocol.isBlank() ? "https" : protocol.trim();
+            return proto + "://" + trimmed;
+        }
+        String proto = protocol == null || protocol.isBlank() ? "https" : protocol.trim();
+        String host = domain == null ? "" : domain.trim();
+        return proto + "://api." + host;
+    }
+
+    /** 沙箱超时秒数（由 {@link #ttlMinutes} 换算）。 */
+    public int resolveSandboxTimeoutSeconds() {
+        long minutes = ttlMinutes > 0 ? ttlMinutes : 10L;
+        long seconds = minutes * 60L;
+        return seconds > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) seconds;
     }
 }

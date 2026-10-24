@@ -991,7 +991,7 @@ function ToolCfgTab({
   );
 }
 
-/** 2026-06-11 配置优化：CONFIG 模式 - 沙箱配置 Tab（按 sandboxRef 反查沙箱管理） */
+/** CONFIG 模式 - 沙箱配置 Tab（E2B 开关 + 隔离级别；旧 sandboxRef 仅作展示） */
 function SandboxCfgTab({
   detail,
   sandboxes,
@@ -1000,25 +1000,34 @@ function SandboxCfgTab({
   sandboxes: SandboxVO[];
 }) {
   const cfg = detail.currentVersion?.configSnapshot;
+  const enabled = cfg?.enableSandbox ?? Boolean(cfg?.sandboxRef);
+  const isolation = cfg?.isolationScope ?? 'SESSION';
   const ref = cfg?.sandboxRef;
-  if (!ref) return <Empty description="该 Agent 未关联沙箱" />;
-  const sb = sandboxes.find((s) => s.num === ref);
-  if (!sb) {
-    return (
-      <Alert
-        type="warning"
-        showIcon
-        message={`关联沙箱（${ref}）已下线或删除，请进入编辑重新选择在线沙箱。`}
-      />
-    );
+  const sb = ref ? sandboxes.find((s) => s.num === ref) : undefined;
+  if (!enabled) {
+    return <Empty description="该 Agent 未启用沙箱" />;
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <Field label="沙箱名称" value={sb.name} />
-      <Field label="沙箱编号" value={sb.num} mono />
-      <Field label="类型" value={sb.type} />
-      <Field label="规格" value={`${sb.cpu} 核 / ${sb.memoryMb} MB`} />
-      <Field label="状态" value={sb.status} />
+      <Field label="启用沙箱" value="是（E2B）" />
+      <Field label="隔离级别" value={isolation} />
+      {ref ? (
+        <>
+          <Field label="历史资产编号" value={ref} mono />
+          {sb ? (
+            <>
+              <Field label="资产名称" value={sb.name} />
+              <Field label="规格（元数据）" value={`${sb.cpu} 核 / ${sb.memoryMb} MB`} />
+            </>
+          ) : (
+            <Alert
+              type="info"
+              showIcon
+              message="运行时已改走平台 E2B，历史沙箱资产仅作参考。"
+            />
+          )}
+        </>
+      ) : null}
     </div>
   );
 }

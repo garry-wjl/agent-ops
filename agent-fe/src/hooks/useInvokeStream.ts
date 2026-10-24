@@ -225,7 +225,7 @@ export function trackReasoningChunkSnapshot(
   evt: AgentScopeEvent,
   chunkedIds: Set<string>,
 ): { skip: boolean; nextIds: Set<string> } {
-  const msgId = evt.message.id;
+  const msgId = evt.message?.id;
   if (evt.isLast && msgId && chunkedIds.has(msgId)) {
     const nextIds = new Set(chunkedIds);
     nextIds.delete(msgId);
@@ -381,7 +381,7 @@ export function useInvokeStream() {
         }
       }
 
-      const blocks = evt.message.content ?? [];
+      const blocks = evt.message?.content ?? [];
       if (blocks.length === 0) return;
 
       const tracking = trackReasoningChunkSnapshot(evt, chunkedReasoningMsgIdsRef.current);
@@ -389,7 +389,7 @@ export function useInvokeStream() {
       if (tracking.skip) {
         if (import.meta.env.DEV) {
           console.debug('[useInvokeStream] 跳过冗余 REASONING isLast 帧', {
-            msgId: evt.message.id,
+            msgId: evt.message?.id,
           });
         }
         return;
@@ -421,10 +421,10 @@ export function useInvokeStream() {
     [ensureTick],
   );
 
-  /** AGENT_RESULT：本轮汇总 usage（BE 已在 AgentRunnerService 回填） */
+  /** AGENT_RESULT：本轮汇总 usage（v1 message / v2 result） */
   const handleAgentResult = useCallback(
     (evt: AgentScopeEvent) => {
-      const usage = normalizeChatUsage(evt.message?.usage);
+      const usage = normalizeChatUsage(evt.message?.usage ?? evt.result?.usage);
       if (!usage) {
         if (import.meta.env.DEV) {
           console.debug('[useInvokeStream] AGENT_RESULT 无 usage', evt);
@@ -441,10 +441,87 @@ export function useInvokeStream() {
     [ensureTick],
   );
 
+  /** streamEvents：细粒度 AgentEvent → segments */
+  const handleScopeAgentEvent = useCallback(
+    (evt: AgentScopeEvent) => {
+      const type = evt.type;
+      if (type === 'TEXT_BLOCK_DELTA' && evt.delta) {
+        pendingSegmentsRef.current = appendBlock(pendingSegmentsRef.current, {
+          type: 'text',
+          text: evt.delta,
+        });
+        ensureTick();
+        return;
+      }
+      if (type === 'THINKING_BLOCK_DELTA' && evt.delta) {
+        pendingSegmentsRef.current = appendBlock(pendingSegmentsRef.current, {
+          type: 'thinking',
+          thinking: evt.delta,
+        });
+        ensureTick();
+        return;
+      }
+      if (type === 'TOOL_CALL_START' || type === 'TOOL_CALL_DELTA') {
+        const id = evt.toolCallId ?? '';
+        if (!id) return;
+        if (!stepStartTimesRef.current.has(id)) {
+          stepStartTimesRef.current.set(id, Date.now());
+        }
+        pendingSegmentsRef.current = appendBlock(pendingSegmentsRef.current, {
+          type: 'tool_use',
+          id,
+          name: type === 'TOOL_CALL_START' ? (evt.toolCallName ?? '') : '__fragment__',
+          content: evt.delta ?? '',
+          input: type === 'TOOL_CALL_START' ? {} : undefined,
+        });
+        ensureTick();
+        return;
+      }
+      if (type === 'TOOL_RESULT_TEXT_DELTA' || type === 'TOOL_RESULT_END') {
+        const id = evt.toolCallId ?? '';
+        if (!id) return;
+        const startedAt = stepStartTimesRef.current.get(id);
+        const latencyMs = startedAt ? Date.now() - startedAt : undefined;
+        if (type === 'TOOL_RESULT_END') {
+          stepStartTimesRef.current.delete(id);
+        }
+        pendingSegmentsRef.current = applyToolResult(
+          pendingSegmentsRef.current,
+          {
+            type: 'tool_result',
+            id,
+            name: evt.toolCallName,
+            output: evt.delta
+              ? [{ type: 'text', text: evt.delta }]
+              : undefined,
+          },
+          latencyMs,
+        );
+        ensureTick();
+        return;
+      }
+      if (type === 'AGENT_RESULT') {
+        handleAgentResult(evt);
+        if (!isSuspendedAgentResult(evt) && !awaitingExternalInputRef.current) {
+          finishStream();
+        }
+        return;
+      }
+      if (type === 'REQUIRE_EXTERNAL_EXECUTION') {
+        // 控制帧 user_input.required 随后到达；勿 abort
+        return;
+      }
+      if (import.meta.env.DEV && type && !String(type).endsWith('_START') && !String(type).endsWith('_END')) {
+        console.debug('[useInvokeStream] scope event', type, evt);
+      }
+    },
+    [ensureTick, finishStream, handleAgentResult],
+  );
+
   /** TOOL_RESULT：按 id 回填对应 tool_use segment */
   const handleToolResult = useCallback(
     (evt: AgentScopeEvent) => {
-      const blocks = evt.message.content ?? [];
+      const blocks = evt.message?.content ?? [];
       if (blocks.length === 0) return;
 
       let nextSegs = pendingSegmentsRef.current;
@@ -522,7 +599,8 @@ export function useInvokeStream() {
 
       await invokeStream(
         {
-          url: '/api/v1/debug-console/invoke',
+          // 调试台默认走 streamEvents 细粒度协议；旧 /invoke 仍保留给开放面兼容
+          url: '/api/v1/debug-console/stream',
           body,
           signal: controller.signal,
           headers: lastEventIdRef.current
@@ -651,9 +729,8 @@ export function useInvokeStream() {
                 }
                 break;
               default: {
-                if (import.meta.env.DEV) {
-                  console.warn('[useInvokeStream] 未知 EventType', evt);
-                }
+                // streamEvents 细粒度协议
+                handleScopeAgentEvent(evt);
               }
             }
           },
@@ -677,6 +754,7 @@ export function useInvokeStream() {
       flushFinal,
       handleAgentResult,
       handleReasoning,
+      handleScopeAgentEvent,
       handleToolResult,
     ],
   );

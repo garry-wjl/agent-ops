@@ -14,6 +14,9 @@ export type AgentStatus =
   | 'OFFLINE';
 export type ChangeLevel = 'PATCH' | 'MINOR' | 'MAJOR';
 
+/** Harness 沙箱隔离级别（E2bFilesystemSpec.isolationScope） */
+export type IsolationScope = 'SESSION' | 'USER' | 'AGENT' | 'GLOBAL';
+
 /**
  * v2.5 重构：短期 / 长期记忆策略字段，前端区分 NONE / RECENT_N / SLIDING_WINDOW 与 NONE / VECTOR_RECALL / FULLTEXT_RECALL。
  * 兼容原 shortTermEnabled / longTermEnabled，旧字段过渡期保留可选。
@@ -106,13 +109,20 @@ export interface ConfigSnapshot {
    */
   toolRefs?: ToolRefParam[];
   /**
-   * 2026-06-11 Agent 配置优化：沙箱引用（单选可空）。
-   * <p>来自沙箱管理「在线」沙箱的 num；空表示不挂载沙箱。
+   * 2026-06-11 Agent 配置优化：沙箱引用（单选可空；运行时忽略，兼容旧数据）。
    */
   sandboxRef?: string;
   /**
+   * 是否启用远程沙箱（E2B）。缺省：有 sandboxRef 时视为 true。
+   */
+  enableSandbox?: boolean;
+  /**
+   * 沙箱隔离级别：SESSION / USER / AGENT / GLOBAL；缺省 SESSION。
+   */
+  isolationScope?: IsolationScope;
+  /**
    * 是否将 Invoke 入站请求头按 headerEnvMappings 注入沙箱环境变量。
-   * <p>缺省 false；仅绑定沙箱时有意义。
+   * <p>缺省 false；仅启用沙箱时有意义。
    */
   headerEnvInjectEnabled?: boolean;
   /**
@@ -400,8 +410,12 @@ export interface AgentCreateParam {
   skillRefs?: SkillRefParam[];
   /** 2026-06-17：工具版本引用（统一契约） */
   toolRefs?: ToolRefParam[];
-  /** 沙箱引用（由 sandboxSpec 维护后回写） */
+  /** 沙箱引用（由 sandboxSpec 维护后回写；运行时忽略） */
   sandboxRef?: string;
+  /** 是否启用远程沙箱（E2B） */
+  enableSandbox?: boolean;
+  /** 沙箱隔离级别；缺省 SESSION */
+  isolationScope?: IsolationScope;
   /** 是否将 Invoke 请求头注入沙箱环境变量 */
   headerEnvInjectEnabled?: boolean;
   /** 请求头 → 环境变量映射 */

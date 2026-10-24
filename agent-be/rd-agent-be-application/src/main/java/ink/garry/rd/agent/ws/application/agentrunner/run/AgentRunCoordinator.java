@@ -115,9 +115,73 @@ public class AgentRunCoordinator {
                         "agentNum", agentNum,
                         "status", AgentRunStatus.RUNNING.name())));
 
-        Flux<AgentInvokeFrame> frames = agentRunnerService.runAgentFrames(
-                agentNum, content, ensuredSession, operatorId, targetVersion, origin, context, runId);
+        return launchAndSubscribe(runId, seq, agentRunnerService.runAgentFrames(
+                agentNum, content, ensuredSession, operatorId, targetVersion, origin, context, runId));
+    }
 
+    /**
+     * 开跑或续传（AgentScope {@code streamEvents} 细粒度事件协议）。
+     * <p>请求体 / 控制帧与 {@link #invokeOrResume} 相同；业务帧为 {@code AgentEvent} JSON。
+     * 不替换旧 {@code /invoke} 路径。
+     */
+    public Flux<AgentRunStreamEvent> invokeOrResumeStream(
+            boolean resume,
+            String lastEventId,
+            String runIdHint,
+            String agentNum,
+            NormalizedInvokeContent content,
+            String sessionNum,
+            String operatorId,
+            String targetVersion,
+            String origin,
+            Map<String, Object> context) {
+
+        boolean resumeMode = resume
+                || (StrUtil.isNotBlank(lastEventId) && isBlankContent(content));
+        if (resumeMode) {
+            return resume(sessionNum, runIdHint, lastEventId);
+        }
+        if (isBlankContent(content)) {
+            throw new BusinessException(BizCode.INVALID_PARAM.getCode(),
+                    "开跑时 input/attachments 不能同时为空");
+        }
+        return startStream(agentNum, content, sessionNum, operatorId, targetVersion, origin, context);
+    }
+
+    private Flux<AgentRunStreamEvent> startStream(
+            String agentNum,
+            NormalizedInvokeContent content,
+            String sessionNum,
+            String operatorId,
+            String targetVersion,
+            String origin,
+            Map<String, Object> context) {
+
+        String ensuredSession = ensureSession(agentNum, sessionNum, operatorId, origin, context);
+        eventStore.findRunningRunId(ensuredSession).ifPresent(busy -> {
+            throw new BusinessException(BizCode.SESSION_BUSY.getCode(),
+                    BizCode.SESSION_BUSY.getMessage() + " runId=" + busy);
+        });
+
+        String runId = "RUN" + IdUtil.getSnowflakeNextIdStr();
+        eventStore.createRun(runId, ensuredSession, agentNum);
+
+        AtomicLong seq = new AtomicLong(0);
+        long startedSeq = seq.incrementAndGet();
+        eventStore.append(runId, startedSeq, "run_started",
+                writeJson(Map.of(
+                        "runId", runId,
+                        "sessionNum", ensuredSession,
+                        "agentNum", agentNum,
+                        "status", AgentRunStatus.RUNNING.name(),
+                        "protocol", "agent_events_v2")));
+
+        return launchAndSubscribe(runId, seq, agentRunnerService.runAgentFramesV2(
+                agentNum, content, ensuredSession, operatorId, targetVersion, origin, context, runId));
+    }
+
+    private Flux<AgentRunStreamEvent> launchAndSubscribe(
+            String runId, AtomicLong seq, Flux<AgentInvokeFrame> frames) {
         // 与 HTTP 解耦：独立订阅，客户端断开不停跑
         frames.concatMap(frame -> Mono.fromCallable(() -> {
                     long s = seq.incrementAndGet();
@@ -254,7 +318,10 @@ public class AgentRunCoordinator {
                         frame.getSseEventName(),
                         objectMapper.writeValueAsString(frame.getUserInputStatusPayload()));
             }
-            JsonNode root = objectMapper.valueToTree(frame.getAgentEvent());
+            Object payload = frame.isScopeAgentEvent()
+                    ? frame.getScopeAgentEvent()
+                    : frame.getAgentEvent();
+            JsonNode root = objectMapper.valueToTree(payload);
             return new SerializedFrame(null, objectMapper.writeValueAsString(root));
         } catch (Exception e) {
             log.error("[AgentRunCoordinator] serialize frame failed", e);

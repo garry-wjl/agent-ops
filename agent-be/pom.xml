@@ -32,10 +32,13 @@
         <hutool.version>5.8.27</hutool.version>
         <fastjson2.version>2.0.49</fastjson2.version>
         <reactor.version>3.6.5</reactor.version>
-        <redisson.version>3.27.2</redisson.version>
+        <!-- AgentScope 2.0.4 RedissonAgentStateStore 需要 RScript.ReturnType.LONG（Redisson 4.x） -->
+        <redisson.version>4.0.0</redisson.version>
         <jjwt.version>0.12.6</jjwt.version>
-        <agentscope.version>2.0.0</agentscope.version>
+        <agentscope.version>2.0.4</agentscope.version>
         <alibabacloud-oss-v2.version>0.4.0</alibabacloud-oss-v2.version>
+        <!-- OssSnapshotSpec（AgentScope extensions-oss）使用旧版 OSS SDK -->
+        <aliyun-sdk-oss.version>3.18.5</aliyun-sdk-oss.version>
         <sandbox.version>1.0.11</sandbox.version>
         <mockito.version>5.15.2</mockito.version>
         <jacoco.version>0.8.12</jacoco.version>
@@ -87,6 +90,13 @@
                 <artifactId>alibabacloud-oss-v2</artifactId>
                 <version>${alibabacloud-oss-v2.version}</version>
                 <scope>compile</scope>
+            </dependency>
+
+            <!-- AgentScope OssSnapshotSpec 依赖；与 oss-v2（预签名）并存 -->
+            <dependency>
+                <groupId>com.aliyun.oss</groupId>
+                <artifactId>aliyun-sdk-oss</artifactId>
+                <version>${aliyun-sdk-oss.version}</version>
             </dependency>
 
             <dependency>
@@ -174,6 +184,13 @@
                         <artifactId>slf4j-jboss-logmanager</artifactId>
                     </exclusion>
                 </exclusions>
+            </dependency>
+
+            <!-- 2.0.4 starter 不再传递 agentscope 聚合包（含 OpenAI / Redis 等扩展类），需显式声明 -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope</artifactId>
+                <version>${agentscope.version}</version>
             </dependency>
 
             <dependency>

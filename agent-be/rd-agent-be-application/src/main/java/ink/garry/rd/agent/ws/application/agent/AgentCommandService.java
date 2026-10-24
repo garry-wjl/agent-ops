@@ -174,6 +174,14 @@ public class AgentCommandService {
             // 3. 首版 v1.0.0：构造 PUBLISHED 版本 + 翻转 agent 主表镜像
             ConfigSnapshot snapshot = buildSnapshotFromParam(param, type);
             snapshot.setSandboxRef(sandboxRef);
+            // sandboxRef 在 normalize 之后才写入；补齐 enableSandbox 与规格开关一致
+            if (param.getEnableSandbox() != null) {
+                snapshot.setEnableSandbox(param.getEnableSandbox());
+            } else if (param.getSandboxSpec() != null) {
+                snapshot.setEnableSandbox(!Boolean.FALSE.equals(param.getSandboxSpec().getEnabled()));
+            } else if (StrUtil.isNotBlank(sandboxRef)) {
+                snapshot.setEnableSandbox(true);
+            }
             Version initial = Version.initial();
             AgentVersion firstVersion = agentVersionFactory.create(
                     agent.getNum(), initial, snapshot, "首次发布 v1.0.0（自动）", operatorId);
@@ -633,6 +641,8 @@ public class AgentCommandService {
                 .skillRefs(toSkillRefs(p.getSkillRefs()))
                 .toolRefs(toToolRefs(p.getToolRefs()))
                 .sandboxRef(p.getSandboxRef())
+                .enableSandbox(p.getEnableSandbox())
+                .isolationScope(p.getIsolationScope())
                 .headerEnvInjectEnabled(p.getHeaderEnvInjectEnabled())
                 .headerEnvMappings(toHeaderEnvMappings(p.getHeaderEnvMappings()))
                 .childAgentNums(p.getChildAgentNums())
@@ -664,6 +674,11 @@ public class AgentCommandService {
         if (snapshot.getMaxIters() == null) {
             snapshot.setMaxIters(10);
         }
+        if (snapshot.getEnableSandbox() == null) {
+            // 旧快照仅有 sandboxRef：视为已启用，避免升级后静默关掉沙箱
+            snapshot.setEnableSandbox(StrUtil.isNotBlank(snapshot.getSandboxRef()));
+        }
+        snapshot.setIsolationScope(normalizeIsolationScope(snapshot.getIsolationScope()));
         snapshot.setHeaderEnvInjectEnabled(Boolean.TRUE.equals(snapshot.getHeaderEnvInjectEnabled()));
         if (snapshot.getHeaderEnvMappings() != null) {
             snapshot.setHeaderEnvMappings(snapshot.getHeaderEnvMappings().stream()
@@ -697,6 +712,20 @@ public class AgentCommandService {
         }
         validateMountedToolsPublished(snapshot.getToolNums());
         return snapshot;
+    }
+
+    /**
+     * 归一化隔离级别；非法或缺省 → SESSION。
+     */
+    private static String normalizeIsolationScope(String raw) {
+        if (StrUtil.isBlank(raw)) {
+            return "SESSION";
+        }
+        String scope = raw.trim().toUpperCase();
+        return switch (scope) {
+            case "SESSION", "USER", "AGENT", "GLOBAL" -> scope;
+            default -> "SESSION";
+        };
     }
 
     /**

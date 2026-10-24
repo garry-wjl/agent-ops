@@ -156,12 +156,22 @@ public class AgentDTO {
         /** 挂载工具的版本引用；工具具备版本后按 versionNum 解析 */
         private List<ToolRef> toolRefs;
 
-        /** 关联沙箱引用标识（v4.0 新增：沙箱管理引用，单选可空） */
+        /** 关联沙箱引用标识（v4.0；运行时忽略，兼容旧数据） */
         private String sandboxRef;
 
         /**
+         * 是否启用远程沙箱（E2B）；null 且 sandboxRef 非空时视为 true。
+         */
+        private Boolean enableSandbox;
+
+        /**
+         * 沙箱隔离级别 SESSION / USER / AGENT / GLOBAL；缺省 SESSION。
+         */
+        private String isolationScope;
+
+        /**
          * 是否将 Invoke 入站请求头按 {@link #headerEnvMappings} 注入沙箱环境变量。
-         * <p>缺省 false；仅绑定沙箱时有意义。
+         * <p>缺省 false；仅启用沙箱时有意义。
          */
         private Boolean headerEnvInjectEnabled;
 

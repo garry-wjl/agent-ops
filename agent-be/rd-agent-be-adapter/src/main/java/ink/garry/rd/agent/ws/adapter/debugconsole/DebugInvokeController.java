@@ -69,6 +69,39 @@ public class DebugInvokeController extends BaseController {
     }
 
     /**
+     * 调试台流式调用（AgentScope {@code streamEvents} 细粒度事件）。
+     * <p>请求体与 {@link #invoke} 相同；业务帧为 {@code AgentEvent}，不替代 {@code /invoke}。
+     */
+    @PostMapping(value = "/stream", produces = {
+            MediaType.TEXT_EVENT_STREAM_VALUE + ";charset=UTF-8",
+            MediaType.APPLICATION_JSON_VALUE
+    })
+    public Flux<ServerSentEvent<String>> stream(@Valid @RequestBody DebugInvokeRequest req,
+                                                HttpServletRequest httpReq) {
+        String lastEventId = firstNonBlank(req.getLastEventId(), httpReq.getHeader("Last-Event-ID"));
+        boolean resume = Boolean.TRUE.equals(req.getResume())
+                || (StrUtil.isNotBlank(lastEventId) && isBlankInvoke(req));
+
+        NormalizedInvokeContent content = resume
+                ? NormalizedInvokeContent.builder().text(null).build()
+                : invokeContentNormalizer.normalize(req.getInput(), req.getAttachments());
+
+        return SseKeepAlive.withHeartbeat(
+                AgentInvokeSseMapper.toSseFromRun(
+                        agentRunCoordinator.invokeOrResumeStream(
+                                resume,
+                                lastEventId,
+                                req.getRunId(),
+                                req.getAgentNum(),
+                                content,
+                                req.getSessionNum(),
+                                getCurrentUserId(),
+                                req.getTargetVersion(),
+                                "DEBUG_CONSOLE",
+                                req.getContext())));
+    }
+
+    /**
      * 用户表单 HITL 回传：提交或取消后唤醒挂起的 Agent 续跑。
      * <p>
      * Body 推荐 snake_case（{@code request_id} / {@code session_num} / {@code run_id}）；

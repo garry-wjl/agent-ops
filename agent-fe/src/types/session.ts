@@ -132,13 +132,31 @@ export interface DebugInvokeRequest {
  *   data: {"type":"REASONING","message":{...},"isLast":false,"source":null}
  * ============================================================ */
 
-/** AgentScope EventType 枚举 — 见 io.agentscope.core.agent.EventType */
+/** AgentScope EventType — 粗粒度 Event + 细粒度 AgentEvent（streamEvents） */
 export type AgentEventType =
   | 'REASONING'      // LLM 思考/文本/工具调用请求（流式，可多 chunk）
   | 'TOOL_RESULT'    // 工具执行结果（流式工具可多 chunk）
   | 'HINT'           // RAG/Memory/Plan 注入的提示信息（单条）
   | 'AGENT_RESULT'   // 最终响应（默认不在流里，避免与 REASONING 重复）
-  | 'SUMMARY';       // 达到 maxIters 的兜底总结
+  | 'SUMMARY'        // 达到 maxIters 的兜底总结
+  // —— streamEvents（AgentEventType）——
+  | 'AGENT_START'
+  | 'AGENT_END'
+  | 'TEXT_BLOCK_START'
+  | 'TEXT_BLOCK_DELTA'
+  | 'TEXT_BLOCK_END'
+  | 'THINKING_BLOCK_START'
+  | 'THINKING_BLOCK_DELTA'
+  | 'THINKING_BLOCK_END'
+  | 'TOOL_CALL_START'
+  | 'TOOL_CALL_DELTA'
+  | 'TOOL_CALL_END'
+  | 'TOOL_RESULT_START'
+  | 'TOOL_RESULT_TEXT_DELTA'
+  | 'TOOL_RESULT_DATA_DELTA'
+  | 'TOOL_RESULT_END'
+  | 'REQUIRE_EXTERNAL_EXECUTION'
+  | 'HINT_BLOCK';
 
 /**
  * Msg 内的 ContentBlock 联合类型 — 字段名严格对齐 AgentScope Java 1.0.x 的 JSON 序列化形态。
@@ -189,14 +207,23 @@ export interface ChatUsage {
   totalTokens?: number;
 }
 
-/** BE 在 SSE 流里发出的单条事件 — 与 Java Event 类一一对应 */
+/** BE 在 SSE 流里发出的单条事件 — v1 Event 或 v2 AgentEvent 公共字段 */
 export interface AgentScopeEvent {
   type: AgentEventType;
-  message: AgentMsg;
-  /** 同一 EventType 的多 chunk 序列里，true 标记最后一片 */
-  isLast: boolean;
+  /** v1 Event.message；v2 AgentResultEvent 用 result */
+  message?: AgentMsg;
+  result?: AgentMsg;
+  /** 同一 EventType 的多 chunk 序列里，true 标记最后一片（v1） */
+  isLast?: boolean;
   /** 嵌套子 Agent 来源；顶层 Agent 发的事件此处为 null */
   source?: { agentName?: string } | null;
+  /** v2 Text/Thinking/Tool delta */
+  delta?: string;
+  blockId?: string;
+  replyId?: string;
+  toolCallId?: string;
+  toolCallName?: string;
+  toolCalls?: Array<{ id?: string; name?: string; input?: Record<string, unknown> }>;
 }
 
 /**

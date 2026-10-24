@@ -7,6 +7,15 @@ import ink.garry.rd.agent.ws.domain.session.valueobject.StepChain;
 import ink.garry.rd.agent.ws.domain.session.valueobject.StepNode;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ThinkingBlockDeltaEvent;
+import io.agentscope.core.event.ToolCallDeltaEvent;
+import io.agentscope.core.event.ToolCallEndEvent;
+import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -75,6 +84,138 @@ public class SegmentAccumulator {
         }
         // AGENT_RESULT / SUMMARY / HINT:不再追加 —— AGENT_RESULT 等价于 REASONING 末尾 text 总和,
         // 与 FE useInvokeStream 协议一致(在 case 分支里跳过)
+    }
+
+    /**
+     * 喂入 AgentScope 2.x 细粒度 {@link AgentEvent}（{@code streamEvents} 路径）。
+     * <p>文本 / 思考按 delta 相邻合并；工具调用按 toolCallId 建段并在 END 时回填。
+     */
+    public void acceptAgentEvent(AgentEvent event) {
+        if (event == null) {
+            return;
+        }
+        if (event instanceof TextBlockDeltaEvent e) {
+            appendText(e.getDelta());
+            return;
+        }
+        if (event instanceof ThinkingBlockDeltaEvent e) {
+            appendThinking(e.getDelta());
+            return;
+        }
+        if (event instanceof ToolCallStartEvent e) {
+            toolStartedAt.putIfAbsent(e.getToolCallId(), System.currentTimeMillis());
+            ensureToolUseSegment(e.getToolCallId(), e.getToolCallName(), null);
+            return;
+        }
+        if (event instanceof ToolCallDeltaEvent e) {
+            toolStartedAt.putIfAbsent(e.getToolCallId(), System.currentTimeMillis());
+            appendToolCallDelta(e.getToolCallId(), e.getToolCallName(), e.getDelta());
+            return;
+        }
+        if (event instanceof ToolCallEndEvent e) {
+            ensureToolUseSegment(e.getToolCallId(), e.getToolCallName(), null);
+            return;
+        }
+        if (event instanceof ToolResultTextDeltaEvent e) {
+            appendToolResultTextDelta(e.getToolCallId(), e.getDelta());
+            return;
+        }
+        if (event instanceof ToolResultEndEvent e) {
+            finalizeToolResult(e.getToolCallId(), e.getToolCallName());
+            return;
+        }
+        if (event instanceof AgentResultEvent resultEvent) {
+            // 最终 Msg 可能含完整 content；若前面已有 delta，以已有 segments 为准，不再重复拆包
+            if (segments.isEmpty() && resultEvent.getResult() != null) {
+                handleReasoning(resultEvent.getResult());
+            }
+        }
+    }
+
+    private void ensureToolUseSegment(String toolCallId, String toolName, Map<String, Object> input) {
+        if (toolCallId == null || toolCallId.isBlank()) {
+            return;
+        }
+        for (AssistantSegment s : segments) {
+            if ("tool_use".equals(s.getKind()) && toolCallId.equals(s.getToolCallId())) {
+                if (s.getToolName() == null || s.getToolName().isEmpty()) {
+                    s.setToolName(toolName);
+                }
+                if (s.getInput() == null && input != null) {
+                    s.setInput(input);
+                }
+                return;
+            }
+        }
+        segments.add(AssistantSegment.builder()
+                .kind("tool_use")
+                .toolCallId(toolCallId)
+                .toolName(toolName)
+                .argsBuffer("")
+                .input(input)
+                .status("pending")
+                .startedAt(Instant.now().toString())
+                .build());
+    }
+
+    private void appendToolCallDelta(String toolCallId, String toolName, String delta) {
+        ensureToolUseSegment(toolCallId, toolName, null);
+        if (delta == null || delta.isEmpty()) {
+            return;
+        }
+        for (int i = segments.size() - 1; i >= 0; i--) {
+            AssistantSegment s = segments.get(i);
+            if ("tool_use".equals(s.getKind()) && toolCallId.equals(s.getToolCallId())) {
+                String buf = s.getArgsBuffer() == null ? "" : s.getArgsBuffer();
+                s.setArgsBuffer(buf + delta);
+                try {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> parsed = JSON.parseObject(s.getArgsBuffer(), Map.class);
+                    if (parsed != null) {
+                        s.setInput(parsed);
+                    }
+                } catch (Exception ignored) {
+                    // 参数 JSON 未拼完整时忽略
+                }
+                return;
+            }
+        }
+    }
+
+    private void appendToolResultTextDelta(String toolCallId, String delta) {
+        if (toolCallId == null || delta == null || delta.isEmpty()) {
+            return;
+        }
+        for (int i = segments.size() - 1; i >= 0; i--) {
+            AssistantSegment s = segments.get(i);
+            if ("tool_use".equals(s.getKind()) && toolCallId.equals(s.getToolCallId())) {
+                Object out = s.getOutput();
+                String prev = out instanceof String str ? str : "";
+                s.setOutput(prev + delta);
+                return;
+            }
+        }
+    }
+
+    private void finalizeToolResult(String toolCallId, String toolName) {
+        if (toolCallId == null) {
+            return;
+        }
+        for (int i = segments.size() - 1; i >= 0; i--) {
+            AssistantSegment s = segments.get(i);
+            if (!"tool_use".equals(s.getKind()) || !toolCallId.equals(s.getToolCallId())) {
+                continue;
+            }
+            if (s.getToolName() == null || s.getToolName().isEmpty()) {
+                s.setToolName(toolName);
+            }
+            s.setStatus("success");
+            Long startedAt = toolStartedAt.remove(toolCallId);
+            if (startedAt != null) {
+                s.setLatencyMs(Math.toIntExact(System.currentTimeMillis() - startedAt));
+            }
+            return;
+        }
     }
 
     /** 从累积的 tool_use 段派生 StepChain(保留旧字段持久化,FE 老降级路径可用) */

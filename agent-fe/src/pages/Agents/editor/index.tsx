@@ -274,11 +274,12 @@ export default function AgentEditorPage() {
                 ? snap.toolRefs
                 : (snap?.toolNums ?? []).map((n) => ({ toolNum: n })),
             sandboxRef: snap?.sandboxRef,
-            sandboxEnabled: Boolean(snap?.sandboxRef),
-            sandboxCpu: 0.5,
-            sandboxMemoryMb: 1024,
-            sandboxAliveMinutes: 10,
-            sandboxMaxConcurrent: 8,
+            sandboxEnabled: snap?.enableSandbox ?? Boolean(snap?.sandboxRef),
+            isolationScope: snap?.isolationScope ?? 'SESSION',
+            sandboxCpu: DEFAULT_SANDBOX_SPEC.sandboxCpu,
+            sandboxMemoryMb: DEFAULT_SANDBOX_SPEC.sandboxMemoryMb,
+            sandboxAliveMinutes: DEFAULT_SANDBOX_SPEC.sandboxAliveMinutes,
+            sandboxMaxConcurrent: DEFAULT_SANDBOX_SPEC.sandboxMaxConcurrent,
             sandboxEnv: [],
             headerEnvInjectEnabled: snap?.headerEnvInjectEnabled ?? false,
             headerEnvMappings: (snap?.headerEnvMappings ?? []).map((m) => ({
@@ -287,6 +288,7 @@ export default function AgentEditorPage() {
             })),
           },
         });
+        // 旧资产上的 env 仅作回填；运行时不再依赖 sandboxRef
         if (snap?.sandboxRef) {
           try {
             const sb = await sandboxApi.detail(snap.sandboxRef);
@@ -296,12 +298,7 @@ export default function AgentEditorPage() {
                 ...d,
                 ctx: {
                   ...d.ctx,
-                  sandboxEnabled: true,
                   sandboxRef: s.num,
-                  sandboxCpu: s.cpu ?? 0.5,
-                  sandboxMemoryMb: s.memoryMb ?? 1024,
-                  sandboxAliveMinutes: s.aliveMinutes ?? 10,
-                  sandboxMaxConcurrent: s.maxConcurrent ?? 8,
                   sandboxEnv: envRecordToRows(s.env),
                 },
               }));
@@ -362,6 +359,8 @@ export default function AgentEditorPage() {
       toolNums: draft.ctx.toolNums,
       toolRefs: draft.ctx.toolRefs,
       sandboxRef: draft.ctx.sandboxRef,
+      enableSandbox: Boolean(draft.ctx.sandboxEnabled),
+      isolationScope: draft.ctx.isolationScope ?? 'SESSION',
       headerEnvInjectEnabled: Boolean(draft.ctx.headerEnvInjectEnabled),
       headerEnvMappings: headerEnvMappingsToParam(draft.ctx.headerEnvMappings),
     });
@@ -384,6 +383,8 @@ export default function AgentEditorPage() {
       toolNums: draft.ctx.toolNums,
       toolRefs: draft.ctx.toolRefs,
       sandboxRef: draft.ctx.sandboxRef,
+      enableSandbox: Boolean(draft.ctx.sandboxEnabled),
+      isolationScope: draft.ctx.isolationScope ?? 'SESSION',
       headerEnvInjectEnabled: Boolean(draft.ctx.headerEnvInjectEnabled),
       headerEnvMappings: headerEnvMappingsToParam(draft.ctx.headerEnvMappings),
       sandboxSpec: buildSandboxSpec(),

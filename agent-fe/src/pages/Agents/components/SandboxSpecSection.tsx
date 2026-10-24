@@ -1,10 +1,12 @@
 /**
  * Agent 编辑页「沙箱」独立区块。
  * 放在系统提示词与「工具与上下文」之间，不进 Tab。默认开启。
- * 启用后可配置规格、容器环境变量，以及 Invoke 请求头→环境变量映射。
+ * 启用后配置隔离级别、环境变量，以及 Invoke 请求头→环境变量映射。
+ * 运行时走 E2B（E2bFilesystemSpec），不再依赖沙箱资产绑定。
  */
-import { Button, Empty, Input, InputNumber, Space, Switch, Typography } from 'antd';
+import { Button, Empty, Input, Select, Space, Switch, Typography } from 'antd';
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
+import type { IsolationScope } from '@/types/agent';
 import type { ToolsContextValue } from './ToolsContextSection';
 
 const COLOR = {
@@ -13,9 +15,17 @@ const COLOR = {
   border: '#E2E8F0',
 } as const;
 
-/** 新建 Agent 时的沙箱默认值（默认开启）。 */
+const ISOLATION_OPTIONS: { value: IsolationScope; label: string; hint: string }[] = [
+  { value: 'SESSION', label: '会话隔离', hint: '同一会话复用同一沙箱（默认）' },
+  { value: 'USER', label: '用户隔离', hint: '同一用户跨会话复用' },
+  { value: 'AGENT', label: 'Agent 隔离', hint: '同一 Agent 下所有会话共享' },
+  { value: 'GLOBAL', label: '全局', hint: '工作空间内共享（慎用）' },
+];
+
+/** 新建 Agent 时的沙箱默认值（默认开启 + SESSION）。 */
 export const DEFAULT_SANDBOX_SPEC = {
   sandboxEnabled: true,
+  isolationScope: 'SESSION' as IsolationScope,
   sandboxCpu: 0.5,
   sandboxMemoryMb: 1024,
   sandboxAliveMinutes: 10,
@@ -87,6 +97,7 @@ export default function SandboxSpecSection({
 }: SandboxSpecSectionProps) {
   const patch = (p: Partial<ToolsContextValue>) => onChange({ ...value, ...p });
   const enabled = value.sandboxEnabled !== false;
+  const isolationScope = value.isolationScope ?? 'SESSION';
   const envRows = value.sandboxEnv ?? [];
   const headerInject = Boolean(value.headerEnvInjectEnabled);
   const headerRows = value.headerEnvMappings ?? [];
@@ -122,7 +133,7 @@ export default function SandboxSpecSection({
   return (
     <div style={{ maxWidth: 880, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-        为本 Agent 独占配置沙箱规格（存元数据）。真正容器在创建会话时启动；可在沙箱管理只读查看。
+        启用后由平台 E2B 托管沙箱生命周期与快照；按隔离级别复用容器，无需再绑定沙箱资产。
       </Typography.Text>
       <Space align="center">
         <span style={{ color: COLOR.textSecondary }}>启用沙箱</span>
@@ -131,66 +142,30 @@ export default function SandboxSpecSection({
           onChange={(checked) =>
             patch({
               sandboxEnabled: checked,
-              sandboxCpu: value.sandboxCpu ?? DEFAULT_SANDBOX_SPEC.sandboxCpu,
-              sandboxMemoryMb:
-                value.sandboxMemoryMb ?? DEFAULT_SANDBOX_SPEC.sandboxMemoryMb,
-              sandboxAliveMinutes:
-                value.sandboxAliveMinutes ?? DEFAULT_SANDBOX_SPEC.sandboxAliveMinutes,
-              sandboxMaxConcurrent:
-                value.sandboxMaxConcurrent ?? DEFAULT_SANDBOX_SPEC.sandboxMaxConcurrent,
+              isolationScope: value.isolationScope ?? DEFAULT_SANDBOX_SPEC.isolationScope,
               sandboxEnv: value.sandboxEnv ?? [],
               headerEnvInjectEnabled: value.headerEnvInjectEnabled ?? false,
               headerEnvMappings: value.headerEnvMappings ?? [],
             })
           }
         />
-        {value.sandboxRef ? (
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            资产 {value.sandboxRef}
-          </Typography.Text>
-        ) : null}
       </Space>
       {enabled ? (
         <>
-          <Space wrap size="middle">
-            <span>
-              CPU（核）{' '}
-              <InputNumber
-                min={0.5}
-                max={16}
-                step={0.5}
-                value={value.sandboxCpu ?? DEFAULT_SANDBOX_SPEC.sandboxCpu}
-                onChange={(v) => patch({ sandboxCpu: Number(v) || 0.5 })}
-              />
-            </span>
-            <span>
-              内存（MB）{' '}
-              <InputNumber
-                min={128}
-                max={65536}
-                step={128}
-                value={value.sandboxMemoryMb ?? DEFAULT_SANDBOX_SPEC.sandboxMemoryMb}
-                onChange={(v) => patch({ sandboxMemoryMb: Number(v) || 1024 })}
-              />
-            </span>
-            <span>
-              存活（分钟）{' '}
-              <InputNumber
-                min={1}
-                max={1440}
-                value={value.sandboxAliveMinutes ?? DEFAULT_SANDBOX_SPEC.sandboxAliveMinutes}
-                onChange={(v) => patch({ sandboxAliveMinutes: Number(v) || 10 })}
-              />
-            </span>
-            <span>
-              最大并发{' '}
-              <InputNumber
-                min={1}
-                max={64}
-                value={value.sandboxMaxConcurrent ?? DEFAULT_SANDBOX_SPEC.sandboxMaxConcurrent}
-                onChange={(v) => patch({ sandboxMaxConcurrent: Number(v) || 8 })}
-              />
-            </span>
+          <Space align="center" wrap>
+            <span style={{ color: COLOR.textSecondary }}>隔离级别</span>
+            <Select
+              style={{ minWidth: 200 }}
+              value={isolationScope}
+              options={ISOLATION_OPTIONS.map((o) => ({
+                value: o.value,
+                label: o.label,
+              }))}
+              onChange={(v: IsolationScope) => patch({ isolationScope: v })}
+            />
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {ISOLATION_OPTIONS.find((o) => o.value === isolationScope)?.hint}
+            </Typography.Text>
           </Space>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <Typography.Text style={{ color: COLOR.textSecondary, fontSize: 13 }}>

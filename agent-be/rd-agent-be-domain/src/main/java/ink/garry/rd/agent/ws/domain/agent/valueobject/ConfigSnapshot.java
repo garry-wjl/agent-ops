@@ -94,12 +94,25 @@ public class ConfigSnapshot {
     private List<SkillRef> skillRefs;
     /** 挂载的工具版本引用列表；工具具备版本能力后按 versionNum 解析 */
     private List<ToolRef> toolRefs;
-    /** 关联沙箱的引用标识（v4.0 新增：沙箱管理引用，单选可空） */
+    /** 关联沙箱的引用标识（v4.0 新增：沙箱管理引用，单选可空；运行时忽略，仅兼容旧数据） */
     private String sandboxRef;
 
     /**
+     * 是否启用远程沙箱（E2B filesystem）。
+     * <p>缺省：若为 null 且 {@link #sandboxRef} 非空则视为 true（兼容旧快照）；否则 false。
+     * 开启后 Harness 挂载 {@code E2bFilesystemSpec}，不再依赖沙箱资产池。
+     */
+    private Boolean enableSandbox;
+
+    /**
+     * 沙箱隔离级别：SESSION / USER / AGENT / GLOBAL。
+     * <p>缺省 SESSION（会话隔离，与现网语义一致）。
+     */
+    private String isolationScope;
+
+    /**
      * 是否将 Invoke 入站请求头按 {@link #headerEnvMappings} 注入沙箱环境变量。
-     * <p>缺省 false；仅绑定沙箱时有意义。
+     * <p>缺省 false；仅启用沙箱时有意义。
      */
     private Boolean headerEnvInjectEnabled;
 
