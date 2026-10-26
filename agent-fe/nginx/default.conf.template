@@ -16,6 +16,7 @@ server {
     }
 
     # /api/* 反代到 BE；BACKEND_HOST / BACKEND_PORT 由容器环境变量注入（启动时 envsubst）
+    # SSE（debug-console/open invoke）：关闭缓冲，避免首包/心跳被 nginx 攒住后被上游网关误判超时
     location /api/ {
         proxy_pass http://${BACKEND_HOST}:${BACKEND_PORT};
         proxy_set_header Host              $host;
@@ -25,6 +26,8 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Upgrade           $http_upgrade;
         proxy_set_header Connection        "upgrade";
+        proxy_buffering off;
+        proxy_cache off;
         proxy_read_timeout 300s;
         proxy_send_timeout 300s;
     }
