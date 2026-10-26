@@ -266,6 +266,70 @@ class AgentRunResumeIntegrationTest {
     }
 
     @Test
+    @DisplayName("慢 build 不阻塞 SSE：run_started 在 runAgentFrames 返回前即可到达")
+    void start_emitsRunStartedBeforeSlowBuildReturns() throws Exception {
+        String session = "SES-it-first-byte";
+        CountDownLatch buildEntered = new CountDownLatch(1);
+        CountDownLatch allowBuildFinish = new CountDownLatch(1);
+
+        when(agentRunnerService.runAgentFrames(
+                eq("AGT-1"),
+                any(NormalizedInvokeContent.class),
+                eq(session),
+                eq("u1"),
+                isNull(),
+                eq("DEBUG_CONSOLE"),
+                any(),
+                any()))
+                .thenAnswer(inv -> {
+                    buildEntered.countDown();
+                    assertThat(allowBuildFinish.await(5, TimeUnit.SECONDS))
+                            .as("测试应在超时前放行慢 build")
+                            .isTrue();
+                    return Flux.just(statusFrame(session, "READY"));
+                });
+
+        List<AgentRunStreamEvent> seen = new CopyOnWriteArrayList<>();
+        CountDownLatch gotStarted = new CountDownLatch(1);
+        Disposable sub = coordinator.invokeOrResume(
+                        false,
+                        null,
+                        null,
+                        "AGT-1",
+                        NormalizedInvokeContent.builder().text("hello").build(),
+                        session,
+                        "u1",
+                        null,
+                        "DEBUG_CONSOLE",
+                        null)
+                .subscribe(ev -> {
+                    seen.add(ev);
+                    if ("run_started".equals(ev.getEvent())) {
+                        gotStarted.countDown();
+                    }
+                });
+
+        try {
+            assertThat(gotStarted.await(2, TimeUnit.SECONDS))
+                    .as("run_started 须在慢 build 完成前到达（否则网关易 504）")
+                    .isTrue();
+            assertThat(seen.get(0).getEvent()).isEqualTo("run_started");
+            // build 仍被门闩挡住，证明 subscribe 未等待 runAgentFrames 返回
+            assertThat(allowBuildFinish.getCount()).isEqualTo(1L);
+            assertThat(buildEntered.await(2, TimeUnit.SECONDS)).isTrue();
+
+            allowBuildFinish.countDown();
+            String runId = seen.get(0).getId().split(":", 2)[0];
+            awaitMetaTerminal(runId, Duration.ofSeconds(8));
+            assertThat(eventStore.getMeta(runId).orElseThrow().status())
+                    .isEqualTo(AgentRunStatus.DONE);
+        } finally {
+            allowBuildFinish.countDown();
+            sub.dispose();
+        }
+    }
+
+    @Test
     @DisplayName("SESSION_BUSY：同会话已有 RUNNING 时禁止再开跑")
     void sessionBusy_secondStartRejected() throws Exception {
         when(agentRunnerService.runAgentFrames(

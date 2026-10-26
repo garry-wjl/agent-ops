@@ -13,6 +13,8 @@ import ink.garry.rd.agent.ws.client.common.BizCode;
 import ink.garry.rd.agent.ws.client.sandbox.dto.SandboxStatusEvent;
 import ink.garry.rd.agent.ws.client.session.dto.SessionDTO;
 import ink.garry.rd.agent.ws.facade.exception.BusinessException;
+import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContext;
+import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContextHolder;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -115,25 +117,61 @@ public class AgentRunCoordinator {
                         "agentNum", agentNum,
                         "status", AgentRunStatus.RUNNING.name())));
 
-        Flux<AgentInvokeFrame> frames = agentRunnerService.runAgentFrames(
-                agentNum, content, ensuredSession, operatorId, targetVersion, origin, context, runId);
-
-        // 与 HTTP 解耦：独立订阅，客户端断开不停跑
-        frames.concatMap(frame -> Mono.fromCallable(() -> {
-                    long s = seq.incrementAndGet();
-                    SerializedFrame sf = serializeFrame(frame);
-                    eventStore.append(runId, s, sf.event(), sf.data());
-                    return s;
-                }).subscribeOn(Schedulers.boundedElastic()))
-                .doOnComplete(() -> finishRun(runId, seq, AgentRunStatus.DONE))
-                .doOnError(err -> {
-                    log.warn("[AgentRunCoordinator] run failed runId={}: {}", runId, err.toString());
-                    finishRun(runId, seq, AgentRunStatus.FAILED);
-                })
-                .onErrorResume(err -> Mono.empty())
-                .subscribe();
-
+        // runAgentFrames 在返回 Flux 前会同步 build Agent（可能秒级～分钟级）。
+        // 若在 HTTP 线程上调用，SSE 响应头迟迟不发出，网关/ALB 会回 504（前端见「SSE HTTP 504」）。
+        // 先 return subscribe（客户端立刻收到 run_started），装配与出帧丢到 boundedElastic。
+        launchAgentRunAsync(runId, seq, agentNum, content, ensuredSession, operatorId,
+                targetVersion, origin, context);
         return subscribe(runId, 0L);
+    }
+
+    /**
+     * 异步启动 agent 出帧写入事件库；捕获当前 {@link WorkspaceContext} 以免跨线程丢失空间上下文。
+     */
+    private void launchAgentRunAsync(
+            String runId,
+            AtomicLong seq,
+            String agentNum,
+            NormalizedInvokeContent content,
+            String sessionNum,
+            String operatorId,
+            String targetVersion,
+            String origin,
+            Map<String, Object> context) {
+        WorkspaceContext workspaceContext = WorkspaceContextHolder.get();
+        Mono.fromRunnable(() -> {
+                    if (workspaceContext != null) {
+                        WorkspaceContextHolder.set(workspaceContext);
+                    }
+                    try {
+                        Flux<AgentInvokeFrame> frames = agentRunnerService.runAgentFrames(
+                                agentNum, content, sessionNum, operatorId, targetVersion,
+                                origin, context, runId);
+                        // 与 HTTP 解耦：独立订阅，客户端断开不停跑
+                        frames.concatMap(frame -> Mono.fromCallable(() -> {
+                                    long s = seq.incrementAndGet();
+                                    SerializedFrame sf = serializeFrame(frame);
+                                    eventStore.append(runId, s, sf.event(), sf.data());
+                                    return s;
+                                }).subscribeOn(Schedulers.boundedElastic()))
+                                .doOnComplete(() -> finishRun(runId, seq, AgentRunStatus.DONE))
+                                .doOnError(err -> {
+                                    log.warn("[AgentRunCoordinator] run failed runId={}: {}",
+                                            runId, err.toString());
+                                    finishRun(runId, seq, AgentRunStatus.FAILED);
+                                })
+                                .onErrorResume(err -> Mono.empty())
+                                .subscribe();
+                    } catch (RuntimeException err) {
+                        log.warn("[AgentRunCoordinator] launch failed runId={}: {}",
+                                runId, err.toString());
+                        finishRun(runId, seq, AgentRunStatus.FAILED);
+                    } finally {
+                        WorkspaceContextHolder.clear();
+                    }
+                })
+                .subscribeOn(Schedulers.boundedElastic())
+                .subscribe();
     }
 
     private void finishRun(String runId, AtomicLong seq, AgentRunStatus status) {
