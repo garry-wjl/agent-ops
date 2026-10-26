@@ -23,6 +23,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.web.context.request.RequestAttributes;
+import org.springframework.web.context.request.RequestContextHolder;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -126,7 +128,11 @@ public class AgentRunCoordinator {
     }
 
     /**
-     * 异步启动 agent 出帧写入事件库；捕获当前 {@link WorkspaceContext} 以免跨线程丢失空间上下文。
+     * 异步启动 agent 出帧写入事件库。
+     * <p>
+     * 在请求线程抓取 {@link WorkspaceContext} 与 {@link RequestAttributes}，装配线程绑定后再调用
+     * {@code runAgentFrames}，以免跨线程丢失工作空间与入站头。装配返回并完成订阅登记后，在
+     * {@code finally} 中清理两者，避免线程池复用串请求。
      */
     private void launchAgentRunAsync(
             String runId,
@@ -139,11 +145,15 @@ public class AgentRunCoordinator {
             String origin,
             Map<String, Object> context) {
         WorkspaceContext workspaceContext = WorkspaceContextHolder.get();
+        RequestAttributes requestAttributes = RequestContextHolder.getRequestAttributes();
         Mono.fromRunnable(() -> {
-                    if (workspaceContext != null) {
-                        WorkspaceContextHolder.set(workspaceContext);
-                    }
                     try {
+                        if (workspaceContext != null) {
+                            WorkspaceContextHolder.set(workspaceContext);
+                        }
+                        if (requestAttributes != null) {
+                            RequestContextHolder.setRequestAttributes(requestAttributes);
+                        }
                         Flux<AgentInvokeFrame> frames = agentRunnerService.runAgentFrames(
                                 agentNum, content, sessionNum, operatorId, targetVersion,
                                 origin, context, runId);
@@ -168,6 +178,7 @@ public class AgentRunCoordinator {
                         finishRun(runId, seq, AgentRunStatus.FAILED);
                     } finally {
                         WorkspaceContextHolder.clear();
+                        RequestContextHolder.resetRequestAttributes();
                     }
                 })
                 .subscribeOn(Schedulers.boundedElastic())

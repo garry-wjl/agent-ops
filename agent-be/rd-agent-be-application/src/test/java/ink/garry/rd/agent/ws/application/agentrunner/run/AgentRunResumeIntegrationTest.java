@@ -19,15 +19,18 @@ import ink.garry.rd.agent.ws.application.session.SessionCommandService;
 import ink.garry.rd.agent.ws.client.common.BizCode;
 import ink.garry.rd.agent.ws.client.sandbox.dto.SandboxStatusEvent;
 import ink.garry.rd.agent.ws.facade.exception.BusinessException;
+import ink.garry.rd.agent.ws.infra.common.util.HttpHeaderUtil;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
@@ -37,7 +40,10 @@ import org.junit.jupiter.api.Test;
 import org.redisson.Redisson;
 import org.redisson.api.RedissonClient;
 import org.redisson.config.Config;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -326,6 +332,79 @@ class AgentRunResumeIntegrationTest {
         } finally {
             allowBuildFinish.countDown();
             sub.dispose();
+        }
+    }
+
+    @Test
+    @DisplayName("装配线程可读入站头：Authorization 在 runAgentFrames 中可见，且 run_started 先到达")
+    void start_propagatesInboundHeadersAndEmitsRunStartedFirst() throws Exception {
+        String session = "SES-it-inbound-headers";
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Authorization", "Bearer inbound-token");
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+
+        CountDownLatch buildEntered = new CountDownLatch(1);
+        CountDownLatch allowBuildFinish = new CountDownLatch(1);
+        AtomicReference<Map<String, String>> seenHeaders = new AtomicReference<>();
+
+        when(agentRunnerService.runAgentFrames(
+                eq("AGT-1"),
+                any(NormalizedInvokeContent.class),
+                eq(session),
+                eq("u1"),
+                isNull(),
+                eq("DEBUG_CONSOLE"),
+                any(),
+                any()))
+                .thenAnswer(inv -> {
+                    seenHeaders.set(HttpHeaderUtil.getHeaderMap());
+                    buildEntered.countDown();
+                    assertThat(allowBuildFinish.await(5, TimeUnit.SECONDS))
+                            .as("测试应在超时前放行慢 build")
+                            .isTrue();
+                    return Flux.just(statusFrame(session, "READY"));
+                });
+
+        List<AgentRunStreamEvent> seen = new CopyOnWriteArrayList<>();
+        CountDownLatch gotStarted = new CountDownLatch(1);
+        Disposable sub = null;
+        try {
+            sub = coordinator.invokeOrResume(
+                            false,
+                            null,
+                            null,
+                            "AGT-1",
+                            NormalizedInvokeContent.builder().text("hello").build(),
+                            session,
+                            "u1",
+                            null,
+                            "DEBUG_CONSOLE",
+                            null)
+                    .subscribe(ev -> {
+                        seen.add(ev);
+                        if ("run_started".equals(ev.getEvent())) {
+                            gotStarted.countDown();
+                        }
+                    });
+            assertThat(gotStarted.await(2, TimeUnit.SECONDS))
+                    .as("run_started 须在慢 build 完成前到达")
+                    .isTrue();
+            assertThat(seen.get(0).getEvent()).isEqualTo("run_started");
+            assertThat(allowBuildFinish.getCount()).isEqualTo(1L);
+            assertThat(buildEntered.await(2, TimeUnit.SECONDS)).isTrue();
+            assertThat(seenHeaders.get()).containsEntry("Authorization", "Bearer inbound-token");
+
+            allowBuildFinish.countDown();
+            String runId = seen.get(0).getId().split(":", 2)[0];
+            awaitMetaTerminal(runId, Duration.ofSeconds(8));
+            assertThat(eventStore.getMeta(runId).orElseThrow().status())
+                    .isEqualTo(AgentRunStatus.DONE);
+        } finally {
+            allowBuildFinish.countDown();
+            if (sub != null) {
+                sub.dispose();
+            }
+            RequestContextHolder.resetRequestAttributes();
         }
     }
 
