@@ -86,12 +86,15 @@ public class AgentRunnerService {
     @Resource
     private UserInputHitlService userInputHitlService;
 
-    /** 子 Agent 强制同步（AgentScope 2.0.2+ {@link AgentSpawnTool#CTX_FORCE_SYNC}）。 */
+    /** 子 Agent 强制同步（AgentScope 2.0.2+ {@link AgentSpawnTool#CTX_FORCE_SYNC}）。开放/调试台共用。 */
     @Value("${app.agent-run.subagent-force-sync:true}")
     private boolean subagentForceSync;
 
-    /** 强制同步超时秒数；覆盖 LLM 传入的 timeout_seconds。 */
-    @Value("${app.agent-run.subagent-force-sync-timeout-seconds:120}")
+    /**
+     * 强制同步超时秒数；覆盖 LLM 的 {@code timeout_seconds}，避免 async / timeout_promoted 后主轮提前结束。
+     * AgentScope 硬上限 600s，超出按 600 截断。
+     */
+    @Value("${app.agent-run.subagent-force-sync-timeout-seconds:600}")
     private int subagentForceSyncTimeoutSeconds;
 
     /** SSE/流式执行期间沙箱心跳间隔：刷新 lastActiveAt + 远程 renew。 */
@@ -257,7 +260,9 @@ public class AgentRunnerService {
             if (userManaged != null) {
                 runtimeBuilder.put(SandboxContext.class, userManaged);
             }
-            // 强制同步子 Agent，避免 timeout_promoted / timeout_seconds=0 后主轮提前结束
+        }
+        // Harness 提示词可 agent_spawn 子 Agent：开放接口与调试台均强制同步等待，禁止提前 AGENT_RESULT
+        if (agent instanceof HarnessAgent) {
             applySubagentForceSync(runtimeBuilder, subagentForceSync, subagentForceSyncTimeoutSeconds);
         }
         RuntimeContext runtimeContext = runtimeBuilder.build();
@@ -384,12 +389,20 @@ public class AgentRunnerService {
 
     /**
      * 向 RuntimeContext 注入子 Agent 强制同步开关（AgentScope 2.0.2+）。
+     *
+     * <p>开放接口与调试台共用本方法，避免提示词 {@code agent_spawn} 异步/timeout_promoted 后主轮提前结束。
+     * 超时秒数钳制到 {@code [1, 600]}，与 AgentScope {@code MAX_TIMEOUT_SECONDS} 对齐。
+     *
+     * @param builder         RuntimeContext 构建器
+     * @param enabled         是否开启强制同步
+     * @param timeoutSeconds  同步等待上限（秒）
      */
     static void applySubagentForceSync(RuntimeContext.Builder builder, boolean enabled, int timeoutSeconds) {
         if (builder == null || !enabled) {
             return;
         }
         builder.put(AgentSpawnTool.CTX_FORCE_SYNC, true);
+        // AgentScope AgentSpawnTool.resolveEffectiveTimeoutMs 仍会 Math.min(..., 600)
         int timeoutSec = Math.max(1, Math.min(timeoutSeconds, 600));
         builder.put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, timeoutSec);
     }

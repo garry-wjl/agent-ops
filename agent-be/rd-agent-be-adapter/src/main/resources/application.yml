@@ -80,6 +80,10 @@ app:
   llm:
     base-url: ${LLM_BASE_URL:http://llm-proxy.garry.internal/v1}
     api-key: ${LLM_API_KEY:}
+  # 短期记忆（AgentState）Redis 滑动 TTL；默认 15 天，AGENT_STATE_TTL 可覆盖（如 7d / 30d / 0=不过期）
+  agent-state:
+    ttl: ${AGENT_STATE_TTL:15d}
+    key-prefix: ${AGENT_STATE_KEY_PREFIX:agentscope:session:}
   # Agent invoke 断线续传：Redis Stream 缓冲 + Last-Event-ID
   agent-run:
     ttl-after-finish: ${AGENT_RUN_TTL_AFTER_FINISH:45m}
@@ -87,8 +91,9 @@ app:
     max-events: ${AGENT_RUN_MAX_EVENTS:50000}
     poll-interval: ${AGENT_RUN_POLL_INTERVAL:200ms}
     # 子 Agent：强制同步等待结果，避免 timeout_promoted / fire-and-forget 后主 Agent 提前 AGENT_RESULT
+    # 开放接口与调试台共用 AgentRunnerService，均注入 CTX_FORCE_SYNC；超时受 AgentScope 硬上限 600s 约束
     subagent-force-sync: ${AGENT_RUN_SUBAGENT_FORCE_SYNC:true}
-    subagent-force-sync-timeout-seconds: ${AGENT_RUN_SUBAGENT_FORCE_SYNC_TIMEOUT_SECONDS:120}
+    subagent-force-sync-timeout-seconds: ${AGENT_RUN_SUBAGENT_FORCE_SYNC_TIMEOUT_SECONDS:600}
   auth:
     platform-admins: garry.wang1,alice.zhang
     # 引导创建平台管理员用户时的默认初始密码（生产务必覆盖）
