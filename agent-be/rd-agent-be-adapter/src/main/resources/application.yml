@@ -86,6 +86,9 @@ app:
     ttl-running: ${AGENT_RUN_TTL_RUNNING:2h}
     max-events: ${AGENT_RUN_MAX_EVENTS:50000}
     poll-interval: ${AGENT_RUN_POLL_INTERVAL:200ms}
+    # 子 Agent：强制同步等待结果，避免 timeout_promoted / fire-and-forget 后主 Agent 提前 AGENT_RESULT
+    subagent-force-sync: ${AGENT_RUN_SUBAGENT_FORCE_SYNC:true}
+    subagent-force-sync-timeout-seconds: ${AGENT_RUN_SUBAGENT_FORCE_SYNC_TIMEOUT_SECONDS:120}
   auth:
     platform-admins: garry.wang1,alice.zhang
     # 引导创建平台管理员用户时的默认初始密码（生产务必覆盖）
