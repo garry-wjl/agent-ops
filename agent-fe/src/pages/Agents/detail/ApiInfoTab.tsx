@@ -1420,7 +1420,7 @@ data:{"version":"v0.9.1","surfaceId":"main","type":"updateDataModel","path":"/hi
       method: 'GET',
       path: '/api/v1/open/agents/query/sessionDetail',
       title: 'Session 详情（含消息）',
-      description: '按会话 num 拉取详情，返回 messages 数组（时间正序）。',
+      description: '按会话 num 拉取详情，返回 messages 数组（时间正序）和按 Run 汇总的 turns。历史会话的 Run ID 与 Token 为空。',
       requestContentType: '—',
       responseContentType: 'application/json',
       headers: [...AUTH_HEADERS],
@@ -1433,7 +1433,7 @@ data:{"version":"v0.9.1","surfaceId":"main","type":"updateDataModel","path":"/hi
           description: '会话业务编号',
         },
       ],
-      responseSummary: '统一 Result 包装；data 为 SessionDetailVO，含 messages。',
+      responseSummary: '统一 Result 包装；data 为 SessionDetailVO，含 messages 和按 Run 汇总的 turns。',
       responseGroups: [
         { title: 'Result', fields: RESULT_FIELDS },
         {
@@ -1462,6 +1462,44 @@ data:{"version":"v0.9.1","surfaceId":"main","type":"updateDataModel","path":"/hi
               type: 'MessageVO[]',
               required: true,
               description: '消息列表，见下表',
+            },
+            {
+              name: 'turns',
+              type: 'SessionTurnVO[]',
+              required: true,
+              description: '按 Run 汇总的轮次。历史消息没有 Run ID，不进入此列表',
+            },
+          ],
+        },
+        {
+          title: 'turns[]（SessionTurnVO）',
+          fields: [
+            { name: 'runId', type: 'string', required: true, description: '本轮 Run 编号' },
+            {
+              name: 'userMessageNum',
+              type: 'string',
+              required: false,
+              description: '本轮用户消息编号',
+            },
+            {
+              name: 'assistantMessageNum',
+              type: 'string',
+              required: false,
+              description: '本轮助手消息编号。运行未结束时为空',
+            },
+            {
+              name: 'inputTokens',
+              type: 'number',
+              required: false,
+              description: '本轮输入 token。模型没回用量时为空',
+            },
+            { name: 'outputTokens', type: 'number', required: false, description: '本轮输出 token' },
+            { name: 'cachedTokens', type: 'number', required: false, description: '本轮缓存 token' },
+            {
+              name: 'totalTokens',
+              type: 'number',
+              required: false,
+              description: '本轮总 token，等于输入加输出',
             },
           ],
         },
@@ -1500,6 +1538,21 @@ data:{"version":"v0.9.1","surfaceId":"main","type":"updateDataModel","path":"/hi
               description: '助手分段：thinking / text / tool_use 等',
             },
             { name: 'traceId', type: 'string', required: false, description: '链路 ID' },
+            {
+              name: 'runId',
+              type: 'string',
+              required: false,
+              description: '本轮 Run 编号。历史消息为空',
+            },
+            {
+              name: 'inputTokens',
+              type: 'number',
+              required: false,
+              description: '本轮输入 token，只出现在助手消息上',
+            },
+            { name: 'outputTokens', type: 'number', required: false, description: '本轮输出 token' },
+            { name: 'cachedTokens', type: 'number', required: false, description: '本轮缓存 token' },
+            { name: 'totalTokens', type: 'number', required: false, description: '本轮总 token' },
             { name: 'createTime', type: 'string', required: false, description: '创建时间' },
           ],
         },
@@ -1521,6 +1574,7 @@ data:{"version":"v0.9.1","surfaceId":"main","type":"updateDataModel","path":"/hi
         "role": "user",
         "inputType": "text",
         "content": "这个单什么时候发货？",
+        "runId": "RUN2026111821000001",
         "createTime": "2026-08-15 15:00:10"
       },
       {
@@ -1529,7 +1583,23 @@ data:{"version":"v0.9.1","surfaceId":"main","type":"updateDataModel","path":"/hi
         "inputType": "text",
         "content": "预计 3 个工作日内发货。",
         "segments": [{ "kind": "text", "text": "预计 3 个工作日内发货。" }],
+        "runId": "RUN2026111821000001",
+        "inputTokens": 120,
+        "outputTokens": 36,
+        "cachedTokens": 0,
+        "totalTokens": 156,
         "createTime": "2026-08-15 15:00:12"
+      }
+    ],
+    "turns": [
+      {
+        "runId": "RUN2026111821000001",
+        "userMessageNum": "MSG...",
+        "assistantMessageNum": "MSG...",
+        "inputTokens": 120,
+        "outputTokens": 36,
+        "cachedTokens": 0,
+        "totalTokens": 156
       }
     ]
   },

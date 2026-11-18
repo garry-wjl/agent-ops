@@ -15,6 +15,7 @@ import ink.garry.rd.agent.ws.application.sandbox.lifecycle.SessionSandboxLifecyc
 import ink.garry.rd.agent.ws.application.sandbox.pool.SandboxPoolService;
 import ink.garry.rd.agent.ws.application.session.SessionCommandService;
 import ink.garry.rd.agent.ws.client.agentrunner.UserInputRequiredEvent;
+import ink.garry.rd.agent.ws.domain.session.valueobject.TurnTokenUsage;
 import ink.garry.rd.agent.ws.client.session.dto.SessionDTO;
 import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContextHolder;
 import io.a2a.client.transport.jsonrpc.JSONRPCTransport;
@@ -218,7 +219,7 @@ public class AgentRunnerService {
         //3. 添加用户消息（MULTIMODAL 存 JSON；纯文本保持 TEXT）
         AgentMsgFactory.PersistPayload persist = agentMsgFactory.toPersistPayload(content);
         sessionCommandService.appendUserMessage(
-                sessionNum, persist.contentText(), persist.inputType(), sessionNum, operatorId);
+                sessionNum, persist.contentText(), persist.inputType(), sessionNum, runId, operatorId);
 
         //4. 调用
         Msg msg = agentMsgFactory.build(content, workspaceNum);
@@ -300,6 +301,8 @@ public class AgentRunnerService {
                                 agent, event, runtimeContext, sessionNum, runId, operatorId,
                                 agentNum, targetVersion, acc, usageAcc, inThinkTag);
                     }
+                    TurnTokenUsage turnUsage = TurnTokenUsageMapper.from(
+                            event.getMessage() == null ? null : event.getMessage().getChatUsage());
                     return Mono.fromRunnable(() ->
                                     sessionCommandService.appendAssistantMessage(
                                             sessionNum,
@@ -308,6 +311,8 @@ public class AgentRunnerService {
                                             acc.getSegments(),
                                             acc.toContentBlocksJson(),
                                             sessionNum,
+                                            runId,
+                                            turnUsage,
                                             operatorId))
                             .subscribeOn(Schedulers.boundedElastic())
                             .thenMany(Flux.just(AgentInvokeFrame.agent(event)))

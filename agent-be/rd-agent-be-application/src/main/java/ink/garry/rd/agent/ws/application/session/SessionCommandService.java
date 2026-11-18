@@ -17,6 +17,7 @@ import ink.garry.rd.agent.ws.domain.session.Session;
 import ink.garry.rd.agent.ws.domain.session.factory.SessionFactory;
 import ink.garry.rd.agent.ws.domain.session.valueobject.AssistantSegment;
 import ink.garry.rd.agent.ws.domain.session.valueobject.StepChain;
+import ink.garry.rd.agent.ws.domain.session.valueobject.TurnTokenUsage;
 import ink.garry.rd.agent.ws.facade.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -186,8 +187,19 @@ public class SessionCommandService {
     @Transactional
     public MessageDTO appendUserMessage(String sessionNum, String content, InputType inputType,
                                         String traceId, String operatorId) {
+        return appendUserMessage(sessionNum, content, inputType, traceId, null, operatorId);
+    }
+
+    /**
+     * 追加用户消息，并记下本轮 Run 编号。
+     *
+     * @param runId 本轮 Agent run 编号，可空
+     */
+    @Transactional
+    public MessageDTO appendUserMessage(String sessionNum, String content, InputType inputType,
+                                        String traceId, String runId, String operatorId) {
         Session session = requireSession(sessionNum);
-        Message message = session.appendUserMessage(content, inputType, traceId, operatorId);
+        Message message = session.appendUserMessage(content, inputType, traceId, runId, operatorId);
         return toMessageDTO(message);
     }
 
@@ -225,8 +237,25 @@ public class SessionCommandService {
                                              List<AssistantSegment> segments,
                                              String contentBlocksJson,
                                              String traceId, String operatorId) {
+        return appendAssistantMessage(sessionNum, content, stepChain, segments, contentBlocksJson,
+                traceId, null, null, operatorId);
+    }
+
+    /**
+     * 追加助手消息，并记下本轮 Run 编号与汇总 Token。
+     *
+     * @param runId          本轮 Agent run 编号，可空
+     * @param turnTokenUsage 本轮汇总用量；模型没回用量时为空
+     */
+    @Transactional
+    public MessageDTO appendAssistantMessage(String sessionNum, String content, StepChain stepChain,
+                                             List<AssistantSegment> segments,
+                                             String contentBlocksJson,
+                                             String traceId, String runId,
+                                             TurnTokenUsage turnTokenUsage, String operatorId) {
         Session session = requireSession(sessionNum);
-        Message message = session.appendAssistantMessage(content, stepChain, segments, contentBlocksJson, traceId, operatorId);
+        Message message = session.appendAssistantMessage(
+                content, stepChain, segments, contentBlocksJson, traceId, runId, turnTokenUsage, operatorId);
         return toMessageDTO(message);
     }
 
@@ -289,6 +318,11 @@ public class SessionCommandService {
                 .content(message.getContent())
                 .stepChainJson(message.getStepChain() == null ? null : JSON.toJSONString(message.getStepChain()))
                 .traceId(message.getTraceId())
+                .runId(message.getRunId())
+                .inputTokens(message.getTurnTokenUsage() == null ? null : message.getTurnTokenUsage().getInputTokens())
+                .outputTokens(message.getTurnTokenUsage() == null ? null : message.getTurnTokenUsage().getOutputTokens())
+                .cachedTokens(message.getTurnTokenUsage() == null ? null : message.getTurnTokenUsage().getCachedTokens())
+                .totalTokens(message.getTurnTokenUsage() == null ? null : message.getTurnTokenUsage().getTotalTokens())
                 .createNo(message.getCreateNo())
                 .updateNo(message.getUpdateNo())
                 .createTime(message.getCreateTime())
