@@ -53,11 +53,13 @@ import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.ToolkitConfig;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
 import io.agentscope.harness.agent.HarnessAgent;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Path;
@@ -130,6 +132,14 @@ public class AgentRunnerFactory {
 
     @Resource
     private HarnessUserMemorySync harnessUserMemorySync;
+
+    /**
+     * 同一轮工具是否并行。AgentScope 2.0.4 只有开/关，没有数字并发上限。
+     * 默认关闭：同一轮里的 {@code agent_spawn} 串行执行，避免一次建出多个完整子 Agent 把堆打满。
+     * 子 Agent 的 Toolkit 由父 Toolkit {@code copy()} 而来，会继承这个开关。
+     */
+    @Value("${app.agent-run.tool-parallel:false}")
+    private boolean toolParallel;
 
     /**
      * 创建 AgentRunner（生产/默认入口：当前在线版本）。
@@ -239,8 +249,9 @@ public class AgentRunnerFactory {
             Map<String, String> env = new HashMap<>(HeaderEnvInjector.resolve(
                     agent.getConfigSnapshot(), HttpHeaderUtil.getHeaderMap()));
 
-            //3. 构建工具集（FC/MCP/内置）；沙箱走 Harness filesystem，不再注册 SandboxTool
-            Toolkit toolkit = new Toolkit();
+            //3. 构建工具集（FC/MCP/内置）；沙箱走 Harness filesystem，不再注册 SandboxTool。
+            // 默认串行：同一轮多个 agent_spawn 不会同时各建一份完整子 Agent。
+            Toolkit toolkit = newRuntimeToolkit(toolParallel);
             boolean sandboxBound = StrUtil.isNotBlank(agent.getConfigSnapshot().getSandboxRef());
             SandboxDetailDTO sandboxDetailDTO = null;
             if (sandboxBound) {
@@ -517,6 +528,16 @@ public class AgentRunnerFactory {
             return SandboxTool.SANDBOX_ENV_SYSTEM_PROMPT;
         }
         return SandboxTool.SANDBOX_ENV_SYSTEM_PROMPT + "\n\n" + userSysPrompt;
+    }
+
+    /**
+     * 按开关构造运行时 Toolkit。{@code parallel=false} 时同一轮工具调用串行。
+     *
+     * @param toolParallel 是否并行执行同一轮工具
+     * @return 带该并发策略的空 Toolkit
+     */
+    static Toolkit newRuntimeToolkit(boolean toolParallel) {
+        return new Toolkit(ToolkitConfig.builder().parallel(toolParallel).build());
     }
 
     /**

@@ -12,7 +12,7 @@
 
     <properties>
         <!-- JDK17 模块封装：部分第三方库反射需开放 java.lang；值只写一处，
-             本地(spring-boot:run)与容器(jib entrypoint)各自引用 -->
+             本地(spring-boot:run)与容器入口各自引用。容器内堆/元空间/直接内存百分比见 docker/jvm-entrypoint.sh -->
         <jvm.addOpens>--add-opens=java.base/java.lang=ALL-UNNAMED</jvm.addOpens>
     </properties>
 
@@ -80,28 +80,9 @@
                         <image>${docker.image}</image>
                     </to>
                     <container>
-                        <!-- 自定义 entrypoint 后 jib 的 <jvmFlags> 会被忽略，JVM 参数写进 entrypoint -->
+                        <!-- JVM 内存百分比在 docker/jvm-entrypoint.sh，jib 的 jvmFlags 不会生效 -->
                         <entrypoint>
-                            <arg>java</arg>
-                            <arg>${jvm.addOpens}</arg>
-                            <arg>-Duser.timezone=Asia/Shanghai</arg>
-                            <arg>-Dfile.encoding=UTF-8</arg>
-                            <arg>-Dclient.encoding.override=UTF-8</arg>
-                            <arg>-Djava.security.egd=file:/dev/./urandom</arg>
-                            <arg>-XX:InitialRAMPercentage=40.0</arg>
-                            <arg>-XX:MinRAMPercentage=40.0</arg>
-                            <arg>-XX:MaxRAMPercentage=80.0</arg>
-                            <arg>-XX:MetaspaceSize=128m</arg>
-                            <arg>-XX:MaxMetaspaceSize=256m</arg>
-                            <arg>-XX:+UseG1GC</arg>
-                            <arg>-XX:MaxGCPauseMillis=200</arg>
-                            <arg>-XX:+ExplicitGCInvokesConcurrent</arg>
-                            <arg>-XX:-OmitStackTraceInFastThrow</arg>
-                            <arg>-XX:+HeapDumpOnOutOfMemoryError</arg>
-                            <arg>-XX:HeapDumpPath=/app/heapdump/heapdump.hprof</arg>
-                            <arg>-Xlog:gc*:file=/app/logs/gc.log:time,uptime,level,tags</arg>
-                            <arg>-jar</arg>
-                            <arg>/app/app.jar</arg>
+                            <arg>/app/jvm-entrypoint.sh</arg>
                         </entrypoint>
                         <workingDirectory>/app</workingDirectory>
                         <volumes>
@@ -119,7 +100,18 @@
                                 <into>/app</into>
                                 <includes>app.jar</includes>
                             </path>
+                            <path>
+                                <from>../docker</from>
+                                <into>/app</into>
+                                <includes>jvm-entrypoint.sh</includes>
+                            </path>
                         </paths>
+                        <permissions>
+                            <permission>
+                                <file>/app/jvm-entrypoint.sh</file>
+                                <mode>755</mode>
+                            </permission>
+                        </permissions>
                     </extraDirectories>
                 </configuration>
                 <executions>

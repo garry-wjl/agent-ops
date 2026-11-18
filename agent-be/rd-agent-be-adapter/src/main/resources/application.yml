@@ -92,8 +92,11 @@ app:
     poll-interval: ${AGENT_RUN_POLL_INTERVAL:200ms}
     # 子 Agent：强制同步等待结果，避免 timeout_promoted / fire-and-forget 后主 Agent 提前 AGENT_RESULT
     # 开放接口与调试台共用 AgentRunnerService，均注入 CTX_FORCE_SYNC；超时受 AgentScope 硬上限 600s 约束
+    # 默认 120s。需要更长子任务时用 AGENT_RUN_SUBAGENT_FORCE_SYNC_TIMEOUT_SECONDS 覆盖（最大 600）
     subagent-force-sync: ${AGENT_RUN_SUBAGENT_FORCE_SYNC:true}
-    subagent-force-sync-timeout-seconds: ${AGENT_RUN_SUBAGENT_FORCE_SYNC_TIMEOUT_SECONDS:600}
+    subagent-force-sync-timeout-seconds: ${AGENT_RUN_SUBAGENT_FORCE_SYNC_TIMEOUT_SECONDS:120}
+    # 同一轮工具是否并行。2.0.4 没有数字并发上限，关掉后 agent_spawn 串行，避免一次建多个子 Agent 打满堆
+    tool-parallel: ${AGENT_RUN_TOOL_PARALLEL:false}
   auth:
     platform-admins: garry.wang1,alice.zhang
     # 引导创建平台管理员用户时的默认初始密码（生产务必覆盖）

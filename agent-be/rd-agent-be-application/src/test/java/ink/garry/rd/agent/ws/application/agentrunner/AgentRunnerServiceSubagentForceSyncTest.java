@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 class AgentRunnerServiceSubagentForceSyncTest {
 
     @Test
-    @DisplayName("开启强制同步时写入 CTX_FORCE_SYNC 与超时秒数（默认 600，覆盖开放/调试台）")
+    @DisplayName("开启强制同步时写入 CTX_FORCE_SYNC 与调用方指定的超时秒数")
     void apply_whenEnabled_putsForceSyncContext() {
         RuntimeContext.Builder builder = RuntimeContext.builder().userId("u1").sessionId("s1");
         AgentRunnerService.applySubagentForceSync(builder, true, 600);

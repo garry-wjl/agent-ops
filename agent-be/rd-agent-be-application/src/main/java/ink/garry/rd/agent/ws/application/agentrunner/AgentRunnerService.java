@@ -4,6 +4,7 @@ import cn.hutool.core.collection.CollectionUtil;
 import cn.hutool.core.lang.Assert;
 import cn.hutool.core.util.StrUtil;
 import ink.garry.rd.agent.ws.application.agentrunner.factory.AgentRunnerFactory;
+import ink.garry.rd.agent.ws.application.agentrunner.harness.HarnessAgentReleaser;
 import ink.garry.rd.agent.ws.application.agentrunner.harness.HarnessUserMemorySync;
 import ink.garry.rd.agent.ws.application.agentrunner.hitl.RequestUserInputTool;
 import ink.garry.rd.agent.ws.application.agentrunner.hitl.UserInputHitlService;
@@ -92,9 +93,9 @@ public class AgentRunnerService {
 
     /**
      * 强制同步超时秒数；覆盖 LLM 的 {@code timeout_seconds}，避免 async / timeout_promoted 后主轮提前结束。
-     * AgentScope 硬上限 600s，超出按 600 截断。
+     * 默认 120 秒，避免多个子 Agent 同时在内存里挂满 10 分钟。AgentScope 硬上限仍是 600 秒，超出按 600 截断。
      */
-    @Value("${app.agent-run.subagent-force-sync-timeout-seconds:600}")
+    @Value("${app.agent-run.subagent-force-sync-timeout-seconds:120}")
     private int subagentForceSyncTimeoutSeconds;
 
     /** SSE/流式执行期间沙箱心跳间隔：刷新 lastActiveAt + 远程 renew。 */
@@ -275,7 +276,12 @@ public class AgentRunnerService {
         // publish 避免 merge + takeUntilOther 对冷流双重订阅导致 Agent 跑两遍
         return agentFrames
                 .doOnSubscribe(s -> startSandboxHeartbeat(finalSessionNum, heartbeat))
-                .doFinally(sig -> stopSandboxHeartbeat(heartbeat))
+                .doFinally(sig -> {
+                    stopSandboxHeartbeat(heartbeat);
+                    // 流结束（成功 / 失败 / 客户端断开）后注销主 Agent 和已 spawn 子 Agent，
+                    // 否则 GracefulShutdownManager 会把它们留到进程重启。
+                    HarnessAgentReleaser.releaseAsync(agent);
+                })
                 .publish(shared -> Flux.merge(
                         sessionSandboxLifecycleService.subscribe(finalSessionNum)
                                 .map(AgentInvokeFrame::sandboxStatus)
