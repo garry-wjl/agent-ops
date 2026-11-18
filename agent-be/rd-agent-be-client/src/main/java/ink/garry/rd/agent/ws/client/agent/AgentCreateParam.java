@@ -84,9 +84,6 @@ public class AgentCreateParam {
     /** Agent 内嵌沙箱规格；优先于直接传 sandboxRef */
     private SandboxSpecParam sandboxSpec;
 
-    /** 配置模式 - 子 Agent 业务编号列表（监督者/路由强制选） */
-    private List<String> childAgentNums;
-
     /** 配置模式 - 记忆配置 { shortTermEnabled, longTermEnabled } */
     private Map<String, Object> memoryConfig;
 

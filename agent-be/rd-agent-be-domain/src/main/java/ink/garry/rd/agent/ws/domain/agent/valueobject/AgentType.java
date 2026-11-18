@@ -8,8 +8,12 @@ package ink.garry.rd.agent.ws.domain.agent.valueobject;
 public enum AgentType {
     /** 普通：单一职责，挂载 Skill */
     NORMAL,
-    /** 监督者：编排子 Agent；子 Agent 必须为 NORMAL */
+    /**
+     * 历史类型，不再支持新建。保留枚举值，避免已入库的行在反序列化时失败。
+     */
     SUPERVISOR,
-    /** 路由：按意图分发到候选 NORMAL Agent */
+    /**
+     * 历史类型，不再支持新建。保留枚举值，避免已入库的行在反序列化时失败。
+     */
     ROUTER
 }

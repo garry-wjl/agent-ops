@@ -79,16 +79,4 @@ public class AgentGatewayImpl implements AgentGateway {
                 .eq(AgentEntity::getDeleted, 0));
         return cnt != null && cnt > 0;
     }
-
-    @Override
-    public boolean allAreNormal(List<String> agentNums) {
-        if (agentNums == null || agentNums.isEmpty()) {
-            return true;
-        }
-        Long cnt = agentMapper.selectCount(new LambdaQueryWrapper<AgentEntity>()
-                .in(AgentEntity::getNum, agentNums)
-                .eq(AgentEntity::getAgentType, "NORMAL")
-                .eq(AgentEntity::getDeleted, 0));
-        return cnt != null && cnt == agentNums.size();
-    }
 }

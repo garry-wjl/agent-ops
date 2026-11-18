@@ -1,12 +1,8 @@
 package ink.garry.rd.agent.ws.application.agentrunner.factory;
 
-import io.agentscope.core.tool.Toolkit;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Field;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 
 /**
  * {@link AgentRunnerFactory#resolveSessionId(String, String)} 单元测试。
@@ -34,20 +30,5 @@ class AgentRunnerFactorySessionIdTest {
         String a = AgentRunnerFactory.resolveSessionId("SES-A", "助手");
         String b = AgentRunnerFactory.resolveSessionId("SES-B", "助手");
         org.junit.jupiter.api.Assertions.assertNotEquals(a, b);
-    }
-
-    @Test
-    void serialToolkitCopy_staysSerialSoSubagentsInheritIt() throws Exception {
-        Toolkit toolkit = AgentRunnerFactory.newRuntimeToolkit(false);
-        Toolkit copy = toolkit.copy();
-        assertFalse(readParallel(toolkit));
-        assertFalse(readParallel(copy));
-    }
-
-    private static boolean readParallel(Toolkit toolkit) throws Exception {
-        Field field = Toolkit.class.getDeclaredField("config");
-        field.setAccessible(true);
-        Object config = field.get(toolkit);
-        return (boolean) config.getClass().getMethod("isParallel").invoke(config);
     }
 }

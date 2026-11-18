@@ -35,9 +35,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
-import io.agentscope.harness.agent.tool.AgentSpawnTool;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
@@ -86,17 +84,6 @@ public class AgentRunnerService {
 
     @Resource
     private UserInputHitlService userInputHitlService;
-
-    /** 子 Agent 强制同步（AgentScope 2.0.2+ {@link AgentSpawnTool#CTX_FORCE_SYNC}）。开放/调试台共用。 */
-    @Value("${app.agent-run.subagent-force-sync:true}")
-    private boolean subagentForceSync;
-
-    /**
-     * 强制同步超时秒数；覆盖 LLM 的 {@code timeout_seconds}，避免 async / timeout_promoted 后主轮提前结束。
-     * 默认 120 秒，避免多个子 Agent 同时在内存里挂满 10 分钟。AgentScope 硬上限仍是 600 秒，超出按 600 截断。
-     */
-    @Value("${app.agent-run.subagent-force-sync-timeout-seconds:120}")
-    private int subagentForceSyncTimeoutSeconds;
 
     /** SSE/流式执行期间沙箱心跳间隔：刷新 lastActiveAt + 远程 renew。 */
     private static final Duration SANDBOX_HEARTBEAT_INTERVAL = Duration.ofSeconds(60);
@@ -262,10 +249,6 @@ public class AgentRunnerService {
                 runtimeBuilder.put(SandboxContext.class, userManaged);
             }
         }
-        // Harness 提示词可 agent_spawn 子 Agent：开放接口与调试台均强制同步等待，禁止提前 AGENT_RESULT
-        if (agent instanceof HarnessAgent) {
-            applySubagentForceSync(runtimeBuilder, subagentForceSync, subagentForceSyncTimeoutSeconds);
-        }
         RuntimeContext runtimeContext = runtimeBuilder.build();
 
         Flux<AgentInvokeFrame> agentFrames = streamWithUserInputHitl(
@@ -278,8 +261,8 @@ public class AgentRunnerService {
                 .doOnSubscribe(s -> startSandboxHeartbeat(finalSessionNum, heartbeat))
                 .doFinally(sig -> {
                     stopSandboxHeartbeat(heartbeat);
-                    // 流结束（成功 / 失败 / 客户端断开）后注销主 Agent 和已 spawn 子 Agent，
-                    // 否则 GracefulShutdownManager 会把它们留到进程重启。
+                    // 流结束（成功 / 失败 / 客户端断开）后关闭本次 HarnessAgent，
+                    // 否则 GracefulShutdownManager 会把它留到进程重启。
                     HarnessAgentReleaser.releaseAsync(agent);
                 })
                 .publish(shared -> Flux.merge(
@@ -391,26 +374,6 @@ public class AgentRunnerService {
                                             operatorId, agentNum, targetVersion,
                                             acc, usageAcc, inThinkTag));
                         }));
-    }
-
-    /**
-     * 向 RuntimeContext 注入子 Agent 强制同步开关（AgentScope 2.0.2+）。
-     *
-     * <p>开放接口与调试台共用本方法，避免提示词 {@code agent_spawn} 异步/timeout_promoted 后主轮提前结束。
-     * 超时秒数钳制到 {@code [1, 600]}，与 AgentScope {@code MAX_TIMEOUT_SECONDS} 对齐。
-     *
-     * @param builder         RuntimeContext 构建器
-     * @param enabled         是否开启强制同步
-     * @param timeoutSeconds  同步等待上限（秒）
-     */
-    static void applySubagentForceSync(RuntimeContext.Builder builder, boolean enabled, int timeoutSeconds) {
-        if (builder == null || !enabled) {
-            return;
-        }
-        builder.put(AgentSpawnTool.CTX_FORCE_SYNC, true);
-        // AgentScope AgentSpawnTool.resolveEffectiveTimeoutMs 仍会 Math.min(..., 600)
-        int timeoutSec = Math.max(1, Math.min(timeoutSeconds, 600));
-        builder.put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, timeoutSec);
     }
 
     static boolean isTerminalAgentResult(Event event) {

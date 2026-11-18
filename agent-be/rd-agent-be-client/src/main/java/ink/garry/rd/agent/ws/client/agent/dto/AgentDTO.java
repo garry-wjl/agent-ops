@@ -170,9 +170,6 @@ public class AgentDTO {
          */
         private List<HeaderEnvMapping> headerEnvMappings;
 
-        /** 子 Agent 业务编号列表(仅 SUPERVISOR / ROUTER) */
-        private List<String> childAgentNums;
-
         /** 记忆配置 */
         private MemoryConfig memoryConfig;
 
