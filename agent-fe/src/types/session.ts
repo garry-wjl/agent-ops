@@ -53,7 +53,30 @@ export interface MessageVO {
    */
   segments?: AssistantSegment[] | null;
   traceId?: string;
+  /** 本轮 Agent run 编号。历史消息为空。 */
+  runId?: string | null;
+  /** 本轮输入 token。只出现在助手消息上；历史消息或模型没回用量时为空。 */
+  inputTokens?: number | null;
+  /** 本轮输出 token。 */
+  outputTokens?: number | null;
+  /** 本轮缓存 token。 */
+  cachedTokens?: number | null;
+  /** 本轮总 token，等于输入加输出。 */
+  totalTokens?: number | null;
   createTime: string;
+}
+
+/**
+ * 会话中的一轮运行。没有 Run ID 的历史消息不会出现在这里。
+ */
+export interface SessionTurnVO {
+  runId: string;
+  userMessageNum?: string | null;
+  assistantMessageNum?: string | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  cachedTokens?: number | null;
+  totalTokens?: number | null;
 }
 
 /** 会话创建/重命名等接口的完整 VO */
@@ -93,6 +116,8 @@ export interface SessionDetailVO {
   /** 会话默认调用上下文 */
   invokeContext?: Record<string, string | number | boolean> | null;
   messages: MessageVO[];
+  /** 按 Run 汇总的轮次。历史消息不在此列表。 */
+  turns: SessionTurnVO[];
 }
 
 /**

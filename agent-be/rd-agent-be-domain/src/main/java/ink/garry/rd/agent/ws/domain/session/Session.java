@@ -11,6 +11,7 @@ import ink.garry.rd.agent.ws.domain.session.repository.SessionRepository;
 import ink.garry.rd.agent.ws.domain.session.valueobject.AssistantSegment;
 import ink.garry.rd.agent.ws.domain.session.valueobject.MessageRole;
 import ink.garry.rd.agent.ws.domain.session.valueobject.StepChain;
+import ink.garry.rd.agent.ws.domain.session.valueobject.TurnTokenUsage;
 import ink.garry.rd.agent.ws.facade.domain.DomainEntity;
 import ink.garry.rd.agent.ws.facade.domain.DomainEventDTO;
 import ink.garry.rd.agent.ws.facade.domain.DomainEventPublisher;
@@ -201,12 +202,23 @@ public class Session extends DomainEntity implements ink.garry.rd.agent.ws.facad
      * @return 已落库的 Message 实体
      */
     public Message appendUserMessage(String content, InputType inputType, String traceId, String operatorId) {
+        return appendUserMessage(content, inputType, traceId, null, operatorId);
+    }
+
+    /**
+     * 追加用户消息，并记下本轮 Run 编号。
+     *
+     * @param runId 本轮 Agent run 编号，可空（历史或未分配 run 的入口）
+     */
+    public Message appendUserMessage(String content, InputType inputType, String traceId,
+                                     String runId, String operatorId) {
         assertOwner(operatorId);
         // 若标题为默认值且消息内容不为空，则用消息内容的前 20 字符自动替换标题
         if (strTitleIsDefault() && StrUtil.isNotBlank(content)) {
             rename(StrUtil.sub(content, 0, 20), operatorId);
         }
         Message message = buildMessage(MessageRole.USER, content, inputType, null, traceId);
+        message.setRunId(StrUtil.trimToNull(runId));
         message.save(operatorId);
         touchLastMessageAt(operatorId);
         return message;
@@ -217,16 +229,6 @@ public class Session extends DomainEntity implements ink.garry.rd.agent.ws.facad
         return StrUtil.isBlank(title) || DEFAULT_TITLE.equals(title);
     }
 
-    /**
-     * 追加助手消息（角色 ASSISTANT），可携带思维链，并刷新 lastMessageAt。
-     * 该方法由系统侧调用，不强制 owner 校验。
-     *
-     * @param content     助手回复内容
-     * @param stepChain   思维链节点序列，可空
-     * @param traceId     关联本轮 invoke 的 traceId
-     * @param operatorId  操作人（通常为系统/调用人）
-     * @return 已落库的 Message 实体
-     */
     /**
      * 追加助手消息（角色 ASSISTANT），可携带思维链、按到达顺序的段列表与原始 ContentBlock JSON,
      * 并刷新 lastMessageAt。该方法由系统侧调用，不强制 owner 校验。
@@ -244,9 +246,26 @@ public class Session extends DomainEntity implements ink.garry.rd.agent.ws.facad
                                           List<AssistantSegment> segments,
                                           String contentBlocksJson,
                                           String traceId, String operatorId) {
+        return appendAssistantMessage(content, stepChain, segments, contentBlocksJson,
+                traceId, null, null, operatorId);
+    }
+
+    /**
+     * 追加助手消息，并记下本轮 Run 编号与汇总 Token。
+     *
+     * @param runId          本轮 Agent run 编号，可空
+     * @param turnTokenUsage 本轮汇总用量；模型没回用量时为空
+     */
+    public Message appendAssistantMessage(String content, StepChain stepChain,
+                                          List<AssistantSegment> segments,
+                                          String contentBlocksJson,
+                                          String traceId, String runId,
+                                          TurnTokenUsage turnTokenUsage, String operatorId) {
         Message message = buildMessage(MessageRole.ASSISTANT, content, null, stepChain, traceId);
         message.setSegments(segments);
         message.setContentBlocksJson(contentBlocksJson);
+        message.setRunId(StrUtil.trimToNull(runId));
+        message.setTurnTokenUsage(turnTokenUsage);
         message.save(operatorId);
         touchLastMessageAt(operatorId);
         return message;

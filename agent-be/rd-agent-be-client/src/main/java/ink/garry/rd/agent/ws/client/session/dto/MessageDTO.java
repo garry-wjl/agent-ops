@@ -58,6 +58,21 @@ public class MessageDTO {
     /** 关联本轮 invoke 的 traceId */
     private String traceId;
 
+    /** 本轮 Agent run 编号。历史消息为空。 */
+    private String runId;
+
+    /** 本轮输入 token。只出现在助手消息上。 */
+    private Integer inputTokens;
+
+    /** 本轮输出 token。 */
+    private Integer outputTokens;
+
+    /** 本轮缓存 token。 */
+    private Integer cachedTokens;
+
+    /** 本轮总 token。 */
+    private Integer totalTokens;
+
     /** 创建人 userId */
     private String createNo;
 

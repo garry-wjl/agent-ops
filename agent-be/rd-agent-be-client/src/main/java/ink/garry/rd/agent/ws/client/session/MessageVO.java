@@ -31,6 +31,16 @@ public class MessageVO {
     private List<AssistantSegmentVO> segments;
     /** 全链路 traceId，用于排查与日志关联 */
     private String traceId;
+    /** 本轮 Agent run 编号。历史消息为空。 */
+    private String runId;
+    /** 本轮输入 token。只出现在助手消息上；历史消息或模型没回用量时为空。 */
+    private Integer inputTokens;
+    /** 本轮输出 token。 */
+    private Integer outputTokens;
+    /** 本轮缓存 token。 */
+    private Integer cachedTokens;
+    /** 本轮总 token，等于输入加输出。 */
+    private Integer totalTokens;
     /** 消息创建时间 */
     private LocalDateTime createTime;
 }

@@ -9,6 +9,7 @@ import ink.garry.rd.agent.ws.domain.session.repository.MessageRepository;
 import ink.garry.rd.agent.ws.domain.session.valueobject.AssistantSegment;
 import ink.garry.rd.agent.ws.domain.session.valueobject.MessageRole;
 import ink.garry.rd.agent.ws.domain.session.valueobject.StepChain;
+import ink.garry.rd.agent.ws.domain.session.valueobject.TurnTokenUsage;
 import ink.garry.rd.agent.ws.facade.domain.DomainEntity;
 import ink.garry.rd.agent.ws.facade.domain.DomainEventDTO;
 import ink.garry.rd.agent.ws.facade.domain.DomainEventPublisher;
@@ -56,6 +57,13 @@ public class Message extends DomainEntity implements PublisherAware {
     private String contentBlocksJson;
     /** 关联本轮 invoke 的 traceId，用于跳转到 InvocationTrace 详情。 */
     private String traceId;
+    /** 本轮 Agent run 编号。历史消息为空。 */
+    private String runId;
+    /**
+     * 本轮汇总 Token。只记在助手消息上；用户消息和历史消息为空。
+     * 模型没回用量时也为空，不写成 0。
+     */
+    private TurnTokenUsage turnTokenUsage;
 
     /** 装配依赖：消息仓储，由父聚合 Session 注入。 */
     private transient MessageRepository messageRepository;

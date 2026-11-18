@@ -10,6 +10,7 @@ import ink.garry.rd.agent.ws.domain.session.Message;
 import ink.garry.rd.agent.ws.domain.session.valueobject.AssistantSegment;
 import ink.garry.rd.agent.ws.domain.session.valueobject.MessageRole;
 import ink.garry.rd.agent.ws.domain.session.valueobject.StepChain;
+import ink.garry.rd.agent.ws.domain.session.valueobject.TurnTokenUsage;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -43,6 +44,21 @@ public class MessageEntity {
     private String contentBlocksJson;
     @TableField("trace_id")
     private String traceId;
+    /** 本轮 Agent run 编号。历史消息为空。 */
+    @TableField("run_id")
+    private String runId;
+    /** 本轮输入 token，仅助手消息。 */
+    @TableField("input_tokens")
+    private Integer inputTokens;
+    /** 本轮输出 token，仅助手消息。 */
+    @TableField("output_tokens")
+    private Integer outputTokens;
+    /** 本轮缓存 token，仅助手消息。 */
+    @TableField("cached_tokens")
+    private Integer cachedTokens;
+    /** 本轮总 token，仅助手消息。 */
+    @TableField("total_tokens")
+    private Integer totalTokens;
     @TableField("create_no")
     private String createNo;
     @TableField("update_no")
@@ -68,6 +84,8 @@ public class MessageEntity {
         m.setSegments(e.getSegmentsJson() == null ? null : JSON.parseArray(e.getSegmentsJson(), AssistantSegment.class));
         m.setContentBlocksJson(e.getContentBlocksJson());
         m.setTraceId(e.getTraceId());
+        m.setRunId(e.getRunId());
+        m.setTurnTokenUsage(toUsage(e));
         m.setCreateNo(e.getCreateNo());
         m.setUpdateNo(e.getUpdateNo());
         m.setDeleted(e.getDeleted());
@@ -89,11 +107,37 @@ public class MessageEntity {
         e.setSegmentsJson(segments == null || segments.isEmpty() ? null : JSON.toJSONString(segments));
         e.setContentBlocksJson(m.getContentBlocksJson());
         e.setTraceId(m.getTraceId());
+        e.setRunId(m.getRunId());
+        applyUsage(e, m.getTurnTokenUsage());
         e.setCreateNo(m.getCreateNo());
         e.setUpdateNo(m.getUpdateNo());
         e.setDeleted(m.getDeleted() == null ? 0 : m.getDeleted());
         e.setCreateTime(m.getCreateTime());
         e.setUpdateTime(m.getUpdateTime());
         return e;
+    }
+
+    /** 四个用量字段都为空时不建对象，避免把「没上报」读成一轮 0 token。 */
+    private static TurnTokenUsage toUsage(MessageEntity e) {
+        if (e.getInputTokens() == null && e.getOutputTokens() == null
+                && e.getCachedTokens() == null && e.getTotalTokens() == null) {
+            return null;
+        }
+        return TurnTokenUsage.builder()
+                .inputTokens(e.getInputTokens())
+                .outputTokens(e.getOutputTokens())
+                .cachedTokens(e.getCachedTokens())
+                .totalTokens(e.getTotalTokens())
+                .build();
+    }
+
+    private static void applyUsage(MessageEntity e, TurnTokenUsage usage) {
+        if (usage == null) {
+            return;
+        }
+        e.setInputTokens(usage.getInputTokens());
+        e.setOutputTokens(usage.getOutputTokens());
+        e.setCachedTokens(usage.getCachedTokens());
+        e.setTotalTokens(usage.getTotalTokens());
     }
 }

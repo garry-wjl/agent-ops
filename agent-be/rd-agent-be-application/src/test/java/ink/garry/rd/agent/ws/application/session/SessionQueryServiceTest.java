@@ -3,6 +3,8 @@ package ink.garry.rd.agent.ws.application.session;
 import ink.garry.rd.agent.ws.client.session.SessionDetailVO;
 import ink.garry.rd.agent.ws.client.session.SessionListQuery;
 import ink.garry.rd.agent.ws.client.session.SessionListVO;
+import ink.garry.rd.agent.ws.client.session.SessionTurnVO;
+import ink.garry.rd.agent.ws.infra.session.entity.MessageEntity;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import ink.garry.rd.agent.ws.facade.common.PageVO;
 import ink.garry.rd.agent.ws.facade.exception.BusinessException;
@@ -15,6 +17,7 @@ import java.lang.reflect.Proxy;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -80,6 +83,47 @@ class SessionQueryServiceTest {
         assertEquals("API", vo.getOrigin());
     }
 
+    /**
+     * 详情按 Run 收成一轮：带上两条消息编号、Run ID 和助手消息上的 Token。
+     * 没有 Run ID 的历史消息留在 messages 里，但不进 turns。
+     */
+    @Test
+    void detail_groupsTurnsAndLeavesHistoricalBlank() {
+        MessageEntity oldUser = message("MSG-OLD-U", "USER", null, null, null, null, null);
+        MessageEntity oldAssistant = message("MSG-OLD-A", "ASSISTANT", null, null, null, null, null);
+        MessageEntity user = message("MSG-U", "USER", "RUN-1", null, null, null, null);
+        MessageEntity assistant = message("MSG-A", "ASSISTANT", "RUN-1", 30, 13, 3, 43);
+        MessageEntity unfinished = message("MSG-U2", "USER", "RUN-2", null, null, null, null);
+        SessionEntity session = session("SES-1", "AG-1", "alice", "DEBUG_CONSOLE");
+        SessionQueryService service = new SessionQueryService(
+                sessionMapper(null, session, null),
+                messageMapper(List.of(oldUser, oldAssistant, user, assistant, unfinished)));
+
+        SessionDetailVO vo = service.detail("SES-1");
+
+        assertEquals(5, vo.getMessages().size());
+        assertNull(vo.getMessages().get(0).getRunId());
+        assertNull(vo.getMessages().get(0).getTotalTokens());
+        assertEquals("RUN-1", vo.getMessages().get(3).getRunId());
+        assertEquals(43, vo.getMessages().get(3).getTotalTokens());
+
+        assertEquals(2, vo.getTurns().size());
+        SessionTurnVO finished = vo.getTurns().get(0);
+        assertEquals("RUN-1", finished.getRunId());
+        assertEquals("MSG-U", finished.getUserMessageNum());
+        assertEquals("MSG-A", finished.getAssistantMessageNum());
+        assertEquals(30, finished.getInputTokens());
+        assertEquals(13, finished.getOutputTokens());
+        assertEquals(3, finished.getCachedTokens());
+        assertEquals(43, finished.getTotalTokens());
+
+        SessionTurnVO open = vo.getTurns().get(1);
+        assertEquals("RUN-2", open.getRunId());
+        assertEquals("MSG-U2", open.getUserMessageNum());
+        assertNull(open.getAssistantMessageNum());
+        assertNull(open.getTotalTokens());
+    }
+
     /** 会话不存在仍应抛资源不存在。 */
     @Test
     void detail_shouldThrowWhenSessionMissing() {
@@ -88,6 +132,20 @@ class SessionQueryServiceTest {
 
         BusinessException ex = assertThrows(BusinessException.class, () -> service.detail("SES-NONE"));
         assertTrue(ex.getMessage().contains("会话不存在"));
+    }
+
+    private static MessageEntity message(String num, String role, String runId,
+                                         Integer input, Integer output, Integer cached, Integer total) {
+        MessageEntity entity = new MessageEntity();
+        entity.setNum(num);
+        entity.setRole(role);
+        entity.setContent(num);
+        entity.setRunId(runId);
+        entity.setInputTokens(input);
+        entity.setOutputTokens(output);
+        entity.setCachedTokens(cached);
+        entity.setTotalTokens(total);
+        return entity;
     }
 
     private static SessionEntity session(String num, String agentNum, String creatorUserId, String origin) {

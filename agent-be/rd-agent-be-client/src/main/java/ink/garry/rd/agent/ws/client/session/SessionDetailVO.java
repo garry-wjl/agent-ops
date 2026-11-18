@@ -31,4 +31,9 @@ public class SessionDetailVO {
     private Map<String, Object> invokeContext;
     /** 全部消息历史，按时间正序 */
     private List<MessageVO> messages;
+    /**
+     * 按运行轮次汇总。一轮含用户消息编号、助手消息编号、Run ID 和 Token。
+     * 没有 Run ID 的历史消息不进入此列表。
+     */
+    private List<SessionTurnVO> turns;
 }

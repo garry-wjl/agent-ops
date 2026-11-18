@@ -11,6 +11,7 @@ import ink.garry.rd.agent.ws.client.session.MessageVO;
 import ink.garry.rd.agent.ws.client.session.SessionDetailVO;
 import ink.garry.rd.agent.ws.client.session.SessionListQuery;
 import ink.garry.rd.agent.ws.client.session.SessionListVO;
+import ink.garry.rd.agent.ws.client.session.SessionTurnVO;
 import ink.garry.rd.agent.ws.client.session.StepChainVO;
 import ink.garry.rd.agent.ws.client.session.StepNodeVO;
 import ink.garry.rd.agent.ws.facade.common.PageVO;
@@ -22,6 +23,7 @@ import ink.garry.rd.agent.ws.infra.session.mapper.SessionMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -91,7 +93,9 @@ public class SessionQueryService {
         vo.setOrigin(entity.getOrigin());
         Map<String, Object> invokeContext = SysPromptVariableSubstitutor.parseJson(entity.getInvokeContext());
         vo.setInvokeContext(invokeContext.isEmpty() ? null : new LinkedHashMap<>(invokeContext));
-        vo.setMessages(listMessagesInternal(sessionNum, DEFAULT_MESSAGE_LIMIT));
+        List<MessageVO> messages = listMessagesInternal(sessionNum, DEFAULT_MESSAGE_LIMIT);
+        vo.setMessages(messages);
+        vo.setTurns(toTurns(messages));
         return vo;
     }
 
@@ -153,8 +157,44 @@ public class SessionQueryService {
         vo.setStepChain(toStepChainVO(entity.getStepChain()));
         vo.setSegments(toSegmentsVO(entity.getSegmentsJson()));
         vo.setTraceId(entity.getTraceId());
+        vo.setRunId(entity.getRunId());
+        vo.setInputTokens(entity.getInputTokens());
+        vo.setOutputTokens(entity.getOutputTokens());
+        vo.setCachedTokens(entity.getCachedTokens());
+        vo.setTotalTokens(entity.getTotalTokens());
         vo.setCreateTime(entity.getCreateTime());
         return vo;
+    }
+
+    /**
+     * 按 Run ID 把消息收成一轮。没有 Run ID 的历史消息跳过。
+     * 同一 Run 下取第一条用户消息和第一条助手消息；Token 以助手消息上的值为准。
+     */
+    private static List<SessionTurnVO> toTurns(List<MessageVO> messages) {
+        Map<String, SessionTurnVO> byRun = new LinkedHashMap<>();
+        if (messages == null) {
+            return List.of();
+        }
+        for (MessageVO message : messages) {
+            if (message == null || StrUtil.isBlank(message.getRunId())) {
+                continue;
+            }
+            SessionTurnVO turn = byRun.computeIfAbsent(message.getRunId(), runId -> {
+                SessionTurnVO created = new SessionTurnVO();
+                created.setRunId(runId);
+                return created;
+            });
+            if ("USER".equals(message.getRole()) && StrUtil.isBlank(turn.getUserMessageNum())) {
+                turn.setUserMessageNum(message.getNum());
+            } else if ("ASSISTANT".equals(message.getRole()) && StrUtil.isBlank(turn.getAssistantMessageNum())) {
+                turn.setAssistantMessageNum(message.getNum());
+                turn.setInputTokens(message.getInputTokens());
+                turn.setOutputTokens(message.getOutputTokens());
+                turn.setCachedTokens(message.getCachedTokens());
+                turn.setTotalTokens(message.getTotalTokens());
+            }
+        }
+        return new ArrayList<>(byRun.values());
     }
 
     private Object parseContent(String content) {
