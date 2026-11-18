@@ -55,7 +55,7 @@ public class Agent extends DomainEntity implements ink.garry.rd.agent.ws.facade.
     private java.util.List<String> tags;
     /** 创建方式：CONFIG / A2A */
     private CreationMode creationMode;
-    /** 行为类型：NORMAL / SUPERVISOR / ROUTER；A2A 强制 NORMAL */
+    /** 行为类型：NORMAL。历史数据可能仍是 SUPERVISOR / ROUTER，新建不再接受这两种 */
     private AgentType agentType;
     /** 负责人 userId；A2A 模式固定为 system 或 Nacos 元数据 owner */
     private String ownerUserId;
@@ -92,7 +92,7 @@ public class Agent extends DomainEntity implements ink.garry.rd.agent.ws.facade.
 
     /**
      * 领域规则校验：必填字段齐全；A2A 必须 NORMAL + currentVersionNum 必为 null；
-     * 监督者 / 路由仅 CONFIG 可用；A2A 在 DRAFT_ONLY 草稿态下允许 a2aSource / nacosServiceKey
+     * CONFIG 只使用 NORMAL；A2A 在 DRAFT_ONLY 草稿态下允许 a2aSource / nacosServiceKey
      * 为空（远端 AgentCard 尚未拉取），其余状态必须齐全。
      */
     @Override
@@ -104,7 +104,7 @@ public class Agent extends DomainEntity implements ink.garry.rd.agent.ws.facade.
         Assert.notNull(status, "Agent 状态不能为空");
         if (creationMode == CreationMode.A2A) {
             Assert.isTrue(agentType == AgentType.NORMAL,
-                    "A2A Agent 不支持监督者 / 路由类型，agentType={}", agentType);
+                    "A2A Agent 只支持普通类型，agentType={}", agentType);
             Assert.isNull(currentVersionNum, "A2A Agent 不参与版本化，currentVersionNum 必为 null");
             if (status != AgentStatus.DRAFT_ONLY) {
                 Assert.notNull(a2aSource, "A2A Agent (非草稿) 必须有 Nacos 来源信息");

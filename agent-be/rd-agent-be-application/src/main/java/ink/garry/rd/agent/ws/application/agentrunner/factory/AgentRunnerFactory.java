@@ -400,6 +400,7 @@ public class AgentRunnerFactory {
                     .enableMetaTool(true)
                     .permissionContext(permissionCtx)
                     .workspace(workspacePath)
+                    .disableSubagents()
                     .maxIters(agent.getConfigSnapshot().getMaxIters() != null
                             ? agent.getConfigSnapshot().getMaxIters()
                             : 10);

@@ -16,8 +16,7 @@ import java.util.List;
  * <p>
  * 字段约束：
  * <ul>
- *   <li>agentType：S2 内固定 NORMAL；监督者 / 路由 S3 开放</li>
- *   <li>SUPERVISOR / ROUTER 时 childAgentNums 必须非空，且每个子 Agent 必为 CONFIG + NORMAL</li>
+ *   <li>agentType：仅 NORMAL。监督者 / 路由不再支持</li>
  * </ul>
  * <p>
  * <b>v4.0 资产化改造（Agent 配置优化）</b>：
@@ -48,7 +47,7 @@ public class ConfigSnapshot {
     /** Agent 描述（v3.0 起纳入版本快照），同 {@link #name} 同步规则 */
     private String description;
 
-    /** 行为类型 NORMAL / SUPERVISOR / ROUTER */
+    /** 行为类型。新建只接受 NORMAL，历史数据里可能仍有 SUPERVISOR / ROUTER */
     private AgentType agentType;
 
     /** 系统提示词，作用于全部对话 */
@@ -108,8 +107,6 @@ public class ConfigSnapshot {
      */
     private List<HeaderEnvMapping> headerEnvMappings;
 
-    /** 子 Agent 业务编号列表（仅 SUPERVISOR / ROUTER 使用） */
-    private List<String> childAgentNums;
     /** 记忆配置（v2.5 重构：策略枚举 + 短期窗口 N） */
     private MemoryConfig memoryConfig;
 

@@ -156,8 +156,12 @@ public class AgentCommandService {
                         "名称在当前工作空间内已存在：" + param.getName());
             }
 
-            // 2. 构建并保存 Agent 主表
+            // 2. 构建并保存 Agent 主表。只接受普通 Agent，监督者 / 路由不再支持。
             AgentType type = AgentType.valueOf(param.getAgentType());
+            if (type != AgentType.NORMAL) {
+                throw new BusinessException(BizCode.INVALID_PARAM.getCode(),
+                        "不支持监督者或路由类型");
+            }
             Agent agent = agentFactory.createConfigAgent(
                     param.getName(), param.getDescription(), type, operatorId, param.getTags());
             agent.save(operatorId);
@@ -635,7 +639,6 @@ public class AgentCommandService {
                 .sandboxRef(p.getSandboxRef())
                 .headerEnvInjectEnabled(p.getHeaderEnvInjectEnabled())
                 .headerEnvMappings(toHeaderEnvMappings(p.getHeaderEnvMappings()))
-                .childAgentNums(p.getChildAgentNums())
                 .memoryConfig(memoryFromMap(p.getMemoryConfig()))
                 .qps(p.getQps())
                 .dailyBudget(p.getDailyBudget())
@@ -660,6 +663,10 @@ public class AgentCommandService {
         }
         if (snapshot.getEnablePlan() == null) {
             snapshot.setEnablePlan(false);
+        }
+        if (snapshot.getAgentType() != null && snapshot.getAgentType() != AgentType.NORMAL) {
+            throw new BusinessException(BizCode.INVALID_PARAM.getCode(),
+                    "不支持监督者或路由类型");
         }
         if (snapshot.getMaxIters() == null) {
             snapshot.setMaxIters(10);

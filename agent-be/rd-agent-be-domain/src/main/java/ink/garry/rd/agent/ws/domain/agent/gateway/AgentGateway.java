@@ -46,15 +46,6 @@ public interface AgentGateway {
      */
     boolean existsByWorkspaceAndName(String workspaceNum, String name);
 
-    /**
-     * 校验给定 nums 是否都是 NORMAL 类型（用于子 Agent 候选校验）。
-     * SUPERVISOR / ROUTER 不允许嵌套，必须由 NORMAL 子 Agent 组成。
-     *
-     * @param agentNums 候选 Agent 业务编号列表
-     * @return true=全部为 NORMAL
-     */
-    boolean allAreNormal(List<String> agentNums);
-
     /** 分页结果（domain 层简单容器，避免依赖 client） */
     record PageResult<T>(Long total, List<T> list) {}
 

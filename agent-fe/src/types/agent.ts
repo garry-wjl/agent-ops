@@ -119,7 +119,6 @@ export interface ConfigSnapshot {
    * 请求头 → 沙箱环境变量映射表；仅 headerEnvInjectEnabled=true 时消费。
    */
   headerEnvMappings?: HeaderEnvMapping[];
-  childAgentNums?: string[];
   memoryConfig?: MemoryConfig;
   qps?: number;
   dailyBudget?: number;
@@ -408,7 +407,6 @@ export interface AgentCreateParam {
   headerEnvMappings?: HeaderEnvMapping[];
   /** Agent 内嵌沙箱规格 */
   sandboxSpec?: SandboxSpecParam;
-  childAgentNums?: string[];
   memoryConfig?: MemoryConfig;
   qps?: number;
   dailyBudget?: number;

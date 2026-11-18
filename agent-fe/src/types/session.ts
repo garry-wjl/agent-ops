@@ -195,7 +195,7 @@ export interface AgentScopeEvent {
   message: AgentMsg;
   /** 同一 EventType 的多 chunk 序列里，true 标记最后一片 */
   isLast: boolean;
-  /** 嵌套子 Agent 来源；顶层 Agent 发的事件此处为 null */
+  /** SDK 事件来源。当前不启用子 Agent，顶层事件此处为空 */
   source?: { agentName?: string } | null;
 }
 

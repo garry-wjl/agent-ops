@@ -11,7 +11,7 @@ package ink.garry.rd.agent.ws.domain.agent.valueobject;
  * 历史枚举 ACP / MCP / API 已在 v2.0 移除（不进路线图）。
  */
 public enum CreationMode {
-    /** 平台原生配置；用户在页面新建；Runner 直接调用模型；可挂 Skill / 子 Agent */
+    /** 平台原生配置；用户在页面新建；Runner 直接调用模型；可挂 Skill */
     CONFIG,
     /** 通过订阅 Nacos {@code a2a-agents} group 自动发现的 A2A Agent；平台只读，所有信息（含状态）以 Nacos 为权威源 */
     A2A
