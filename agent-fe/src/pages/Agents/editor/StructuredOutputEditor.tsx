@@ -129,7 +129,7 @@ function FieldList({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {fields.map((field, index) => (
-        <div key={`${field.name}-${index}`} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+        <div key={`row-${index}`} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
           <Input
             placeholder="字段名"
             value={field.name}
@@ -175,7 +175,7 @@ function FieldList({
       ))}
       {fields.map((field, index) =>
         field.type === 'object' || (field.type === 'array' && (field.itemType ?? 'string') === 'object') ? (
-          <div key={`children-${field.name}-${index}`} style={{ marginLeft: 24 }}>
+          <div key={`children-${index}`} style={{ marginLeft: 24 }}>
             <div style={{ fontSize: 12, color: '#90A1B9', marginBottom: 4 }}>
               {field.name || '未命名'} 的子字段
             </div>
