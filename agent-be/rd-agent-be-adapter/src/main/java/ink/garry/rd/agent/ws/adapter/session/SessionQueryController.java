@@ -17,8 +17,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
-
 /**
  * Session 读接口控制器。
  * <p>
@@ -42,28 +40,46 @@ public class SessionQueryController extends BaseController {
         return ok(queryService.pageList(query, getCurrentUserId()));
     }
 
-    /** 会话详情（含基础字段；消息列表见 {@link #messages}）。 */
+    /**
+     * 会话详情。消息按页返回，缺省第 1 页、每页 200 条。
+     *
+     * @param num      会话业务编号
+     * @param pageNo   页码，从 1 开始；空则第 1 页
+     * @param pageSize 每页条数；空则 200，最大 200
+     * @return 会话详情
+     */
     @GetMapping("/query/detail")
-    public Result<SessionDetailVO> detail(@RequestParam("num") String num) {
-        return ok(queryService.detail(num));
+    public Result<SessionDetailVO> detail(@RequestParam("num") String num,
+                                          @RequestParam(value = "pageNo", required = false) Integer pageNo,
+                                          @RequestParam(value = "pageSize", required = false) Integer pageSize) {
+        return ok(queryService.detail(num, pageNo, pageSize));
     }
 
     /**
-     * 按 Run ID 查会话详情。
+     * 按 Run ID 查这一轮的消息。
      * <p>
-     * 返回结构与 {@link #detail(String)} 相同，含消息链和本轮 Token。
+     * 返回结构与 {@link #detail(String, Integer, Integer)} 相同，但 messages 和 turns 只含该 Run，且不带分页字段。
      *
      * @param runId 本轮 Agent run 编号
-     * @return 会话详情
+     * @return 只含本轮消息的会话详情
      */
     @GetMapping("/query/detailByRun")
     public Result<SessionDetailVO> detailByRun(@RequestParam("runId") String runId) {
         return ok(queryService.detailByRunId(runId));
     }
 
-    /** 按会话编号拉取消息列表。 */
+    /**
+     * 按会话编号分页拉取消息。缺省第 1 页、每页 200 条。
+     *
+     * @param sessionNum 会话业务编号
+     * @param pageNo     页码，从 1 开始；空则第 1 页
+     * @param pageSize   每页条数；空则 200，最大 200
+     * @return 当前页消息
+     */
     @GetMapping("/query/messages")
-    public Result<List<MessageVO>> messages(@RequestParam("sessionNum") String sessionNum) {
-        return ok(queryService.listMessages(sessionNum));
+    public Result<PageVO<MessageVO>> messages(@RequestParam("sessionNum") String sessionNum,
+                                              @RequestParam(value = "pageNo", required = false) Integer pageNo,
+                                              @RequestParam(value = "pageSize", required = false) Integer pageSize) {
+        return ok(queryService.listMessages(sessionNum, pageNo, pageSize));
     }
 }

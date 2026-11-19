@@ -3,7 +3,16 @@ package ink.garry.rd.agent.ws.application.agentrunner;
 import cn.hutool.core.collection.CollectionUtil;
 import cn.hutool.core.lang.Assert;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.core.util.IdUtil;
+import com.fasterxml.jackson.databind.JsonNode;
+import ink.garry.rd.agent.ws.application.agent.AgentQueryService;
+import ink.garry.rd.agent.ws.application.agent.StructuredOutputRules;
 import ink.garry.rd.agent.ws.application.agentrunner.factory.AgentRunnerFactory;
+import ink.garry.rd.agent.ws.application.agentrunner.run.AgentRunEventStore;
+import ink.garry.rd.agent.ws.application.agentrunner.run.AgentRunStatus;
+import ink.garry.rd.agent.ws.client.agent.dto.AgentDTO;
+import ink.garry.rd.agent.ws.client.agentrunner.StructuredInvokeVO;
+import ink.garry.rd.agent.ws.domain.session.valueobject.AssistantSegment;
 import ink.garry.rd.agent.ws.application.agentrunner.harness.HarnessAgentReleaser;
 import ink.garry.rd.agent.ws.application.agentrunner.harness.HarnessUserMemorySync;
 import ink.garry.rd.agent.ws.application.agentrunner.hitl.RequestUserInputTool;
@@ -28,6 +37,7 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
@@ -39,10 +49,12 @@ import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 import reactor.core.scheduler.Schedulers;
 
 import jakarta.annotation.Resource;
@@ -52,6 +64,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeoutException;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -87,6 +100,16 @@ public class AgentRunnerService {
 
     @Resource
     private UserInputHitlService userInputHitlService;
+
+    @Resource
+    private AgentQueryService agentQueryService;
+
+    @Resource
+    private AgentRunEventStore eventStore;
+
+    /** 结构化输出同步调用的最长等待，与流式 run 超时一致。 */
+    @Value("${app.agent-run.run-timeout:16m}")
+    private Duration runTimeout = Duration.ofMinutes(16);
 
     /** SSE/流式执行期间沙箱心跳间隔：刷新 lastActiveAt + 远程 renew。 */
     private static final Duration SANDBOX_HEARTBEAT_INTERVAL = Duration.ofSeconds(60);
@@ -176,13 +199,76 @@ public class AgentRunnerService {
     }
 
     /**
+     * 结构化输出：等本轮结束，返回符合 Schema 的 JSON。
+     * <p>
+     * 工具过程仍写入会话；响应里只有最终 JSON 和 Token。
+     *
+     * @param agentNum      Agent 业务编号
+     * @param content       已归一化的输入
+     * @param sessionNum    会话编号，可空
+     * @param operatorId    操作人
+     * @param targetVersion 目标版本，可空
+     * @param origin        新建会话来源
+     * @param context       调用上下文
+     * @return 同步结果
+     */
+    public StructuredInvokeVO runStructured(String agentNum, NormalizedInvokeContent content,
+                                             String sessionNum, String operatorId,
+                                             String targetVersion, String origin,
+                                             Map<String, Object> context) {
+        String runId = "RUN" + IdUtil.getSnowflakeNextIdStr();
+        AtomicReference<StructuredInvokeVO> sink = new AtomicReference<>();
+        try {
+            runAgentFrames(agentNum, content, sessionNum, operatorId, targetVersion, origin, context,
+                    runId, sink)
+                    .timeout(runTimeout)
+                    .blockLast();
+        } catch (RuntimeException ex) {
+            BusinessException business = findCause(ex, BusinessException.class);
+            if (business != null) {
+                throw business;
+            }
+            if (findCause(ex, TimeoutException.class) != null) {
+                throw new BusinessException(BizCode.INVALID_PARAM.getCode(), "结构化输出超过运行时限");
+            }
+            throw ex;
+        }
+        StructuredInvokeVO vo = sink.get();
+        if (vo == null) {
+            throw new BusinessException(BizCode.INVALID_PARAM.getCode(), StructuredOutputRules.SCHEMA_INVALID);
+        }
+        return vo;
+    }
+
+    /**
      * @param runId 由 {@code AgentRunCoordinator} 分配；HITL 事件携带，便于 respond 关联
      */
     public Flux<AgentInvokeFrame> runAgentFrames(String agentNum, NormalizedInvokeContent content,
                                                    String sessionNum, String operatorId,
                                                    String targetVersion, String origin,
                                                    Map<String, Object> context, String runId) {
+        return runAgentFrames(agentNum, content, sessionNum, operatorId, targetVersion, origin,
+                context, runId, null);
+    }
+
+    /**
+     * @param sink 非空表示同步结构化输出；流式入口必须传 null
+     */
+    private Flux<AgentInvokeFrame> runAgentFrames(String agentNum, NormalizedInvokeContent content,
+                                                   String sessionNum, String operatorId,
+                                                   String targetVersion, String origin,
+                                                   Map<String, Object> context, String runId,
+                                                   AtomicReference<StructuredInvokeVO> sink) {
         Assert.notNull(content, "invoke content 不能为空");
+        AgentDTO loadedAgent = agentQueryService.loadAgentForDebug(agentNum, targetVersion);
+        boolean structured = StructuredReply.enabled(loadedAgent);
+        if (structured && sink == null) {
+            throw new BusinessException(BizCode.INVALID_PARAM.getCode(), StructuredOutputRules.STREAM_REJECTED);
+        }
+        if (!structured && sink != null) {
+            throw new BusinessException(BizCode.INVALID_PARAM.getCode(), StructuredOutputRules.JSON_REJECTED);
+        }
+        JsonNode schema = structured ? StructuredReply.schemaNode(loadedAgent) : null;
         //1. 确定会话(沙箱工具按 sessionNum 绑定复用容器,故须先于 build 确定)
         Map<String, Object> sessionContext;
         if (StrUtil.isBlank(sessionNum)) {
@@ -214,16 +300,46 @@ public class AgentRunnerService {
                         sessionNum, agentNum, agentVersionNum, workspaceNum, operatorId),
                 sessionContext);
 
-        //2. 创建 Agent(注入 sessionNum 以绑定会话级沙箱；按 targetVersion 装配目标版本快照；有附件时注册 read_attachment)
-        Agent agent = agentRunnerFactory.build(
-                agentNum, sessionNum, targetVersion, vars, content.hasAttachments());
+        final String trackedRunId;
+        final boolean trackRun = sink != null;
+        if (trackRun) {
+            trackedRunId = StrUtil.blankToDefault(runId, "RUN" + IdUtil.getSnowflakeNextIdStr());
+            eventStore.findRunningRunId(sessionNum).ifPresent(busy -> {
+                throw new BusinessException(BizCode.SESSION_BUSY.getCode(),
+                        BizCode.SESSION_BUSY.getMessage() + " runId=" + busy);
+            });
+            eventStore.createRun(trackedRunId, sessionNum, agentNum);
+        } else {
+            trackedRunId = runId;
+        }
+        try {
+            //2. 创建 Agent(注入 sessionNum 以绑定会话级沙箱；按 targetVersion 装配目标版本快照；有附件时注册 read_attachment)
+            Agent agent = agentRunnerFactory.build(
+                    agentNum, sessionNum, targetVersion, vars, content.hasAttachments());
 
-        //3. 添加用户消息（MULTIMODAL 存 JSON；纯文本保持 TEXT）
-        AgentMsgFactory.PersistPayload persist = agentMsgFactory.toPersistPayload(content);
-        sessionCommandService.appendUserMessage(
-                sessionNum, persist.contentText(), persist.inputType(), sessionNum, runId, operatorId);
+            //3. 添加用户消息（MULTIMODAL 存 JSON；纯文本保持 TEXT）
+            AgentMsgFactory.PersistPayload persist = agentMsgFactory.toPersistPayload(content);
+            sessionCommandService.appendUserMessage(
+                    sessionNum, persist.contentText(), persist.inputType(), sessionNum, trackedRunId, operatorId);
+            return startAgentFrames(agent, agentNum, sessionNum, operatorId, targetVersion, workspaceNum,
+                    content, trackedRunId, schema, sink, trackRun);
+        } catch (RuntimeException ex) {
+            if (trackRun) {
+                eventStore.complete(trackedRunId, AgentRunStatus.FAILED);
+            }
+            throw ex;
+        }
+    }
 
-        //4. 调用
+    /**
+     * 装配完成后开始出帧。结构化调用在结束时登记运行结果。
+     */
+    private Flux<AgentInvokeFrame> startAgentFrames(Agent agent, String agentNum, String sessionNum,
+                                                     String operatorId, String targetVersion,
+                                                     String workspaceNum, NormalizedInvokeContent content,
+                                                     String runId, JsonNode schema,
+                                                     AtomicReference<StructuredInvokeVO> sink,
+                                                     boolean trackRun) {
         Msg msg = agentMsgFactory.build(content, workspaceNum);
         String finalSessionNum = sessionNum;
         String finalRunId = runId;
@@ -256,7 +372,8 @@ public class AgentRunnerService {
 
         Flux<AgentInvokeFrame> agentFrames = streamWithUserInputHitl(
                 agent, msg, runtimeContext, finalSessionNum, finalRunId, operatorId,
-                agentNum, targetVersion, acc, usageAcc, inThinkTag, new AtomicBoolean(false));
+                agentNum, targetVersion, acc, usageAcc, inThinkTag, new AtomicBoolean(false),
+                schema, sink);
 
         AtomicReference<Disposable> heartbeat = new AtomicReference<>();
         // publish 避免 merge + takeUntilOther 对冷流双重订阅导致 Agent 跑两遍
@@ -267,6 +384,12 @@ public class AgentRunnerService {
                     // 流结束（成功 / 失败 / 客户端断开）后关闭本次 HarnessAgent，
                     // 否则 GracefulShutdownManager 会把它留到进程重启。
                     HarnessAgentReleaser.releaseAsync(agent);
+                    if (trackRun) {
+                        AgentRunStatus status = sig == SignalType.ON_COMPLETE && sink.get() != null
+                                ? AgentRunStatus.DONE
+                                : AgentRunStatus.FAILED;
+                        eventStore.complete(finalRunId, status);
+                    }
                 })
                 .publish(shared -> Flux.merge(
                         sessionSandboxLifecycleService.subscribe(finalSessionNum)
@@ -284,10 +407,17 @@ public class AgentRunnerService {
             String sessionNum, String runId, String operatorId,
             String agentNum, String targetVersion,
             SegmentAccumulator acc, TokenUsageAccumulator usageAcc, AtomicBoolean inThinkTag,
-            AtomicBoolean assistantPersisted) {
+            AtomicBoolean assistantPersisted, JsonNode schema,
+            AtomicReference<StructuredInvokeVO> sink) {
 
+        if (schema != null && !(agent instanceof HarnessAgent)) {
+            return Flux.error(new BusinessException(BizCode.INVALID_PARAM.getCode(),
+                    "结构化输出仅支持配置模式 Agent"));
+        }
         Flux<Event> eventFlux = agent instanceof HarnessAgent harnessAgent
-                ? harnessAgent.stream(input, runtimeContext)
+                ? (schema == null
+                    ? harnessAgent.stream(input, runtimeContext)
+                    : harnessAgent.stream(List.of(input), StreamOptions.defaults(), schema, runtimeContext))
                 : agent.stream(input);
 
         Flux<AgentInvokeFrame> frames = eventFlux
@@ -307,16 +437,41 @@ public class AgentRunnerService {
                     TurnTokenUsage turnUsage = TurnTokenUsageMapper.from(
                             event.getMessage() == null ? null : event.getMessage().getChatUsage());
                     return Mono.fromRunnable(() -> {
-                                sessionCommandService.appendAssistantMessage(
-                                        sessionNum,
-                                        acc.toContentText(),
-                                        acc.toStepChain(),
-                                        acc.getSegments(),
-                                        acc.toContentBlocksJson(),
-                                        sessionNum,
-                                        runId,
-                                        turnUsage,
-                                        operatorId);
+                                if (schema != null) {
+                                    Map<String, Object> json = StructuredReply.requireObject(event.getMessage());
+                                    String jsonText = StructuredReply.toJsonText(json);
+                                    List<AssistantSegment> segments = StructuredReply.segmentsWithJson(
+                                            acc.getSegments(), jsonText);
+                                    sessionCommandService.appendAssistantMessage(
+                                            sessionNum,
+                                            jsonText,
+                                            acc.toStepChain(),
+                                            segments,
+                                            null,
+                                            sessionNum,
+                                            runId,
+                                            turnUsage,
+                                            operatorId);
+                                    if (sink != null) {
+                                        sink.set(StructuredInvokeVO.builder()
+                                                .sessionNum(sessionNum)
+                                                .runId(runId)
+                                                .json(json)
+                                                .usage(toUsage(turnUsage))
+                                                .build());
+                                    }
+                                } else {
+                                    sessionCommandService.appendAssistantMessage(
+                                            sessionNum,
+                                            acc.toContentText(),
+                                            acc.toStepChain(),
+                                            acc.getSegments(),
+                                            acc.toContentBlocksJson(),
+                                            sessionNum,
+                                            runId,
+                                            turnUsage,
+                                            operatorId);
+                                }
                                 assistantPersisted.set(true);
                             })
                             .subscribeOn(Schedulers.boundedElastic())
@@ -327,6 +482,14 @@ public class AgentRunnerService {
                 .takeUntil(frame -> frame.isAgentEvent()
                         && isTerminalAgentResult(frame.getAgentEvent())
                         && !isUserFormSuspended(frame.getAgentEvent()));
+        if (schema != null) {
+            return frames.concatWith(Mono.defer(() -> assistantPersisted.get()
+                            ? Mono.empty()
+                            : Mono.error(new BusinessException(
+                                    BizCode.INVALID_PARAM.getCode(), StructuredOutputRules.SCHEMA_INVALID)))
+                    .subscribeOn(Schedulers.boundedElastic())
+                    .thenMany(Flux.empty()));
+        }
         return frames.concatWith(whenStreamEndedWithoutResult(
                         assistantPersisted,
                         acc,
@@ -346,6 +509,29 @@ public class AgentRunnerService {
                         })
                 .subscribeOn(Schedulers.boundedElastic())
                 .thenMany(Flux.empty()));
+    }
+
+    private static StructuredInvokeVO.Usage toUsage(TurnTokenUsage usage) {
+        if (usage == null) {
+            return null;
+        }
+        return StructuredInvokeVO.Usage.builder()
+                .inputTokens(usage.getInputTokens())
+                .outputTokens(usage.getOutputTokens())
+                .cachedTokens(usage.getCachedTokens())
+                .totalTokens(usage.getTotalTokens())
+                .build();
+    }
+
+    private static <T extends Throwable> T findCause(Throwable error, Class<T> type) {
+        Throwable current = error;
+        while (current != null) {
+            if (type.isInstance(current)) {
+                return type.cast(current);
+            }
+            current = current.getCause();
+        }
+        return null;
     }
 
     /**
@@ -430,7 +616,8 @@ public class AgentRunnerService {
                                     streamWithUserInputHitl(
                                             agent, resumeMsg, runtimeContext, sessionNum, runId,
                                             operatorId, agentNum, targetVersion,
-                                            acc, usageAcc, inThinkTag, assistantPersisted));
+                                            acc, usageAcc, inThinkTag, assistantPersisted,
+                                            null, null));
                         }));
     }
 

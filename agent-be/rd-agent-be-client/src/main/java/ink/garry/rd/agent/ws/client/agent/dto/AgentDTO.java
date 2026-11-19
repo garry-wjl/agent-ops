@@ -138,8 +138,17 @@ public class AgentDTO {
         /** 开启后才记录该用户的长期记忆；缺省 false */
         private Boolean enableLongTermMemory;
 
-        /** 开启后注册内置表单填写工具 request_user_input；缺省 false */
+        /** 开启后注册内置表单填写工具 request_user_input；缺省 false。与结构化输出互斥 */
         private Boolean enableUserFormInput;
+
+        /** 开启后最终回复必须符合 jsonSchema，流式 invoke 不可用；缺省 false */
+        private Boolean enableStructuredOutput;
+
+        /** 结构化输出 JSON Schema，根类型必须是 object */
+        private java.util.Map<String, Object> jsonSchema;
+
+        /** 是否请求深度思考；null 与 true 都表示打开 */
+        private Boolean enableThinking;
 
         /** Harness 上下文压缩策略 */
         private ink.garry.rd.agent.ws.client.agent.CompactionSetting compaction;

@@ -4,12 +4,16 @@ import cn.hutool.core.util.StrUtil;
 import ink.garry.rd.agent.ws.adapter.common.AgentInvokeSseMapper;
 import ink.garry.rd.agent.ws.adapter.common.SseKeepAlive;
 import ink.garry.rd.agent.ws.adapter.config.BaseController;
+import ink.garry.rd.agent.ws.application.debugconsole.AgentInvokeService;
 import ink.garry.rd.agent.ws.application.agentrunner.InvokeContentNormalizer;
 import ink.garry.rd.agent.ws.application.agentrunner.NormalizedInvokeContent;
 import ink.garry.rd.agent.ws.application.agentrunner.hitl.UserInputHitlService;
 import ink.garry.rd.agent.ws.application.agentrunner.run.AgentRunCoordinator;
 import ink.garry.rd.agent.ws.client.agentrunner.UserInputRespondParam;
+import ink.garry.rd.agent.ws.client.agentrunner.StructuredInvokeVO;
+import ink.garry.rd.agent.ws.client.common.BizCode;
 import ink.garry.rd.agent.ws.client.debugconsole.DebugInvokeRequest;
+import ink.garry.rd.agent.ws.facade.exception.BusinessException;
 import ink.garry.rd.agent.ws.facade.common.Result;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -35,6 +39,7 @@ public class DebugInvokeController extends BaseController {
     private final AgentRunCoordinator agentRunCoordinator;
     private final InvokeContentNormalizer invokeContentNormalizer;
     private final UserInputHitlService userInputHitlService;
+    private final AgentInvokeService agentInvokeService;
 
     /**
      * 成功时 text/event-stream；进入 SSE 前的业务/参数异常须能协商为 application/json。
@@ -45,6 +50,7 @@ public class DebugInvokeController extends BaseController {
     })
     public Flux<ServerSentEvent<String>> invoke(@Valid @RequestBody DebugInvokeRequest req,
                                                 HttpServletRequest httpReq) {
+        agentInvokeService.rejectStreamIfStructured(req.getAgentNum(), req.getTargetVersion());
         String lastEventId = firstNonBlank(req.getLastEventId(), httpReq.getHeader("Last-Event-ID"));
         boolean resume = Boolean.TRUE.equals(req.getResume())
                 || (StrUtil.isNotBlank(lastEventId) && isBlankInvoke(req));
@@ -66,6 +72,28 @@ public class DebugInvokeController extends BaseController {
                                 req.getTargetVersion(),
                                 "DEBUG_CONSOLE",
                                 req.getContext())));
+    }
+
+    /**
+     * 调试台同步 JSON 调用。仅当所选版本开启结构化输出时使用。
+     *
+     * @param req 调试请求
+     * @return 符合 Schema 的 JSON、会话、runId 与 Token
+     */
+    @PostMapping("/invokeJson")
+    public Result<StructuredInvokeVO> invokeJson(@Valid @RequestBody DebugInvokeRequest req) {
+        if (Boolean.TRUE.equals(req.getResume())) {
+            throw new BusinessException(BizCode.INVALID_PARAM.getCode(), "结构化输出接口不支持续传");
+        }
+        StructuredInvokeVO vo = agentInvokeService.invokeJson(
+                req.getAgentNum(),
+                req.getInput(),
+                req.getAttachments(),
+                req.getSessionNum(),
+                getCurrentUserId(),
+                req.getTargetVersion(),
+                req.getContext());
+        return Result.ok(vo);
     }
 
     /**

@@ -7,6 +7,12 @@ import ink.garry.rd.agent.ws.application.agentrunner.NormalizedInvokeContent;
 import ink.garry.rd.agent.ws.application.attachment.command.AttachmentCommandService;
 import ink.garry.rd.agent.ws.application.session.SessionCommandService;
 import ink.garry.rd.agent.ws.application.session.SessionQueryService;
+import ink.garry.rd.agent.ws.application.agentrunner.StructuredReply;
+import ink.garry.rd.agent.ws.application.agent.AgentQueryService;
+import ink.garry.rd.agent.ws.client.agent.dto.AgentDTO;
+import ink.garry.rd.agent.ws.client.agentrunner.StructuredInvokeVO;
+import ink.garry.rd.agent.ws.client.common.BizCode;
+import ink.garry.rd.agent.ws.facade.exception.BusinessException;
 import ink.garry.rd.agent.ws.client.attachment.AttachmentRefParam;
 import ink.garry.rd.agent.ws.client.attachment.OpenUploadAttachmentParam;
 import ink.garry.rd.agent.ws.client.common.oss.OssPresignResultVO;
@@ -45,6 +51,7 @@ public class OpenAgentInvokeService {
     private final AgentRunnerService agentRunnerService;
     private final InvokeContentNormalizer invokeContentNormalizer;
     private final AttachmentCommandService attachmentCommandService;
+    private final AgentQueryService agentQueryService;
 
     /**
      * 对外流式调用 Agent；operatorId 为空记 system，委托既有 invokeStream。
@@ -88,6 +95,36 @@ public class OpenAgentInvokeService {
                                                  Map<String, Object> context) {
         NormalizedInvokeContent content = invokeContentNormalizer.normalize(input, attachments);
         return agentRunnerService.runAgentFrames(
+                agentNum, content, sessionNum, resolveOperator(operatorId), null, "API", context);
+    }
+
+    /**
+     * 流式入口在进入 SSE 前拒绝已开启结构化输出的 Agent。
+     *
+     * @param agentNum 目标 Agent
+     */
+    public void rejectStreamIfStructured(String agentNum) {
+        AgentDTO agent = agentQueryService.loadAgentForDebug(agentNum, null);
+        if (StructuredReply.enabled(agent)) {
+            throw new BusinessException(BizCode.INVALID_PARAM.getCode(), StructuredOutputRules.STREAM_REJECTED);
+        }
+    }
+
+    /**
+     * 同步返回符合 Schema 的 JSON。
+     *
+     * @param agentNum    目标 Agent
+     * @param input       用户输入
+     * @param attachments 附件
+     * @param sessionNum  会话，可空
+     * @param operatorId  操作人，可空
+     * @param context     调用上下文
+     * @return JSON 结果
+     */
+    public StructuredInvokeVO invokeJson(String agentNum, String input, List<AttachmentRefParam> attachments,
+                                          String sessionNum, String operatorId, Map<String, Object> context) {
+        NormalizedInvokeContent content = invokeContentNormalizer.normalize(input, attachments);
+        return agentRunnerService.runStructured(
                 agentNum, content, sessionNum, resolveOperator(operatorId), null, "API", context);
     }
 
@@ -145,23 +182,24 @@ public class OpenAgentInvokeService {
     }
 
     /**
-     * 对外会话详情（含消息链）；委托既有 detail（仅校验存在性）。
+     * 对外会话详情。消息缺省返回第 1 页、每页 200 条。
      *
      * @param sessionNum 会话业务编号
+     * @param pageNo     页码，从 1 开始；空则第 1 页
+     * @param pageSize   每页条数；空则 200，最大 200
      * @return 会话详情 VO
      */
-    public SessionDetailVO sessionDetail(String sessionNum) {
-        return sessionQueryService.detail(sessionNum);
+    public SessionDetailVO sessionDetail(String sessionNum, Integer pageNo, Integer pageSize) {
+        return sessionQueryService.detail(sessionNum, pageNo, pageSize);
     }
 
     /**
-     * 按 Run ID 查对外会话详情。
+     * 按 Run ID 查这一轮的对外消息。
      * <p>
-     * 返回与 {@link #sessionDetail(String)} 相同的 {@link SessionDetailVO}，
-     * 含消息链和按 Run 汇总的 Token。
+     * 返回 {@link SessionDetailVO}，messages 和 turns 只含该 Run 及本轮 Token。
      *
      * @param runId 本轮 Agent run 编号
-     * @return 会话详情
+     * @return 只含本轮消息的会话详情
      */
     public SessionDetailVO sessionDetailByRunId(String runId) {
         return sessionQueryService.detailByRunId(runId);

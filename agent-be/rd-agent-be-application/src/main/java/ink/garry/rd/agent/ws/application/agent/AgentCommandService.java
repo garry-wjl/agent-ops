@@ -631,6 +631,9 @@ public class AgentCommandService {
                 .maxIters(p.getMaxIters())
                 .enableLongTermMemory(p.getEnableLongTermMemory())
                 .enableUserFormInput(p.getEnableUserFormInput())
+                .enableStructuredOutput(p.getEnableStructuredOutput())
+                .jsonSchema(p.getJsonSchema())
+                .enableThinking(p.getEnableThinking())
                 .compaction(toCompactionPolicy(p.getCompaction()))
                 .skillNums(p.getSkillNums())
                 .toolNums(p.getToolNums())
@@ -681,6 +684,7 @@ public class AgentCommandService {
         }
         snapshot.setEnableLongTermMemory(Boolean.TRUE.equals(snapshot.getEnableLongTermMemory()));
         snapshot.setEnableUserFormInput(Boolean.TRUE.equals(snapshot.getEnableUserFormInput()));
+        StructuredOutputRules.apply(snapshot);
         snapshot.setCompaction(CompactionPolicy.normalize(snapshot.getCompaction()));
         validateModelEnabled(snapshot.getModelId(), workspaceNum);
         snapshot.setSkillRefs(resolveSkillRefs(snapshot.getSkillNums(), snapshot.getSkillRefs(), workspaceNum));

@@ -11,6 +11,7 @@ import ink.garry.rd.agent.ws.application.agentrunner.NormalizedInvokeContent;
 import ink.garry.rd.agent.ws.application.agentrunner.hitl.UserInputHitlService;
 import ink.garry.rd.agent.ws.application.agentrunner.run.AgentRunCoordinator;
 import ink.garry.rd.agent.ws.client.agent.OpenInvokeParam;
+import ink.garry.rd.agent.ws.client.agentrunner.StructuredInvokeVO;
 import ink.garry.rd.agent.ws.client.agentrunner.UserInputRespondParam;
 import ink.garry.rd.agent.ws.client.agent.OpenSessionCreateParam;
 import ink.garry.rd.agent.ws.client.agent.OpenSessionListQuery;
@@ -97,6 +98,7 @@ public class OpenAgentController {
     public Flux<ServerSentEvent<String>> invoke(@Valid @RequestBody OpenInvokeParam param, HttpServletRequest req) {
         assertAgentMatch(param.getAgentNum(), req);
         bindOpenWorkspace(req);
+        openAgentInvokeService.rejectStreamIfStructured(param.getAgentNum());
         String lastEventId = firstNonBlank(param.getLastEventId(), req.getHeader("Last-Event-ID"));
         boolean resume = Boolean.TRUE.equals(param.getResume())
                 || (StrUtil.isNotBlank(lastEventId) && isBlankOpenInvoke(param));
@@ -117,6 +119,31 @@ public class OpenAgentController {
                                 null,
                                 "API",
                                 param.getContext())));
+    }
+
+    /**
+     * 结构化输出的同步调用。仅当 Agent 开启结构化输出时可用，响应为统一 Result。
+     *
+     * @param param 调用参数
+     * @param req   注入权威归属的请求
+     * @return 符合 Schema 的 JSON、会话、runId 与 Token
+     */
+    @PostMapping("/command/invokeJson")
+    public Result<StructuredInvokeVO> invokeJson(@Valid @RequestBody OpenInvokeParam param,
+                                                  HttpServletRequest req) {
+        assertAgentMatch(param.getAgentNum(), req);
+        bindOpenWorkspace(req);
+        if (Boolean.TRUE.equals(param.getResume()) || StrUtil.isNotBlank(param.getLastEventId())) {
+            throw new BusinessException(BizCode.INVALID_PARAM.getCode(), "结构化输出接口不支持续传");
+        }
+        StructuredInvokeVO vo = openAgentInvokeService.invokeJson(
+                param.getAgentNum(),
+                param.getInput(),
+                param.getAttachments(),
+                param.getSessionNum(),
+                param.getOperatorId(),
+                param.getContext());
+        return Result.ok(vo);
     }
 
     private static boolean isBlankOpenInvoke(OpenInvokeParam param) {
@@ -187,24 +214,28 @@ public class OpenAgentController {
     }
 
     /**
-     * 对外会话详情（含消息链）。
+     * 对外会话详情。消息按页返回，缺省第 1 页、每页 200 条。
      *
-     * @param num 会话业务编号
+     * @param num      会话业务编号
+     * @param pageNo   页码，从 1 开始；空则第 1 页
+     * @param pageSize 每页条数；空则 200，最大 200
      * @return 会话详情 VO
      */
     @GetMapping("/query/sessionDetail")
-    public Result<SessionDetailVO> sessionDetail(@RequestParam("num") String num) {
-        return Result.ok(openAgentInvokeService.sessionDetail(num));
+    public Result<SessionDetailVO> sessionDetail(@RequestParam("num") String num,
+                                                 @RequestParam(value = "pageNo", required = false) Integer pageNo,
+                                                 @RequestParam(value = "pageSize", required = false) Integer pageSize) {
+        return Result.ok(openAgentInvokeService.sessionDetail(num, pageNo, pageSize));
     }
 
     /**
-     * 按 Run ID 查对外会话详情（含消息链与本轮 Token）。
+     * 按 Run ID 查这一轮的对外消息（含本轮 Token）。
      * <p>
-     * 返回结构与 {@link #sessionDetail(String)} 相同。秘钥只能读取归属 Agent 的会话。
+     * messages 和 turns 只含该 Run。秘钥只能读取归属 Agent 的会话。
      *
      * @param runId 本轮 Agent run 编号
      * @param req   注入权威归属的请求
-     * @return 会话详情 VO
+     * @return 只含本轮消息的会话详情
      */
     @GetMapping("/query/sessionDetailByRun")
     public Result<SessionDetailVO> sessionDetailByRun(@RequestParam("runId") String runId,
