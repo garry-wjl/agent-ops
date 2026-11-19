@@ -213,6 +213,13 @@
                 <artifactId>sandbox</artifactId>
                 <version>${sandbox.version}</version>
             </dependency>
+
+            <!-- commons-compress 1.27.1 调用 FileTimes.toUnixTime，2.15 及更早没有这个方法 -->
+            <dependency>
+                <groupId>commons-io</groupId>
+                <artifactId>commons-io</artifactId>
+                <version>2.16.1</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 

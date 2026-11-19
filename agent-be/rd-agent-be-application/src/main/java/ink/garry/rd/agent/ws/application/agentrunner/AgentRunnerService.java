@@ -15,6 +15,8 @@ import ink.garry.rd.agent.ws.application.sandbox.lifecycle.SessionSandboxLifecyc
 import ink.garry.rd.agent.ws.application.sandbox.pool.SandboxPoolService;
 import ink.garry.rd.agent.ws.application.session.SessionCommandService;
 import ink.garry.rd.agent.ws.client.agentrunner.UserInputRequiredEvent;
+import ink.garry.rd.agent.ws.client.common.BizCode;
+import ink.garry.rd.agent.ws.facade.exception.BusinessException;
 import ink.garry.rd.agent.ws.domain.session.valueobject.TurnTokenUsage;
 import ink.garry.rd.agent.ws.client.session.dto.SessionDTO;
 import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContextHolder;
@@ -254,7 +256,7 @@ public class AgentRunnerService {
 
         Flux<AgentInvokeFrame> agentFrames = streamWithUserInputHitl(
                 agent, msg, runtimeContext, finalSessionNum, finalRunId, operatorId,
-                agentNum, targetVersion, acc, usageAcc, inThinkTag);
+                agentNum, targetVersion, acc, usageAcc, inThinkTag, new AtomicBoolean(false));
 
         AtomicReference<Disposable> heartbeat = new AtomicReference<>();
         // publish 避免 merge + takeUntilOther 对冷流双重订阅导致 Agent 跑两遍
@@ -281,13 +283,14 @@ public class AgentRunnerService {
             Agent agent, Msg input, RuntimeContext runtimeContext,
             String sessionNum, String runId, String operatorId,
             String agentNum, String targetVersion,
-            SegmentAccumulator acc, TokenUsageAccumulator usageAcc, AtomicBoolean inThinkTag) {
+            SegmentAccumulator acc, TokenUsageAccumulator usageAcc, AtomicBoolean inThinkTag,
+            AtomicBoolean assistantPersisted) {
 
         Flux<Event> eventFlux = agent instanceof HarnessAgent harnessAgent
                 ? harnessAgent.stream(input, runtimeContext)
                 : agent.stream(input);
 
-        return eventFlux
+        Flux<AgentInvokeFrame> frames = eventFlux
                 .map(event -> transformEvent(event, inThinkTag))
                 .doOnNext(acc::accept)
                 .doOnNext(usageAcc::accept)
@@ -299,21 +302,23 @@ public class AgentRunnerService {
                     if (isUserFormSuspended(event)) {
                         return handleUserFormSuspend(
                                 agent, event, runtimeContext, sessionNum, runId, operatorId,
-                                agentNum, targetVersion, acc, usageAcc, inThinkTag);
+                                agentNum, targetVersion, acc, usageAcc, inThinkTag, assistantPersisted);
                     }
                     TurnTokenUsage turnUsage = TurnTokenUsageMapper.from(
                             event.getMessage() == null ? null : event.getMessage().getChatUsage());
-                    return Mono.fromRunnable(() ->
-                                    sessionCommandService.appendAssistantMessage(
-                                            sessionNum,
-                                            acc.toContentText(),
-                                            acc.toStepChain(),
-                                            acc.getSegments(),
-                                            acc.toContentBlocksJson(),
-                                            sessionNum,
-                                            runId,
-                                            turnUsage,
-                                            operatorId))
+                    return Mono.fromRunnable(() -> {
+                                sessionCommandService.appendAssistantMessage(
+                                        sessionNum,
+                                        acc.toContentText(),
+                                        acc.toStepChain(),
+                                        acc.getSegments(),
+                                        acc.toContentBlocksJson(),
+                                        sessionNum,
+                                        runId,
+                                        turnUsage,
+                                        operatorId);
+                                assistantPersisted.set(true);
+                            })
                             .subscribeOn(Schedulers.boundedElastic())
                             .thenMany(Flux.just(AgentInvokeFrame.agent(event)))
                             .doOnComplete(() -> harnessUserMemorySync.capture(
@@ -322,13 +327,61 @@ public class AgentRunnerService {
                 .takeUntil(frame -> frame.isAgentEvent()
                         && isTerminalAgentResult(frame.getAgentEvent())
                         && !isUserFormSuspended(frame.getAgentEvent()));
+        return frames.concatWith(whenStreamEndedWithoutResult(
+                        assistantPersisted,
+                        acc,
+                        () -> {
+                            sessionCommandService.appendAssistantMessage(
+                                    sessionNum,
+                                    acc.toContentText(),
+                                    acc.toStepChain(),
+                                    acc.getSegments(),
+                                    acc.toContentBlocksJson(),
+                                    sessionNum,
+                                    runId,
+                                    TurnTokenUsageMapper.from(usageAcc.snapshot()),
+                                    operatorId);
+                            harnessUserMemorySync.capture(
+                                    agentNum, targetVersion, sessionNum, operatorId);
+                        })
+                .subscribeOn(Schedulers.boundedElastic())
+                .thenMany(Flux.empty()));
+    }
+
+    /**
+     * 流正常结束但没有 {@code AGENT_RESULT} 时：已有累积回复就补写助手消息，否则让本轮失败收尾。
+     *
+     * @param assistantPersisted 本轮是否已经写入助手消息
+     * @param acc                流结束时再读的段累积器
+     * @param persistReply       补写助手消息
+     * @return 空完成，或「没有产生回复」的错误
+     */
+    static Mono<Void> whenStreamEndedWithoutResult(
+            AtomicBoolean assistantPersisted,
+            SegmentAccumulator acc,
+            Runnable persistReply) {
+        return Mono.defer(() -> {
+            if (assistantPersisted.get()) {
+                return Mono.empty();
+            }
+            if (acc.getSegments().isEmpty()) {
+                return Mono.error(new BusinessException(
+                        BizCode.SSE_INTERRUPTED.getCode(),
+                        "Agent 结束时没有产生回复"));
+            }
+            return Mono.fromRunnable(() -> {
+                persistReply.run();
+                assistantPersisted.set(true);
+            });
+        });
     }
 
     private Flux<AgentInvokeFrame> handleUserFormSuspend(
             Agent agent, Event suspendEvent, RuntimeContext runtimeContext,
             String sessionNum, String runId, String operatorId,
             String agentNum, String targetVersion,
-            SegmentAccumulator acc, TokenUsageAccumulator usageAcc, AtomicBoolean inThinkTag) {
+            SegmentAccumulator acc, TokenUsageAccumulator usageAcc, AtomicBoolean inThinkTag,
+            AtomicBoolean assistantPersisted) {
 
         ToolUseBlock toolCall = extractRequestUserInputTool(suspendEvent.getMessage());
         if (toolCall == null) {
@@ -377,7 +430,7 @@ public class AgentRunnerService {
                                     streamWithUserInputHitl(
                                             agent, resumeMsg, runtimeContext, sessionNum, runId,
                                             operatorId, agentNum, targetVersion,
-                                            acc, usageAcc, inThinkTag));
+                                            acc, usageAcc, inThinkTag, assistantPersisted));
                         }));
     }
 

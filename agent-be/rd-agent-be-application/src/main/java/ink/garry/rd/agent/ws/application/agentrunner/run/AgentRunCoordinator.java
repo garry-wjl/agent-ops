@@ -16,7 +16,6 @@ import ink.garry.rd.agent.ws.facade.exception.BusinessException;
 import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContext;
 import ink.garry.rd.agent.ws.infra.common.util.WorkspaceContextHolder;
 import java.time.Duration;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import lombok.RequiredArgsConstructor;
@@ -43,7 +42,11 @@ public class AgentRunCoordinator {
     private final ObjectMapper objectMapper;
 
     @Value("${app.agent-run.poll-interval:200ms}")
-    private Duration pollInterval;
+    private Duration pollInterval = Duration.ofMillis(200);
+
+    /** 盖住模型单次 5 分钟、最多 3 次重试，避免一轮永远停在 RUNNING。 */
+    @Value("${app.agent-run.run-timeout:16m}")
+    private Duration runTimeout = Duration.ofMinutes(16);
 
     /**
      * 开跑或续传。
@@ -157,21 +160,21 @@ public class AgentRunCoordinator {
                         Flux<AgentInvokeFrame> frames = agentRunnerService.runAgentFrames(
                                 agentNum, content, sessionNum, operatorId, targetVersion,
                                 origin, context, runId);
-                        // 与 HTTP 解耦：独立订阅，客户端断开不停跑
-                        frames.concatMap(frame -> Mono.fromCallable(() -> {
+                        // 与 HTTP 解耦：独立订阅，客户端断开不停跑。
+                        // 限时用 parallel，避免计时任务也排进被占住的 boundedElastic。
+                        AgentRunFrameWriter.subscribe(
+                                frames,
+                                runTimeout,
+                                Schedulers.parallel(),
+                                Schedulers.boundedElastic(),
+                                frame -> {
                                     long s = seq.incrementAndGet();
                                     SerializedFrame sf = serializeFrame(frame);
                                     eventStore.append(runId, s, sf.event(), sf.data());
-                                    return s;
-                                }).subscribeOn(Schedulers.boundedElastic()))
-                                .doOnComplete(() -> finishRun(runId, seq, AgentRunStatus.DONE))
-                                .doOnError(err -> {
-                                    log.warn("[AgentRunCoordinator] run failed runId={}: {}",
-                                            runId, err.toString());
-                                    finishRun(runId, seq, AgentRunStatus.FAILED);
-                                })
-                                .onErrorResume(err -> Mono.empty())
-                                .subscribe();
+                                },
+                                status -> finishRun(runId, seq, status),
+                                err -> log.warn("[AgentRunCoordinator] run failed runId={}: {}",
+                                        runId, err.toString()));
                     } catch (RuntimeException err) {
                         log.warn("[AgentRunCoordinator] launch failed runId={}: {}",
                                 runId, err.toString());
@@ -198,47 +201,12 @@ public class AgentRunCoordinator {
     }
 
     /**
-     * 先回放缓冲，再轮询新事件直到终态且追上 lastSeq。
+     * 先回放缓冲，再跟随新事件直到终态且追上 lastSeq。
+     * 等待下一拍时把线程交还线程池，避免占住模型调用用的 worker。
      */
     private Flux<AgentRunStreamEvent> subscribe(String runId, long afterSeq) {
-        return Flux.<AgentRunStreamEvent>create(sink -> {
-                    long cursor = afterSeq;
-                    try {
-                        while (!sink.isCancelled()) {
-                            List<AgentRunStreamEvent> batch = eventStore.listAfter(runId, cursor);
-                            for (AgentRunStreamEvent ev : batch) {
-                                if (sink.isCancelled()) {
-                                    return;
-                                }
-                                sink.next(ev);
-                                cursor = ev.getSeq();
-                            }
-                            AgentRunEventStore.AgentRunMeta meta = eventStore.getMeta(runId).orElse(null);
-                            if (meta == null) {
-                                sink.error(new BusinessException(
-                                        BizCode.RUN_NOT_FOUND.getCode(),
-                                        BizCode.RUN_NOT_FOUND.getMessage()));
-                                return;
-                            }
-                            if (meta.status().terminal() && cursor >= meta.lastSeq()) {
-                                sink.complete();
-                                return;
-                            }
-                            try {
-                                Thread.sleep(pollInterval.toMillis());
-                            } catch (InterruptedException ie) {
-                                Thread.currentThread().interrupt();
-                                sink.complete();
-                                return;
-                            }
-                        }
-                    } catch (Exception e) {
-                        if (!sink.isCancelled()) {
-                            sink.error(e);
-                        }
-                    }
-                })
-                .subscribeOn(Schedulers.boundedElastic());
+        return AgentRunEventPoller.follow(
+                eventStore, runId, afterSeq, pollInterval, Schedulers.boundedElastic());
     }
 
     private String ensureSession(String agentNum, String sessionNum, String operatorId,
