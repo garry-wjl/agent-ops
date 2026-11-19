@@ -1606,6 +1606,140 @@ data:{"version":"v0.9.1","surfaceId":"main","type":"updateDataModel","path":"/hi
   "traceId": "..."
 }`,
     },
+    {
+      method: 'GET',
+      path: '/api/v1/open/agents/query/sessionDetailByRun',
+      title: '按 Run ID 查 Session 详情',
+      description:
+        '按本轮 Run ID 定位会话，返回与 Session 详情相同的 SessionDetailVO：整段 messages，以及按 Run 汇总的 turns（含本轮消耗的 Token）。历史消息没有 Run ID，查不到。进行中的 Run 可以查到会话，助手消息和 Token 要等这一轮落库后才有。秘钥只能读取归属 Agent 的会话。',
+      requestContentType: '—',
+      responseContentType: 'application/json',
+      headers: [...AUTH_HEADERS],
+      requestParams: [
+        {
+          name: 'runId',
+          location: 'query',
+          type: 'string',
+          required: true,
+          description: '本轮 Run 编号，形如 RUN…，与 Invoke SSE run_started 中的 runId 相同',
+        },
+      ],
+      responseSummary:
+        '统一 Result 包装；data 为 SessionDetailVO，字段与 GET /query/sessionDetail 相同，含 messages 上的 Token 和 turns 上的 Token。',
+      responseGroups: [
+        { title: 'Result', fields: RESULT_FIELDS },
+        {
+          title: 'data（SessionDetailVO）',
+          fields: [
+            { name: 'num', type: 'string', required: true, description: '会话编号' },
+            { name: 'agentNum', type: 'string', required: true, description: 'Agent 编号' },
+            {
+              name: 'agentVersionNum',
+              type: 'string',
+              required: true,
+              description: 'Agent 版本编号',
+            },
+            { name: 'skillHint', type: 'string', required: false, description: 'Skill 提示' },
+            { name: 'title', type: 'string', required: false, description: '标题' },
+            { name: 'createTime', type: 'string', required: false, description: '创建时间' },
+            { name: 'origin', type: 'string', required: true, description: 'API / DEBUG_CONSOLE' },
+            {
+              name: 'invokeContext',
+              type: 'object',
+              required: false,
+              description: '默认调用上下文',
+            },
+            {
+              name: 'messages',
+              type: 'MessageVO[]',
+              required: true,
+              description: '该会话的消息列表（时间正序），字段同 Session 详情',
+            },
+            {
+              name: 'turns',
+              type: 'SessionTurnVO[]',
+              required: true,
+              description: '按 Run 汇总的轮次，含本轮 input/output/cached/total token',
+            },
+          ],
+        },
+        {
+          title: 'turns[]（SessionTurnVO）',
+          fields: [
+            { name: 'runId', type: 'string', required: true, description: '本轮 Run 编号' },
+            {
+              name: 'userMessageNum',
+              type: 'string',
+              required: false,
+              description: '本轮用户消息编号',
+            },
+            {
+              name: 'assistantMessageNum',
+              type: 'string',
+              required: false,
+              description: '本轮助手消息编号。运行未结束时为空',
+            },
+            {
+              name: 'inputTokens',
+              type: 'number',
+              required: false,
+              description: '本轮输入 token。模型没回用量时为空',
+            },
+            { name: 'outputTokens', type: 'number', required: false, description: '本轮输出 token' },
+            { name: 'cachedTokens', type: 'number', required: false, description: '本轮缓存 token' },
+            {
+              name: 'totalTokens',
+              type: 'number',
+              required: false,
+              description: '本轮总 token，等于输入加输出',
+            },
+          ],
+        },
+      ],
+      curl: `curl -X GET '${base}/api/v1/open/agents/query/sessionDetailByRun?runId=RUN2026111821000001' \\
+  -H 'Authorization: Bearer ak-xxxxxxxx'`,
+      responseExample: `{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "num": "SES2026081515000001",
+    "agentNum": "${agentNum}",
+    "agentVersionNum": "v1.0.0",
+    "title": "外部会话",
+    "origin": "API",
+    "messages": [
+      {
+        "num": "MSG...",
+        "role": "user",
+        "content": "这个单什么时候发货？",
+        "runId": "RUN2026111821000001"
+      },
+      {
+        "num": "MSG...",
+        "role": "assistant",
+        "content": "预计 3 个工作日内发货。",
+        "runId": "RUN2026111821000001",
+        "inputTokens": 120,
+        "outputTokens": 36,
+        "cachedTokens": 0,
+        "totalTokens": 156
+      }
+    ],
+    "turns": [
+      {
+        "runId": "RUN2026111821000001",
+        "userMessageNum": "MSG...",
+        "assistantMessageNum": "MSG...",
+        "inputTokens": 120,
+        "outputTokens": 36,
+        "cachedTokens": 0,
+        "totalTokens": 156
+      }
+    ]
+  },
+  "traceId": "..."
+}`,
+    },
   ];
 }
 

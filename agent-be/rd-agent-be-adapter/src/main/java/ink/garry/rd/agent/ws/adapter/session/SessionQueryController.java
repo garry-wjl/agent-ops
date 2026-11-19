@@ -48,6 +48,19 @@ public class SessionQueryController extends BaseController {
         return ok(queryService.detail(num));
     }
 
+    /**
+     * 按 Run ID 查会话详情。
+     * <p>
+     * 返回结构与 {@link #detail(String)} 相同，含消息链和本轮 Token。
+     *
+     * @param runId 本轮 Agent run 编号
+     * @return 会话详情
+     */
+    @GetMapping("/query/detailByRun")
+    public Result<SessionDetailVO> detailByRun(@RequestParam("runId") String runId) {
+        return ok(queryService.detailByRunId(runId));
+    }
+
     /** 按会话编号拉取消息列表。 */
     @GetMapping("/query/messages")
     public Result<List<MessageVO>> messages(@RequestParam("sessionNum") String sessionNum) {
