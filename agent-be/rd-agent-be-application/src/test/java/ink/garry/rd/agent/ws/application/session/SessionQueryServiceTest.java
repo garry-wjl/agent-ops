@@ -124,6 +124,63 @@ class SessionQueryServiceTest {
         assertNull(open.getTotalTokens());
     }
 
+    /**
+     * 按 Run ID 查到的就是同一份会话详情：整段消息都在，Token 记在助手消息和对应 turn 上。
+     */
+    @Test
+    void detailByRunId_returnsTheSameDetailIncludingTokens() {
+        MessageEntity user = message("MSG-U", "USER", "RUN-1", null, null, null, null);
+        user.setSessionNum("SES-1");
+        MessageEntity assistant = message("MSG-A", "ASSISTANT", "RUN-1", 30, 13, 3, 43);
+        assistant.setSessionNum("SES-1");
+        SessionEntity session = session("SES-1", "AG-1", "alice", "API");
+        SessionQueryService service = new SessionQueryService(
+                sessionMapper(null, session, null),
+                messageMapper(List.of(user, assistant), user));
+
+        SessionDetailVO vo = service.detailByRunId("  RUN-1  ");
+
+        assertEquals("SES-1", vo.getNum());
+        assertEquals("API", vo.getOrigin());
+        assertEquals(2, vo.getMessages().size());
+        assertEquals(43, vo.getMessages().get(1).getTotalTokens());
+        assertEquals(1, vo.getTurns().size());
+        assertEquals("RUN-1", vo.getTurns().get(0).getRunId());
+        assertEquals("MSG-U", vo.getTurns().get(0).getUserMessageNum());
+        assertEquals("MSG-A", vo.getTurns().get(0).getAssistantMessageNum());
+        assertEquals(30, vo.getTurns().get(0).getInputTokens());
+        assertEquals(13, vo.getTurns().get(0).getOutputTokens());
+        assertEquals(3, vo.getTurns().get(0).getCachedTokens());
+        assertEquals(43, vo.getTurns().get(0).getTotalTokens());
+    }
+
+    /** 空 Run ID 是参数错误，不查库。 */
+    @Test
+    void detailByRunId_shouldRejectBlankRunId() {
+        SessionQueryService service = new SessionQueryService(
+                sessionMapper(null, null, null), messageMapper(List.of()));
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.detailByRunId("  "));
+        assertTrue(ex.getMessage().contains("runId"));
+    }
+
+    /** 没有这条 Run，或消息上没有会话编号，都按会话不存在处理。 */
+    @Test
+    void detailByRunId_shouldThrowWhenRunMissing() {
+        SessionQueryService service = new SessionQueryService(
+                sessionMapper(null, null, null), messageMapper(List.of(), null));
+        BusinessException missing = assertThrows(BusinessException.class,
+                () -> service.detailByRunId("RUN-NONE"));
+        assertTrue(missing.getMessage().contains("会话不存在"));
+
+        MessageEntity orphan = message("MSG-U", "USER", "RUN-ORPHAN", null, null, null, null);
+        SessionQueryService orphaned = new SessionQueryService(
+                sessionMapper(null, null, null), messageMapper(List.of(), orphan));
+        BusinessException noSession = assertThrows(BusinessException.class,
+                () -> orphaned.detailByRunId("RUN-ORPHAN"));
+        assertTrue(noSession.getMessage().contains("会话不存在"));
+    }
+
     /** 会话不存在仍应抛资源不存在。 */
     @Test
     void detail_shouldThrowWhenSessionMissing() {
@@ -176,14 +233,19 @@ class SessionQueryServiceTest {
     }
 
     /**
-     * 打桩 MessageMapper：selectList 返回给定消息列表。
+     * 打桩 MessageMapper：selectList 返回给定消息列表，selectOne 返回定位 Run 用的那一条。
      */
     private static MessageMapper messageMapper(List<?> selectListResult) {
+        return messageMapper(selectListResult, null);
+    }
+
+    private static MessageMapper messageMapper(List<?> selectListResult, MessageEntity selectOneResult) {
         return (MessageMapper) Proxy.newProxyInstance(
                 MessageMapper.class.getClassLoader(),
                 new Class<?>[]{MessageMapper.class},
                 (proxy, method, args) -> switch (method.getName()) {
                     case "selectList" -> selectListResult;
+                    case "selectOne" -> selectOneResult;
                     case "toString" -> "MessageMapperStub";
                     case "hashCode" -> System.identityHashCode(proxy);
                     case "equals" -> proxy == args[0];

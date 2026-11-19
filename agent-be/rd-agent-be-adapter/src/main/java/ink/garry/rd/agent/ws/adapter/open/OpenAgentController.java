@@ -197,6 +197,23 @@ public class OpenAgentController {
         return Result.ok(openAgentInvokeService.sessionDetail(num));
     }
 
+    /**
+     * 按 Run ID 查对外会话详情（含消息链与本轮 Token）。
+     * <p>
+     * 返回结构与 {@link #sessionDetail(String)} 相同。秘钥只能读取归属 Agent 的会话。
+     *
+     * @param runId 本轮 Agent run 编号
+     * @param req   注入权威归属的请求
+     * @return 会话详情 VO
+     */
+    @GetMapping("/query/sessionDetailByRun")
+    public Result<SessionDetailVO> sessionDetailByRun(@RequestParam("runId") String runId,
+                                                      HttpServletRequest req) {
+        SessionDetailVO detail = openAgentInvokeService.sessionDetailByRunId(runId);
+        assertAgentMatch(detail.getAgentNum(), req);
+        return Result.ok(detail);
+    }
+
     private void assertAgentMatch(String bodyAgentNum, HttpServletRequest req) {
         Object authoritative = req.getAttribute(ApiKeyAuthenticationFilter.ATTR_OPEN_AGENT_NUM);
         if (authoritative == null || !authoritative.equals(bodyAgentNum)) {

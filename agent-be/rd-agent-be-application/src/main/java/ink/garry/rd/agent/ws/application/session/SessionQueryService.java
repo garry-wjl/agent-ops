@@ -99,6 +99,31 @@ public class SessionQueryService {
         return vo;
     }
 
+    /**
+     * 按 Run ID 查会话详情。
+     * <p>
+     * 一轮 Run 的用户消息和助手消息都记在同一会话上，取其中一条即可定位会话，
+     * 再复用 {@link #detail(String)}。返回的 messages、turns 以及助手消息上的 Token
+     * 与按会话编号查询完全一致。进行中的 Run 只有用户消息，Token 要等助手消息落库后才有。
+     * 功能上线前的历史消息没有 Run ID，按此查询视为会话不存在。
+     *
+     * @param runId 本轮 Agent run 编号
+     * @return 会话详情
+     */
+    public SessionDetailVO detailByRunId(String runId) {
+        if (StrUtil.isBlank(runId)) {
+            throw new BusinessException(BizCode.INVALID_PARAM.getCode(), "runId 不能为空");
+        }
+        MessageEntity hit = messageMapper.selectOne(new LambdaQueryWrapper<MessageEntity>()
+                .eq(MessageEntity::getRunId, runId.trim())
+                .eq(MessageEntity::getDeleted, 0)
+                .last("LIMIT 1"));
+        if (hit == null || StrUtil.isBlank(hit.getSessionNum())) {
+            throw new BusinessException(BizCode.NOT_FOUND.getCode(), "会话不存在");
+        }
+        return detail(hit.getSessionNum());
+    }
+
     public List<MessageVO> listMessages(String sessionNum) {
         requireExistingSession(sessionNum);
         return listMessagesInternal(sessionNum, DEFAULT_MESSAGE_LIMIT);

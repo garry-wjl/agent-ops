@@ -154,6 +154,19 @@ public class OpenAgentInvokeService {
         return sessionQueryService.detail(sessionNum);
     }
 
+    /**
+     * 按 Run ID 查对外会话详情。
+     * <p>
+     * 返回与 {@link #sessionDetail(String)} 相同的 {@link SessionDetailVO}，
+     * 含消息链和按 Run 汇总的 Token。
+     *
+     * @param runId 本轮 Agent run 编号
+     * @return 会话详情
+     */
+    public SessionDetailVO sessionDetailByRunId(String runId) {
+        return sessionQueryService.detailByRunId(runId);
+    }
+
     /** operatorId 为空 → system。 */
     private String resolveOperator(String operatorId) {
         return (operatorId == null || operatorId.isBlank()) ? SYSTEM_OPERATOR : operatorId;
