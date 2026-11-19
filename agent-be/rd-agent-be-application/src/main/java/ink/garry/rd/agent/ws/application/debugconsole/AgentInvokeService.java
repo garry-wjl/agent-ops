@@ -1,9 +1,16 @@
 package ink.garry.rd.agent.ws.application.debugconsole;
 
+import ink.garry.rd.agent.ws.application.agent.AgentQueryService;
+import ink.garry.rd.agent.ws.application.agent.StructuredOutputRules;
 import ink.garry.rd.agent.ws.application.agentrunner.AgentInvokeFrame;
 import ink.garry.rd.agent.ws.application.agentrunner.AgentRunnerService;
 import ink.garry.rd.agent.ws.application.agentrunner.InvokeContentNormalizer;
 import ink.garry.rd.agent.ws.application.agentrunner.NormalizedInvokeContent;
+import ink.garry.rd.agent.ws.application.agentrunner.StructuredReply;
+import ink.garry.rd.agent.ws.client.agent.dto.AgentDTO;
+import ink.garry.rd.agent.ws.client.agentrunner.StructuredInvokeVO;
+import ink.garry.rd.agent.ws.client.common.BizCode;
+import ink.garry.rd.agent.ws.facade.exception.BusinessException;
 import ink.garry.rd.agent.ws.client.attachment.AttachmentRefParam;
 import io.agentscope.core.agent.Event;
 import jakarta.annotation.Resource;
@@ -29,6 +36,9 @@ public class AgentInvokeService {
 
     @Resource
     private InvokeContentNormalizer invokeContentNormalizer;
+
+    @Resource
+    private AgentQueryService agentQueryService;
 
     /**
      * 测试用，按 creationMode 派发到对应 Runner，返回 Event 流。
@@ -92,6 +102,39 @@ public class AgentInvokeService {
                                                        Map<String, Object> context) {
         NormalizedInvokeContent content = invokeContentNormalizer.normalize(input, attachments);
         return agentRunnerService.runAgentFrames(
+                agentNum, content, sessionNum, operatorId, targetVersion, "DEBUG_CONSOLE", context);
+    }
+
+    /**
+     * 调试台流式入口在进入 SSE 前拒绝已开启结构化输出的版本。
+     *
+     * @param agentNum      Agent 业务编号
+     * @param targetVersion 目标版本，可空
+     */
+    public void rejectStreamIfStructured(String agentNum, String targetVersion) {
+        AgentDTO agent = agentQueryService.loadAgentForDebug(agentNum, targetVersion);
+        if (StructuredReply.enabled(agent)) {
+            throw new BusinessException(BizCode.INVALID_PARAM.getCode(), StructuredOutputRules.STREAM_REJECTED);
+        }
+    }
+
+    /**
+     * 调试台同步 JSON 调用。
+     *
+     * @param agentNum      Agent 业务编号
+     * @param input         用户输入
+     * @param attachments   附件
+     * @param sessionNum    会话编号
+     * @param operatorId    操作人
+     * @param targetVersion 目标版本
+     * @param context       调用上下文
+     * @return JSON 结果
+     */
+    public StructuredInvokeVO invokeJson(String agentNum, Object input, List<AttachmentRefParam> attachments,
+                                          String sessionNum, String operatorId, String targetVersion,
+                                          Map<String, Object> context) {
+        NormalizedInvokeContent content = invokeContentNormalizer.normalize(input, attachments);
+        return agentRunnerService.runStructured(
                 agentNum, content, sessionNum, operatorId, targetVersion, "DEBUG_CONSOLE", context);
     }
 }

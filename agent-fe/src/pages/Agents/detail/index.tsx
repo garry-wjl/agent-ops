@@ -764,6 +764,14 @@ function BasicTab(props: { detail: AgentDetailVO }) {
         value={cfg?.enableLongTermMemory ? '已开启' : '关闭'}
       />
       <Field
+        label="深度思考"
+        value={cfg?.enableThinking === false ? '关闭' : '已开启'}
+      />
+      <Field
+        label="结构化输出"
+        value={cfg?.enableStructuredOutput ? '已开启' : '关闭'}
+      />
+      <Field
         label="是否启用表单填写"
         value={cfg?.enableUserFormInput ? '已开启' : '关闭'}
       />

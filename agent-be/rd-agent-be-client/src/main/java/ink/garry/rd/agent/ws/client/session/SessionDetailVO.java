@@ -29,7 +29,13 @@ public class SessionDetailVO {
     private String origin;
     /** 会话默认调用上下文；可空 */
     private Map<String, Object> invokeContext;
-    /** 全部消息历史，按时间正序 */
+    /** 当前消息页码，从 1 开始。未传页码时为第 1 页。按 Run 查询时为空。 */
+    private Integer pageNo;
+    /** 每页消息条数。未传时为 200，最大 200。按 Run 查询时为空。 */
+    private Integer pageSize;
+    /** 该会话未删除的消息总数。按 Run 查询时为空。 */
+    private Long total;
+    /** 当前页消息，按时间正序 */
     private List<MessageVO> messages;
     /**
      * 按运行轮次汇总。一轮含用户消息编号、助手消息编号、Run ID 和 Token。

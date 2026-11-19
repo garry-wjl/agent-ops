@@ -10,6 +10,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import {
   Drawer,
   Input,
+  Pagination,
   Table,
   Tag,
   message,
@@ -25,6 +26,7 @@ import SessionMessagesView, { toChatMessage } from '@/components/SessionMessages
 import type { SessionListVO } from '@/types';
 
 const PAGE_SIZE = 20;
+const MESSAGE_PAGE_SIZE = 200;
 
 const COLOR = {
   textPrimary: '#0F172B',
@@ -51,6 +53,9 @@ const SessionHistoryTab: React.FC<SessionHistoryTabProps> = ({ agentNum }) => {
   const [drawerMessages, setDrawerMessages] = useState<any[]>([]);
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [drawerTitle, setDrawerTitle] = useState('');
+  const [drawerSessionNum, setDrawerSessionNum] = useState('');
+  const [messagePage, setMessagePage] = useState(1);
+  const [messageTotal, setMessageTotal] = useState(0);
 
   const fetchSessions = useCallback(async (page: number, kw: string) => {
     setLoading(true);
@@ -90,19 +95,28 @@ const SessionHistoryTab: React.FC<SessionHistoryTabProps> = ({ agentNum }) => {
     fetchSessions(p, keyword);
   };
 
-  const handleRowClick = async (record: SessionListVO) => {
-    setDrawerTitle(record.title || '未命名会话');
-    setDrawerOpen(true);
+  const loadDrawerMessages = useCallback(async (sessionNum: string, page: number) => {
     setDrawerLoading(true);
-    setDrawerMessages([]);
     try {
-      const list = await SessionApi.listMessages(record.num);
-      setDrawerMessages(list.map(toChatMessage));
+      const result = await SessionApi.listMessages(sessionNum, page, MESSAGE_PAGE_SIZE);
+      setDrawerMessages((result.list ?? []).map(toChatMessage));
+      setMessageTotal(result.total ?? 0);
+      setMessagePage(result.pageNo ?? page);
     } catch {
       message.error('加载会话详情失败');
     } finally {
       setDrawerLoading(false);
     }
+  }, []);
+
+  const handleRowClick = (record: SessionListVO) => {
+    setDrawerTitle(record.title || '未命名会话');
+    setDrawerSessionNum(record.num);
+    setMessagePage(1);
+    setMessageTotal(0);
+    setDrawerOpen(true);
+    setDrawerMessages([]);
+    loadDrawerMessages(record.num, 1);
   };
 
   const columns: TableColumnsType<SessionListVO> = [
@@ -226,6 +240,22 @@ const SessionHistoryTab: React.FC<SessionHistoryTabProps> = ({ agentNum }) => {
           loading={drawerLoading}
           emptyText="暂无消息记录"
         />
+        {messageTotal > MESSAGE_PAGE_SIZE && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+            <Pagination
+              current={messagePage}
+              pageSize={MESSAGE_PAGE_SIZE}
+              total={messageTotal}
+              showSizeChanger={false}
+              showTotal={(t) => `共 ${t} 条`}
+              onChange={(page) => {
+                if (drawerSessionNum) {
+                  loadDrawerMessages(drawerSessionNum, page);
+                }
+              }}
+            />
+          </div>
+        )}
       </Drawer>
     </div>
   );

@@ -51,8 +51,17 @@ public class AgentCreateParam {
     /** 开启后才把该用户的长期记忆写入数据库；缺省 false */
     private Boolean enableLongTermMemory;
 
-    /** 开启后注册内置表单填写工具 request_user_input；缺省 false */
+    /** 开启后注册内置表单填写工具 request_user_input；缺省 false。与结构化输出互斥 */
     private Boolean enableUserFormInput;
+
+    /** 开启后最终回复必须符合 jsonSchema；缺省 false */
+    private Boolean enableStructuredOutput;
+
+    /** 结构化输出 JSON Schema，根类型必须是 object */
+    private Map<String, Object> jsonSchema;
+
+    /** 是否请求深度思考；不传按打开处理 */
+    private Boolean enableThinking;
 
     /** Harness 上下文压缩策略 */
     private CompactionSetting compaction;

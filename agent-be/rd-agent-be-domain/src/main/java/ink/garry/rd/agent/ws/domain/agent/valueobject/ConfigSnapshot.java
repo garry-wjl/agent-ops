@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Agent 配置快照值对象（不可变）。
@@ -80,8 +81,26 @@ public class ConfigSnapshot {
     /**
      * 是否启用内置表单填写（{@code request_user_input} external tool）。
      * <p>缺省 false：不注册该工具；为 true 时 Agent 可在执行中暂停向用户索取表单。
+     * 与 {@link #enableStructuredOutput} 互斥。
      */
     private Boolean enableUserFormInput;
+
+    /**
+     * 是否要求最终回复符合 {@link #jsonSchema}。
+     * <p>缺省 false。开启后流式 invoke 拒绝，调用方改走同步 JSON 接口。
+     */
+    private Boolean enableStructuredOutput;
+
+    /**
+     * 结构化输出的 JSON Schema。根类型必须是 object。仅 {@link #enableStructuredOutput} 为 true 时校验。
+     */
+    private Map<String, Object> jsonSchema;
+
+    /**
+     * 是否向模型请求深度思考。
+     * <p>缺省以及 null 都按打开处理。显式 false 时按厂商协议关闭；厂商不接受该参数则本次调用失败。
+     */
+    private Boolean enableThinking;
 
     /** Harness 上下文压缩策略 */
     private CompactionPolicy compaction;

@@ -37,8 +37,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class SessionQueryService {
 
-    /** 单会话消息列表默认上限（详情页一次性返回所有消息时的护栏） */
-    private static final int DEFAULT_MESSAGE_LIMIT = 200;
+    /** 会话消息每页条数：缺省 200，单次最多也是 200。 */
+    private static final int DEFAULT_MESSAGE_PAGE_SIZE = 200;
 
     private final SessionMapper sessionMapper;
     private final MessageMapper messageMapper;
@@ -81,8 +81,82 @@ public class SessionQueryService {
         return PageVO.of(list, result.getTotal(), safePageNo, safePageSize);
     }
 
+    /**
+     * 会话详情，消息取第 1 页、每页 {@value #DEFAULT_MESSAGE_PAGE_SIZE} 条。
+     *
+     * @param sessionNum 会话业务编号
+     * @return 会话详情
+     */
     public SessionDetailVO detail(String sessionNum) {
+        return detail(sessionNum, null, null);
+    }
+
+    /**
+     * 会话详情，消息按页返回。
+     * <p>
+     * 不传页码时返回第 1 页，不传每页条数时为 200，单页最多 200。
+     * messages 和 turns 只含当前页；total 是该会话的消息总数。
+     *
+     * @param sessionNum 会话业务编号
+     * @param pageNo     页码，从 1 开始；空则第 1 页
+     * @param pageSize   每页条数；空则 200
+     * @return 会话详情
+     */
+    public SessionDetailVO detail(String sessionNum, Integer pageNo, Integer pageSize) {
         SessionEntity entity = requireExistingSession(sessionNum);
+        MessagePage page = loadMessagePage(sessionNum, pageNo, pageSize);
+        SessionDetailVO vo = assembleDetail(entity, page.messages());
+        vo.setPageNo(page.pageNo());
+        vo.setPageSize(page.pageSize());
+        vo.setTotal(page.total());
+        return vo;
+    }
+
+    /**
+     * 按 Run ID 查这一轮的消息。
+     * <p>
+     * 只返回该 Run 自己的用户消息和助手消息，以及这一轮的 Token。
+     * 会话头（编号、Agent、标题、来源）仍带上，用来说明这一轮属于哪个会话；
+     * 同一会话里其他 Run 的消息不会出现在 messages 或 turns 里。
+     * 进行中的 Run 只有用户消息，Token 要等助手消息落库后才有。
+     * 功能上线前的历史消息没有 Run ID，按此查询视为会话不存在。
+     *
+     * @param runId 本轮 Agent run 编号
+     * @return 只含本轮消息的会话详情
+     */
+    public SessionDetailVO detailByRunId(String runId) {
+        if (StrUtil.isBlank(runId)) {
+            throw new BusinessException(BizCode.INVALID_PARAM.getCode(), "runId 不能为空");
+        }
+        String trimmed = runId.trim();
+        List<MessageEntity> rows = messageMapper.selectList(new LambdaQueryWrapper<MessageEntity>()
+                .eq(MessageEntity::getRunId, trimmed)
+                .eq(MessageEntity::getDeleted, 0)
+                .orderByAsc(MessageEntity::getCreateTime)
+                .last("LIMIT " + DEFAULT_MESSAGE_PAGE_SIZE));
+        if (rows == null || rows.isEmpty()) {
+            throw new BusinessException(BizCode.NOT_FOUND.getCode(), "会话不存在");
+        }
+        String sessionNum = rows.stream()
+                .map(MessageEntity::getSessionNum)
+                .filter(StrUtil::isNotBlank)
+                .findFirst()
+                .orElse(null);
+        if (sessionNum == null) {
+            throw new BusinessException(BizCode.NOT_FOUND.getCode(), "会话不存在");
+        }
+        List<MessageVO> messages = rows.stream()
+                .filter(row -> trimmed.equals(row.getRunId()) && sessionNum.equals(row.getSessionNum()))
+                .map(this::toMessageVO)
+                .toList();
+        if (messages.isEmpty()) {
+            throw new BusinessException(BizCode.NOT_FOUND.getCode(), "会话不存在");
+        }
+        return assembleDetail(requireExistingSession(sessionNum), messages);
+    }
+
+    /** 组装会话头，并挂上给定消息与按 Run 汇总的轮次。 */
+    private SessionDetailVO assembleDetail(SessionEntity entity, List<MessageVO> messages) {
         SessionDetailVO vo = new SessionDetailVO();
         vo.setNum(entity.getNum());
         vo.setAgentNum(entity.getAgentNum());
@@ -93,52 +167,73 @@ public class SessionQueryService {
         vo.setOrigin(entity.getOrigin());
         Map<String, Object> invokeContext = SysPromptVariableSubstitutor.parseJson(entity.getInvokeContext());
         vo.setInvokeContext(invokeContext.isEmpty() ? null : new LinkedHashMap<>(invokeContext));
-        List<MessageVO> messages = listMessagesInternal(sessionNum, DEFAULT_MESSAGE_LIMIT);
         vo.setMessages(messages);
         vo.setTurns(toTurns(messages));
         return vo;
     }
 
     /**
-     * 按 Run ID 查会话详情。
-     * <p>
-     * 一轮 Run 的用户消息和助手消息都记在同一会话上，取其中一条即可定位会话，
-     * 再复用 {@link #detail(String)}。返回的 messages、turns 以及助手消息上的 Token
-     * 与按会话编号查询完全一致。进行中的 Run 只有用户消息，Token 要等助手消息落库后才有。
-     * 功能上线前的历史消息没有 Run ID，按此查询视为会话不存在。
+     * 按页拉取某个会话的消息。缺省第 1 页、每页 200 条。
      *
-     * @param runId 本轮 Agent run 编号
-     * @return 会话详情
+     * @param sessionNum 会话业务编号
+     * @param pageNo     页码，从 1 开始；空则第 1 页
+     * @param pageSize   每页条数；空则 200，最大 200
+     * @return 当前页消息
      */
-    public SessionDetailVO detailByRunId(String runId) {
-        if (StrUtil.isBlank(runId)) {
-            throw new BusinessException(BizCode.INVALID_PARAM.getCode(), "runId 不能为空");
-        }
-        MessageEntity hit = messageMapper.selectOne(new LambdaQueryWrapper<MessageEntity>()
-                .eq(MessageEntity::getRunId, runId.trim())
-                .eq(MessageEntity::getDeleted, 0)
-                .last("LIMIT 1"));
-        if (hit == null || StrUtil.isBlank(hit.getSessionNum())) {
-            throw new BusinessException(BizCode.NOT_FOUND.getCode(), "会话不存在");
-        }
-        return detail(hit.getSessionNum());
-    }
-
-    public List<MessageVO> listMessages(String sessionNum) {
+    public PageVO<MessageVO> listMessages(String sessionNum, Integer pageNo, Integer pageSize) {
         requireExistingSession(sessionNum);
-        return listMessagesInternal(sessionNum, DEFAULT_MESSAGE_LIMIT);
+        MessagePage page = loadMessagePage(sessionNum, pageNo, pageSize);
+        return PageVO.of(page.messages(), page.total(), page.pageNo(), page.pageSize());
     }
 
-    private List<MessageVO> listMessagesInternal(String sessionNum, int limit) {
-        int safeLimit = limit <= 0 ? 50 : Math.min(limit, DEFAULT_MESSAGE_LIMIT);
-        return messageMapper.selectList(new LambdaQueryWrapper<MessageEntity>()
+    /**
+     * 统计会话消息并取出当前页。页码、每页条数先归一化，超出总条数时返回空列表。
+     */
+    private MessagePage loadMessagePage(String sessionNum, Integer pageNo, Integer pageSize) {
+        int safePageNo = normalizePageNo(pageNo);
+        int safePageSize = normalizePageSize(pageSize);
+        long total = messageMapper.selectCount(new LambdaQueryWrapper<MessageEntity>()
+                .eq(MessageEntity::getSessionNum, sessionNum)
+                .eq(MessageEntity::getDeleted, 0));
+        long offset = (long) (safePageNo - 1) * safePageSize;
+        if (offset >= total) {
+            return new MessagePage(List.of(), total, safePageNo, safePageSize);
+        }
+        List<MessageVO> messages = messageMapper.selectList(new LambdaQueryWrapper<MessageEntity>()
                         .eq(MessageEntity::getSessionNum, sessionNum)
                         .eq(MessageEntity::getDeleted, 0)
                         .orderByAsc(MessageEntity::getCreateTime)
-                        .last("LIMIT " + safeLimit))
+                        .last("LIMIT " + offset + ", " + safePageSize))
                 .stream()
                 .map(this::toMessageVO)
                 .toList();
+        return new MessagePage(messages, total, safePageNo, safePageSize);
+    }
+
+    /** 空页码视为第 1 页；小于 1 视为参数错误。 */
+    private static int normalizePageNo(Integer pageNo) {
+        if (pageNo == null) {
+            return 1;
+        }
+        if (pageNo < 1) {
+            throw new BusinessException(BizCode.INVALID_PARAM.getCode(), "pageNo 必须 ≥ 1");
+        }
+        return pageNo;
+    }
+
+    /** 空每页条数视为 200；小于 1 视为参数错误；大于 200 时压回 200。 */
+    private static int normalizePageSize(Integer pageSize) {
+        if (pageSize == null) {
+            return DEFAULT_MESSAGE_PAGE_SIZE;
+        }
+        if (pageSize < 1) {
+            throw new BusinessException(BizCode.INVALID_PARAM.getCode(), "pageSize 必须 ≥ 1");
+        }
+        return Math.min(pageSize, DEFAULT_MESSAGE_PAGE_SIZE);
+    }
+
+    /** 一页消息及其分页位置。 */
+    private record MessagePage(List<MessageVO> messages, long total, int pageNo, int pageSize) {
     }
 
     /**

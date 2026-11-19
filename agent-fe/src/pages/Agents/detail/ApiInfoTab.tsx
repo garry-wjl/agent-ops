@@ -636,7 +636,7 @@ function buildSpecs(agentNum: string): ApiSpec[] {
       path: '/api/v1/open/agents/command/invoke',
       title: 'Invoke（SSE 流式调用 / 断线续传）',
       description:
-        '对外触发 Agent 推理或续传同一轮 run。字段为 camelCase（与调试台 snake_case 不同）。开跑：input 与 attachments 至少一个有内容；会话 origin 记为 API；operatorId 空则 system；可选 context 做系统提示词 {{key}} 替换并浅合并进会话。图片走 Vision，文档由模型按需调用内置 read_attachment。HTTP 断开不会中止本轮推理（事件写入 Redis 缓冲）。续传：resume=true，或 lastEventId/Last-Event-ID + 空 input/attachments；从缓冲重放并跟随 live，不会再次调用模型。同一 sessionNum 仅允许一个 RUNNING run（否则 4008）。缓冲默认运行中最长约 2h、结束后约 45m 可续传。校验失败在进入 SSE 前返回 4xx JSON。',
+        '对外触发 Agent 推理或续传同一轮 run。字段为 camelCase（与调试台 snake_case 不同）。开跑：input 与 attachments 至少一个有内容；会话 origin 记为 API；operatorId 空则 system；可选 context 做系统提示词 {{key}} 替换并浅合并进会话。图片走 Vision，文档由模型按需调用内置 read_attachment。HTTP 断开不会中止本轮推理（事件写入 Redis 缓冲）。续传：resume=true，或 lastEventId/Last-Event-ID + 空 input/attachments；从缓冲重放并跟随 live，不会再次调用模型。同一 sessionNum 仅允许一个 RUNNING run（否则 4008）。缓冲默认运行中最长约 2h、结束后约 45m 可续传。校验失败在进入 SSE 前返回 4xx JSON。Agent 开启结构化输出时，本接口直接返回业务错误，请改用 invokeJson。',
       requestContentType: 'application/json',
       responseContentType: 'text/event-stream',
       headers: [
@@ -929,6 +929,99 @@ curl -X POST '${base}/api/v1/open/agents/command/user-input/respond' \\
   "message": "表单请求不存在或已处理: UIR…",
   "data": null,
   "traceId": "…"
+}`,
+    },
+    {
+      method: 'POST',
+      path: '/api/v1/open/agents/command/invokeJson',
+      title: 'Invoke JSON（结构化输出，非流式）',
+      description:
+        '仅当 Agent 开启结构化输出时可用。请求字段与 Invoke 开跑相同（camelCase），不支持 resume / lastEventId。服务端等本轮结束（含工具调用）后一次返回符合 JSON Schema 的对象，以及 sessionNum、runId、Token。思考正文不在响应里。模型没有给出合法 JSON 时整次调用失败。未开启结构化输出时返回业务错误。',
+      requestContentType: 'application/json',
+      responseContentType: 'application/json',
+      headers: [...AUTH_HEADERS, JSON_CONTENT_HEADER],
+      requestParams: [
+        {
+          name: 'agentNum',
+          location: 'body',
+          type: 'string',
+          required: true,
+          description: `目标 Agent 编号，须与秘钥归属一致（当前：${agentNum}），且该 Agent 已开启结构化输出`,
+        },
+        {
+          name: 'input',
+          location: 'body',
+          type: 'string',
+          required: false,
+          description: '用户输入文本；与 attachments 至少一个有内容',
+        },
+        {
+          name: 'sessionNum',
+          location: 'body',
+          type: 'string',
+          required: false,
+          description: '会话编号；空则新建',
+        },
+        {
+          name: 'operatorId',
+          location: 'body',
+          type: 'string',
+          required: false,
+          description: '操作人标识；空记 system',
+        },
+        {
+          name: 'context',
+          location: 'body',
+          type: 'object',
+          required: false,
+          description: '扁平键值；替换系统提示词 {{key}}',
+        },
+        {
+          name: 'attachments',
+          location: 'body',
+          type: 'array',
+          required: false,
+          description: '已上传登记的附件引用',
+        },
+      ],
+      responseSummary:
+        'application/json Result。data.json 为符合 Schema 的对象；data.usage 为本轮 Token。失败时 code 非 0，不把模型原文当成成功 JSON。',
+      responseGroups: [
+        {
+          title: 'StructuredInvokeVO',
+          fields: [
+            { name: 'sessionNum', type: 'string', required: true, description: '会话编号' },
+            { name: 'runId', type: 'string', required: true, description: '本轮运行编号' },
+            { name: 'json', type: 'object', required: true, description: '符合 Agent JSON Schema 的对象' },
+            { name: 'usage.inputTokens', type: 'number', required: false, description: '输入 token' },
+            { name: 'usage.outputTokens', type: 'number', required: false, description: '输出 token' },
+            { name: 'usage.cachedTokens', type: 'number', required: false, description: '缓存 token' },
+            { name: 'usage.totalTokens', type: 'number', required: false, description: '总 token' },
+          ],
+        },
+      ],
+      curl: `curl -X POST '${base}/api/v1/open/agents/command/invokeJson' \\
+  -H 'Authorization: Bearer ak-xxxxxxxx' \\
+  -H 'Content-Type: application/json' \\
+  -d '{
+    "agentNum": "${agentNum}",
+    "input": "提取标题",
+    "sessionNum": "SES-xxx"
+  }'`,
+      responseExample: `{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "sessionNum": "SES-xxx",
+    "runId": "RUN2109…",
+    "json": { "title": "示例" },
+    "usage": {
+      "inputTokens": 100,
+      "outputTokens": 20,
+      "cachedTokens": 0,
+      "totalTokens": 120
+    }
+  }
 }`,
     },
     {
@@ -1420,7 +1513,8 @@ data:{"version":"v0.9.1","surfaceId":"main","type":"updateDataModel","path":"/hi
       method: 'GET',
       path: '/api/v1/open/agents/query/sessionDetail',
       title: 'Session 详情（含消息）',
-      description: '按会话 num 拉取详情，返回 messages 数组（时间正序）和按 Run 汇总的 turns。历史会话的 Run ID 与 Token 为空。',
+      description:
+        '按会话 num 分页拉取详情。不传 pageNo、pageSize 时返回第 1 页，每页 200 条。messages 是当前页（时间正序），turns 只汇总当前页里的 Run。total 是该会话的消息总数。pageSize 最大 200。历史会话的 Run ID 与 Token 为空。',
       requestContentType: '—',
       responseContentType: 'application/json',
       headers: [...AUTH_HEADERS],
@@ -1432,8 +1526,23 @@ data:{"version":"v0.9.1","surfaceId":"main","type":"updateDataModel","path":"/hi
           required: true,
           description: '会话业务编号',
         },
+        {
+          name: 'pageNo',
+          location: 'query',
+          type: 'number',
+          required: false,
+          description: '消息页码，从 1 开始。缺省 1，即第一页',
+        },
+        {
+          name: 'pageSize',
+          location: 'query',
+          type: 'number',
+          required: false,
+          description: '每页消息条数。缺省 200，最大 200',
+        },
       ],
-      responseSummary: '统一 Result 包装；data 为 SessionDetailVO，含 messages 和按 Run 汇总的 turns。',
+      responseSummary:
+        '统一 Result 包装；data 为 SessionDetailVO。messages 和 turns 只含当前页，total 为会话消息总数。',
       responseGroups: [
         { title: 'Result', fields: RESULT_FIELDS },
         {
@@ -1458,16 +1567,34 @@ data:{"version":"v0.9.1","surfaceId":"main","type":"updateDataModel","path":"/hi
               description: '默认调用上下文',
             },
             {
+              name: 'pageNo',
+              type: 'number',
+              required: true,
+              description: '当前消息页码，从 1 开始',
+            },
+            {
+              name: 'pageSize',
+              type: 'number',
+              required: true,
+              description: '本页条数上限，最大 200',
+            },
+            {
+              name: 'total',
+              type: 'number',
+              required: true,
+              description: '该会话的消息总数',
+            },
+            {
               name: 'messages',
               type: 'MessageVO[]',
               required: true,
-              description: '消息列表，见下表',
+              description: '当前页消息，见下表',
             },
             {
               name: 'turns',
               type: 'SessionTurnVO[]',
               required: true,
-              description: '按 Run 汇总的轮次。历史消息没有 Run ID，不进入此列表',
+              description: '当前页消息按 Run 汇总的轮次。历史消息没有 Run ID，不进入此列表',
             },
           ],
         },
@@ -1557,7 +1684,7 @@ data:{"version":"v0.9.1","surfaceId":"main","type":"updateDataModel","path":"/hi
           ],
         },
       ],
-      curl: `curl -X GET '${base}/api/v1/open/agents/query/sessionDetail?num=SES-xxx' \\
+      curl: `curl -X GET '${base}/api/v1/open/agents/query/sessionDetail?num=SES-xxx&pageNo=1&pageSize=200' \\
   -H 'Authorization: Bearer ak-xxxxxxxx'`,
       responseExample: `{
   "code": 0,
@@ -1568,6 +1695,9 @@ data:{"version":"v0.9.1","surfaceId":"main","type":"updateDataModel","path":"/hi
     "agentVersionNum": "v1.0.0",
     "title": "外部会话",
     "origin": "API",
+    "pageNo": 1,
+    "pageSize": 200,
+    "total": 2,
     "messages": [
       {
         "num": "MSG...",
@@ -1609,9 +1739,9 @@ data:{"version":"v0.9.1","surfaceId":"main","type":"updateDataModel","path":"/hi
     {
       method: 'GET',
       path: '/api/v1/open/agents/query/sessionDetailByRun',
-      title: '按 Run ID 查 Session 详情',
+      title: '按 Run ID 查本轮消息',
       description:
-        '按本轮 Run ID 定位会话，返回与 Session 详情相同的 SessionDetailVO：整段 messages，以及按 Run 汇总的 turns（含本轮消耗的 Token）。历史消息没有 Run ID，查不到。进行中的 Run 可以查到会话，助手消息和 Token 要等这一轮落库后才有。秘钥只能读取归属 Agent 的会话。',
+        '按本轮 Run ID 精确返回这一轮的消息，而不是所在会话的整段历史。data 仍是 SessionDetailVO：会话头说明这一轮属于哪个会话，messages 只有该 Run 的用户消息和助手消息，turns 只有这一轮（含消耗的 Token）。历史消息没有 Run ID，查不到。进行中的 Run 只有用户消息，助手消息和 Token 要等这一轮落库后才有。秘钥只能读取归属 Agent 的会话。',
       requestContentType: '—',
       responseContentType: 'application/json',
       headers: [...AUTH_HEADERS],
@@ -1625,7 +1755,7 @@ data:{"version":"v0.9.1","surfaceId":"main","type":"updateDataModel","path":"/hi
         },
       ],
       responseSummary:
-        '统一 Result 包装；data 为 SessionDetailVO，字段与 GET /query/sessionDetail 相同，含 messages 上的 Token 和 turns 上的 Token。',
+        '统一 Result 包装；data 为 SessionDetailVO。会话头与 Session 详情相同，messages 和 turns 只含该 Run，含本轮 Token。',
       responseGroups: [
         { title: 'Result', fields: RESULT_FIELDS },
         {
@@ -1653,13 +1783,13 @@ data:{"version":"v0.9.1","surfaceId":"main","type":"updateDataModel","path":"/hi
               name: 'messages',
               type: 'MessageVO[]',
               required: true,
-              description: '该会话的消息列表（时间正序），字段同 Session 详情',
+              description: '该 Run 的消息（时间正序），字段同 Session 详情里的单条消息',
             },
             {
               name: 'turns',
               type: 'SessionTurnVO[]',
               required: true,
-              description: '按 Run 汇总的轮次，含本轮 input/output/cached/total token',
+              description: '只含该 Run 的一轮，含 input/output/cached/total token',
             },
           ],
         },

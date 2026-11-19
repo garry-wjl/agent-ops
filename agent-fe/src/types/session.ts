@@ -104,7 +104,7 @@ export interface SessionListVO {
   createTime?: string;
 }
 
-/** 详情：含会话元信息 + 完整消息列表 */
+/** 详情：含会话元信息 + 当前页消息。缺省为第 1 页、每页 200 条。 */
 export interface SessionDetailVO {
   num: string;
   agentNum: string;
@@ -115,8 +115,15 @@ export interface SessionDetailVO {
   origin?: string;
   /** 会话默认调用上下文 */
   invokeContext?: Record<string, string | number | boolean> | null;
+  /** 当前消息页码，从 1 开始 */
+  pageNo?: number;
+  /** 每页消息条数，缺省 200，最大 200 */
+  pageSize?: number;
+  /** 该会话的消息总数 */
+  total?: number;
+  /** 当前页消息，时间正序 */
   messages: MessageVO[];
-  /** 按 Run 汇总的轮次。历史消息不在此列表。 */
+  /** 按当前页消息汇总的轮次。历史消息不在此列表。 */
   turns: SessionTurnVO[];
 }
 

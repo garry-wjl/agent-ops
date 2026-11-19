@@ -68,6 +68,7 @@ import PromptPickerModal from '../components/PromptPickerModal';
 import A2aCreateForm from '../components/A2aCreateForm';
 import { RequiredLabel, ModelMetaCard } from '../components/EditorShared';
 import { omitUnusedHarnessConfig } from './harnessFormFields';
+import StructuredOutputEditor from './StructuredOutputEditor';
 
 const { Text } = Typography;
 
@@ -95,6 +96,9 @@ interface AgentDraft {
   maxIters?: number;
   enableLongTermMemory?: boolean;
   enableUserFormInput?: boolean;
+  enableStructuredOutput?: boolean;
+  jsonSchema?: Record<string, unknown>;
+  enableThinking?: boolean;
   compaction: CompactionSetting;
   ctx: ToolsContextValue;
 }
@@ -120,6 +124,9 @@ function emptyDraft(): AgentDraft {
     maxIters: 10,
     enableLongTermMemory: false,
     enableUserFormInput: false,
+    enableStructuredOutput: false,
+    jsonSchema: { type: 'object', properties: {}, additionalProperties: false },
+    enableThinking: true,
     compaction: defaultCompaction(),
     ctx: {
       skillNums: [],
@@ -253,6 +260,13 @@ export default function AgentEditorPage() {
           maxIters: snap?.maxIters ?? 10,
           enableLongTermMemory: snap?.enableLongTermMemory ?? false,
           enableUserFormInput: snap?.enableUserFormInput ?? false,
+          enableStructuredOutput: snap?.enableStructuredOutput ?? false,
+          jsonSchema: snap?.jsonSchema ?? {
+            type: 'object',
+            properties: {},
+            additionalProperties: false,
+          },
+          enableThinking: snap?.enableThinking ?? true,
           compaction: {
             ...defaultCompaction(),
             ...snap?.compaction,
@@ -330,6 +344,14 @@ export default function AgentEditorPage() {
     if (draft.name.trim().length > 64) return '名称不超过 64 字符';
     if (!draft.systemPrompt?.trim()) return '请输入系统提示词';
     if (!draft.modelId) return '请选择关联模型';
+    if (draft.enableStructuredOutput && draft.enableUserFormInput) {
+      return '结构化输出与表单填写不能同时开启';
+    }
+    if (draft.enableStructuredOutput) {
+      if (!draft.jsonSchema || draft.jsonSchema.type !== 'object') {
+        return '请填写根类型为 object 的 JSON Schema';
+      }
+    }
     return null;
   };
 
@@ -356,6 +378,9 @@ export default function AgentEditorPage() {
       maxIters: draft.maxIters ?? 10,
       enableLongTermMemory: draft.enableLongTermMemory ?? false,
       enableUserFormInput: draft.enableUserFormInput ?? false,
+      enableStructuredOutput: draft.enableStructuredOutput ?? false,
+      jsonSchema: draft.jsonSchema,
+      enableThinking: draft.enableThinking ?? true,
       compaction: draft.compaction,
       skillNums: draft.ctx.skillNums,
       skillRefs: draft.ctx.skillRefs,
@@ -378,6 +403,9 @@ export default function AgentEditorPage() {
       maxIters: draft.maxIters ?? 10,
       enableLongTermMemory: draft.enableLongTermMemory ?? false,
       enableUserFormInput: draft.enableUserFormInput ?? false,
+      enableStructuredOutput: draft.enableStructuredOutput ?? false,
+      jsonSchema: draft.jsonSchema,
+      enableThinking: draft.enableThinking ?? true,
       compaction: draft.compaction,
       skillNums: draft.ctx.skillNums,
       skillRefs: draft.ctx.skillRefs,
@@ -674,6 +702,46 @@ export default function AgentEditorPage() {
                 </Radio.Group>
               </Form.Item>
 
+              <Form.Item label="深度思考">
+                <Radio.Group
+                  value={draft.enableThinking === false ? 'OFF' : 'ON'}
+                  onChange={(e) => patch({ enableThinking: e.target.value === 'ON' })}
+                >
+                  <Radio value="ON">开启</Radio>
+                  <Radio value="OFF">关闭</Radio>
+                </Radio.Group>
+                <div style={{ marginTop: 6, fontSize: 12, color: COLOR.textMuted }}>
+                  开启后按模型厂商协议请求深度思考。关闭时若当前模型不接受该参数，调用会失败。
+                </div>
+              </Form.Item>
+
+              <Form.Item label="结构化输出">
+                <Radio.Group
+                  value={draft.enableStructuredOutput ? 'ON' : 'OFF'}
+                  onChange={(e) => {
+                    const on = e.target.value === 'ON';
+                    patch({
+                      enableStructuredOutput: on,
+                      enableUserFormInput: on ? false : draft.enableUserFormInput,
+                    });
+                  }}
+                >
+                  <Radio value="OFF">关闭</Radio>
+                  <Radio value="ON">开启</Radio>
+                </Radio.Group>
+                <div style={{ marginTop: 6, fontSize: 12, color: COLOR.textMuted }}>
+                  开启后最终回复必须符合 JSON Schema。流式调用不可用，调试台和开放接口改为一次返回 JSON。不能与表单填写同时开启。
+                </div>
+                {draft.enableStructuredOutput ? (
+                  <div style={{ marginTop: 12 }}>
+                    <StructuredOutputEditor
+                      value={draft.jsonSchema}
+                      onChange={(jsonSchema) => patch({ jsonSchema })}
+                    />
+                  </div>
+                ) : null}
+              </Form.Item>
+
               <Form.Item label="用户长期记忆">
                 <Radio.Group
                   value={draft.enableLongTermMemory ? 'ON' : 'OFF'}
@@ -691,9 +759,13 @@ export default function AgentEditorPage() {
                   <div style={{ marginBottom: 8, fontSize: 13 }}>是否启用表单填写</div>
                   <Radio.Group
                     value={draft.enableUserFormInput ? 'ON' : 'OFF'}
-                    onChange={(e) =>
-                      patch({ enableUserFormInput: e.target.value === 'ON' })
-                    }
+                    onChange={(e) => {
+                      const on = e.target.value === 'ON';
+                      patch({
+                        enableUserFormInput: on,
+                        enableStructuredOutput: on ? false : draft.enableStructuredOutput,
+                      });
+                    }}
                   >
                     <Radio value="OFF">关闭</Radio>
                     <Radio value="ON">开启</Radio>

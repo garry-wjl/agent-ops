@@ -30,8 +30,8 @@ export const sessionApi = {
     keyword?: string;
   }) =>
     post<PageVO<SessionListVO>>('/api/v1/session/query/list', query),
-  detail: (num: string) =>
-    get<SessionDetailVO>('/api/v1/session/query/detail', { num }),
-  listMessages: (sessionNum: string) =>
-    get<MessageVO[]>('/api/v1/session/query/messages', { sessionNum }),
+  detail: (num: string, pageNo = 1, pageSize = 200) =>
+    get<SessionDetailVO>('/api/v1/session/query/detail', { num, pageNo, pageSize }),
+  listMessages: (sessionNum: string, pageNo = 1, pageSize = 200) =>
+    get<PageVO<MessageVO>>('/api/v1/session/query/messages', { sessionNum, pageNo, pageSize }),
 };

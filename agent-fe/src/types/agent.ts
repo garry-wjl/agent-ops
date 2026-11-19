@@ -87,6 +87,12 @@ export interface ConfigSnapshot {
   enableLongTermMemory?: boolean;
   /** 开启后运行时注册 request_user_input，Agent 可暂停向用户索取表单 */
   enableUserFormInput?: boolean;
+  /** 开启后最终回复必须符合 jsonSchema，流式 invoke 不可用 */
+  enableStructuredOutput?: boolean;
+  /** 结构化输出 JSON Schema，根类型为 object */
+  jsonSchema?: Record<string, unknown>;
+  /** 是否请求深度思考；缺省按打开 */
+  enableThinking?: boolean;
   /** Harness 上下文压缩策略 */
   compaction?: CompactionSetting;
   skillNums?: string[];
@@ -317,6 +323,8 @@ export interface AgentDebugVersionVO {
   publishedTime?: string;
   /** 发布备注 */
   remark?: string;
+  /** 该版本是否开启结构化输出 */
+  enableStructuredOutput?: boolean;
 }
 
 /**
@@ -390,6 +398,12 @@ export interface AgentCreateParam {
   enableLongTermMemory?: boolean;
   /** 开启后运行时注册 request_user_input，Agent 可暂停向用户索取表单 */
   enableUserFormInput?: boolean;
+  /** 开启后最终回复必须符合 jsonSchema */
+  enableStructuredOutput?: boolean;
+  /** 结构化输出 JSON Schema */
+  jsonSchema?: Record<string, unknown>;
+  /** 是否请求深度思考；不传按打开 */
+  enableThinking?: boolean;
   /** Harness 上下文压缩策略 */
   compaction?: CompactionSetting;
   skillNums?: string[];

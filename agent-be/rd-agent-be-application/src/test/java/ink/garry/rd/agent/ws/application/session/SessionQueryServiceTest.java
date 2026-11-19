@@ -5,6 +5,7 @@ import ink.garry.rd.agent.ws.client.session.SessionListQuery;
 import ink.garry.rd.agent.ws.client.session.SessionListVO;
 import ink.garry.rd.agent.ws.client.session.SessionTurnVO;
 import ink.garry.rd.agent.ws.infra.session.entity.MessageEntity;
+import com.baomidou.mybatisplus.core.conditions.AbstractWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import ink.garry.rd.agent.ws.facade.common.PageVO;
 import ink.garry.rd.agent.ws.facade.exception.BusinessException;
@@ -15,6 +16,8 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -81,6 +84,9 @@ class SessionQueryServiceTest {
 
         assertEquals("SES-API", vo.getNum());
         assertEquals("API", vo.getOrigin());
+        assertEquals(1, vo.getPageNo());
+        assertEquals(200, vo.getPageSize());
+        assertEquals(0L, vo.getTotal());
     }
 
     /**
@@ -101,6 +107,9 @@ class SessionQueryServiceTest {
 
         SessionDetailVO vo = service.detail("SES-1");
 
+        assertEquals(1, vo.getPageNo());
+        assertEquals(200, vo.getPageSize());
+        assertEquals(5L, vo.getTotal());
         assertEquals(5, vo.getMessages().size());
         assertNull(vo.getMessages().get(0).getRunId());
         assertNull(vo.getMessages().get(0).getTotalTokens());
@@ -125,24 +134,31 @@ class SessionQueryServiceTest {
     }
 
     /**
-     * 按 Run ID 查到的就是同一份会话详情：整段消息都在，Token 记在助手消息和对应 turn 上。
+     * 按 Run ID 只返回这一轮：同会话里其他 Run 的消息不进入 messages 和 turns，Token 仍在助手消息上。
      */
     @Test
-    void detailByRunId_returnsTheSameDetailIncludingTokens() {
+    void detailByRunId_returnsOnlyThatRunIncludingTokens() {
+        MessageEntity earlier = message("MSG-OLD", "USER", "RUN-0", null, null, null, null);
+        earlier.setSessionNum("SES-1");
         MessageEntity user = message("MSG-U", "USER", "RUN-1", null, null, null, null);
         user.setSessionNum("SES-1");
         MessageEntity assistant = message("MSG-A", "ASSISTANT", "RUN-1", 30, 13, 3, 43);
         assistant.setSessionNum("SES-1");
+        MessageEntity later = message("MSG-NEXT", "ASSISTANT", "RUN-2", 1, 1, 0, 2);
+        later.setSessionNum("SES-1");
         SessionEntity session = session("SES-1", "AG-1", "alice", "API");
         SessionQueryService service = new SessionQueryService(
                 sessionMapper(null, session, null),
-                messageMapper(List.of(user, assistant), user));
+                messageMapper(List.of(earlier, user, assistant, later)));
 
         SessionDetailVO vo = service.detailByRunId("  RUN-1  ");
 
         assertEquals("SES-1", vo.getNum());
         assertEquals("API", vo.getOrigin());
         assertEquals(2, vo.getMessages().size());
+        assertEquals("MSG-U", vo.getMessages().get(0).getNum());
+        assertEquals("RUN-1", vo.getMessages().get(0).getRunId());
+        assertEquals("MSG-A", vo.getMessages().get(1).getNum());
         assertEquals(43, vo.getMessages().get(1).getTotalTokens());
         assertEquals(1, vo.getTurns().size());
         assertEquals("RUN-1", vo.getTurns().get(0).getRunId());
@@ -175,10 +191,56 @@ class SessionQueryServiceTest {
 
         MessageEntity orphan = message("MSG-U", "USER", "RUN-ORPHAN", null, null, null, null);
         SessionQueryService orphaned = new SessionQueryService(
-                sessionMapper(null, null, null), messageMapper(List.of(), orphan));
+                sessionMapper(null, null, null), messageMapper(List.of(orphan)));
         BusinessException noSession = assertThrows(BusinessException.class,
                 () -> orphaned.detailByRunId("RUN-ORPHAN"));
         assertTrue(noSession.getMessage().contains("会话不存在"));
+    }
+
+    /** 不传页码时就是第 1 页；第 2 页用偏移量只取该页，并带回消息总数。 */
+    @Test
+    void detail_pagesMessagesAndDefaultsToFirstPage() {
+        MessageEntity first = message("MSG-1", "USER", "RUN-1", null, null, null, null);
+        MessageEntity second = message("MSG-2", "ASSISTANT", "RUN-1", 1, 1, 0, 2);
+        MessageEntity third = message("MSG-3", "USER", "RUN-2", null, null, null, null);
+        SessionEntity session = session("SES-1", "AG-1", "alice", "API");
+        String[] sql = new String[1];
+        MessageMapper mapper = messageMapper(List.of(first, second, third), null, sql);
+        SessionQueryService service = new SessionQueryService(sessionMapper(null, session, null), mapper);
+
+        SessionDetailVO firstPage = service.detail("SES-1", null, null);
+        assertEquals(1, firstPage.getPageNo());
+        assertEquals(200, firstPage.getPageSize());
+        assertEquals(3L, firstPage.getTotal());
+        assertTrue(sql[0].contains("LIMIT 0, 200"));
+
+        SessionDetailVO thirdPage = service.detail("SES-1", 3, 1);
+        assertEquals(3, thirdPage.getPageNo());
+        assertEquals(1, thirdPage.getPageSize());
+        assertEquals(3L, thirdPage.getTotal());
+        assertEquals(1, thirdPage.getMessages().size());
+        assertEquals("MSG-3", thirdPage.getMessages().get(0).getNum());
+        assertTrue(sql[0].contains("LIMIT 2, 1"));
+
+        PageVO<ink.garry.rd.agent.ws.client.session.MessageVO> listed =
+                service.listMessages("SES-1", 1, 500);
+        assertEquals(1, listed.getPageNo());
+        assertEquals(200, listed.getPageSize());
+        assertEquals(3L, listed.getTotal());
+        assertTrue(sql[0].contains("LIMIT 0, 200"));
+    }
+
+    /** 页码或每页条数小于 1 是参数错误。 */
+    @Test
+    void detail_shouldRejectNonPositivePage() {
+        SessionEntity session = session("SES-1", "AG-1", "alice", "API");
+        SessionQueryService service = new SessionQueryService(
+                sessionMapper(null, session, null), messageMapper(List.of()));
+
+        BusinessException pageNo = assertThrows(BusinessException.class, () -> service.detail("SES-1", 0, 200));
+        assertTrue(pageNo.getMessage().contains("pageNo"));
+        BusinessException pageSize = assertThrows(BusinessException.class, () -> service.detail("SES-1", 1, 0));
+        assertTrue(pageSize.getMessage().contains("pageSize"));
     }
 
     /** 会话不存在仍应抛资源不存在。 */
@@ -236,20 +298,66 @@ class SessionQueryServiceTest {
      * 打桩 MessageMapper：selectList 返回给定消息列表，selectOne 返回定位 Run 用的那一条。
      */
     private static MessageMapper messageMapper(List<?> selectListResult) {
-        return messageMapper(selectListResult, null);
+        return messageMapper(selectListResult, null, null);
     }
 
     private static MessageMapper messageMapper(List<?> selectListResult, MessageEntity selectOneResult) {
+        return messageMapper(selectListResult, selectOneResult, null);
+    }
+
+    /**
+     * selectList 按 SQL 里的 LIMIT offset,size 切片，模拟数据库分页。
+     * selectCount 返回切片前的总条数。
+     */
+    private static MessageMapper messageMapper(List<?> selectListResult, MessageEntity selectOneResult, String[] sql) {
         return (MessageMapper) Proxy.newProxyInstance(
                 MessageMapper.class.getClassLoader(),
                 new Class<?>[]{MessageMapper.class},
                 (proxy, method, args) -> switch (method.getName()) {
-                    case "selectList" -> selectListResult;
+                    case "selectCount" -> (long) selectListResult.size();
+                    case "selectList" -> {
+                        String segment = lastSql(args[0]);
+                        if (sql != null) {
+                            sql[0] = segment;
+                        }
+                        yield sliceByLimit(selectListResult, segment);
+                    }
                     case "selectOne" -> selectOneResult;
                     case "toString" -> "MessageMapperStub";
                     case "hashCode" -> System.identityHashCode(proxy);
                     case "equals" -> proxy == args[0];
                     default -> throw new UnsupportedOperationException(method.getName());
                 });
+    }
+
+    /** 读取 Wrapper.last 拼上的 SQL，避免渲染 Lambda 列名。 */
+    private static String lastSql(Object wrapper) {
+        try {
+            var field = AbstractWrapper.class.getDeclaredField("lastSql");
+            field.setAccessible(true);
+            Object value = field.get(wrapper);
+            return value == null ? "" : value.toString();
+        } catch (ReflectiveOperationException ex) {
+            return "";
+        }
+    }
+
+    private static final Pattern LIMIT_OFFSET = Pattern.compile("LIMIT\\s+(\\d+)\\s*,\\s*(\\d+)");
+
+    /** 识别 {@code LIMIT offset, size}；没有偏移量时整表返回。 */
+    private static List<?> sliceByLimit(List<?> rows, String sqlSegment) {
+        if (sqlSegment == null || rows == null) {
+            return rows;
+        }
+        Matcher matcher = LIMIT_OFFSET.matcher(sqlSegment);
+        if (!matcher.find()) {
+            return rows;
+        }
+        int offset = Integer.parseInt(matcher.group(1));
+        int size = Integer.parseInt(matcher.group(2));
+        if (offset >= rows.size()) {
+            return List.of();
+        }
+        return rows.subList(offset, Math.min(rows.size(), offset + size));
     }
 }

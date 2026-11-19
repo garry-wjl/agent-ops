@@ -39,6 +39,7 @@ import AssistantSegmentList from '@/components/AssistantSegmentList';
 import UserInputFormCard from '@/components/UserInputFormCard';
 import { useInvokeStream } from '@/hooks/useInvokeStream';
 import { AgentApi, DebugConsoleApi, SessionApi } from '@/services';
+import { post } from '@/services/request';
 import { evalApi } from '@/services/evaluation';
 import { useAgentDebugVersionsQuery } from '@/services/agent';
 import type {
@@ -199,6 +200,7 @@ export default function ConsolePage() {
   ]);
 
   const stream = useInvokeStream();
+  const [jsonSending, setJsonSending] = useState(false);
   const [userInputSubmitting, setUserInputSubmitting] = useState(false);
   const activeAgent = useMemo(
     () => agents.find((a) => a.num === agentNum),
@@ -359,10 +361,10 @@ export default function ConsolePage() {
       suppressHistoryRef.current = false;
       return;
     }
-    SessionApi.listMessages(activeSession).then((list) => {
+    SessionApi.listMessages(activeSession).then((page) => {
       // 标旗：等下一次 messages commit 完，由 useLayoutEffect 同步滚到底
       pendingScrollToBottomRef.current = true;
-      setMessages(list.map(toChatMessage));
+      setMessages((page.list ?? []).map(toChatMessage));
     });
   }, [activeSession]);
 
@@ -636,6 +638,65 @@ export default function ConsolePage() {
       inputType === 'json'
         ? input
         : textContent || undefined;
+    const structured = debugVersions?.some(
+      (version) =>
+        debugVersionValue(version) === selectedVersion && version.enableStructuredOutput,
+    );
+    if (structured) {
+      setJsonSending(true);
+      try {
+        const data = await post<{
+          sessionNum?: string;
+          runId?: string;
+          json?: Record<string, unknown>;
+          usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
+        }>('/api/v1/debug-console/invokeJson', {
+          agentNum,
+          session_num: sessionNum,
+          input: invokeInput,
+          input_type: inputType,
+          attachments: attachments?.length ? attachments : undefined,
+          target_version: selectedVersion,
+          context,
+        });
+        const pretty = JSON.stringify(data.json ?? {}, null, 2);
+        const usage = data.usage;
+        const usageLabel =
+          typeof usage?.totalTokens === 'number'
+            ? `${usage.totalTokens} tokens (in ${usage.inputTokens ?? 0} / out ${usage.outputTokens ?? 0})`
+            : undefined;
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantPlaceholder.id
+              ? {
+                  ...msg,
+                  content: `\`\`\`json\n${pretty}\n\`\`\``,
+                  status: 'done',
+                  runId: data.runId,
+                  usageLabel,
+                }
+              : msg,
+          ),
+        );
+      } catch (error) {
+        const text = error instanceof Error ? error.message : '调用失败';
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantPlaceholder.id
+              ? { ...msg, content: text, status: 'error' }
+              : msg,
+          ),
+        );
+      } finally {
+        setJsonSending(false);
+        if (isNewSession) {
+          suppressHistoryRef.current = true;
+          setActiveSession(sessionNum);
+          reloadSessions();
+        }
+      }
+      return;
+    }
     stream.start({
       agentNum,
       session_num: sessionNum,
@@ -1113,7 +1174,7 @@ export default function ConsolePage() {
           />
           <DebugSender
             loading={stream.loading}
-            disabled={!agentNum || !!stream.pendingUserInput}
+            disabled={!agentNum || !!stream.pendingUserInput || jsonSending}
             agentNum={agentNum}
             mode={mode}
             onSubmit={handleSend}

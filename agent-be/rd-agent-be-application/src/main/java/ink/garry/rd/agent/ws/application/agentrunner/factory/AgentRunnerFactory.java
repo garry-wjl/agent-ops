@@ -4,6 +4,8 @@ import cn.hutool.core.collection.CollectionUtil;
 import cn.hutool.core.lang.Assert;
 import cn.hutool.core.util.StrUtil;
 import ink.garry.rd.agent.ws.application.agent.AgentQueryService;
+import ink.garry.rd.agent.ws.application.agent.StructuredOutputRules;
+import ink.garry.rd.agent.ws.application.agentrunner.ThinkingRequestParams;
 import ink.garry.rd.agent.ws.application.agentrunner.harness.BoundSkillRepository;
 import ink.garry.rd.agent.ws.application.agentrunner.harness.HarnessRuntimeOptions;
 import ink.garry.rd.agent.ws.application.agentrunner.harness.SandboxToolPathRewriter;
@@ -222,15 +224,24 @@ public class AgentRunnerFactory {
             //   实时解析模型管理记录取 modelId/baseUrl/apiKey(解密)，不再读快照手填凭证；
             //   模型不存在/未启用时 resolve 抛 MODEL_NOT_AVAILABLE(运行时兜底)）
             ModelCredential cred = modelCredentialResolver.resolve(agent.getConfigSnapshot().getModelId());
-            Model model = OpenAIChatModel.builder()
+            boolean thinkingOn = StructuredOutputRules.thinkingOn(
+                    agent.getConfigSnapshot().getEnableThinking());
+            GenerateOptions.Builder options = GenerateOptions.builder()
+                    .temperature(agent.getConfigSnapshot().getTemperature());
+            ThinkingRequestParams.bodyParams(cred.baseUrl(), thinkingOn)
+                    .forEach(options::additionalBodyParam);
+            OpenAIChatModel.Builder modelBuilder = OpenAIChatModel.builder()
                     .modelName(cred.modelId())
                     .baseUrl(cred.baseUrl())
                     .apiKey(cred.apiKey())
                     .stream(true)
-                    .generateOptions(GenerateOptions.builder()
-                            .temperature(agent.getConfigSnapshot().getTemperature())
-                            .build())
-                    .build();
+                    .generateOptions(options.build());
+            if (StructuredOutputRules.enabled(agent.getConfigSnapshot().getEnableStructuredOutput())
+                    && cred.baseUrl() != null
+                    && cred.baseUrl().toLowerCase().contains("deepseek")) {
+                modelBuilder.nativeStructuredOutput(false).nativeStructuredOutputWithTools(false);
+            }
+            Model model = modelBuilder.build();
 
             // AgentScope 2.0.0：上下文管理由 stateStore 自动处理，不再需要手动构建 Memory；
             // 通过 .stateStore(agentStateStore) 注入后，agent 在 call/stream 时自动 save/load。

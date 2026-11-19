@@ -710,7 +710,21 @@ public class AgentQueryService {
                 .current(v.getCurrentFlag() != null && v.getCurrentFlag() == 1)
                 .publishedTime(v.getPublishedAt())
                 .remark(v.getRemark())
+                .enableStructuredOutput(snapshotStructured(v.getConfigSnapshot()))
                 .build();
+    }
+
+    /** 版本快照是否开启结构化输出。解析失败按未开启。 */
+    private static boolean snapshotStructured(String configSnapshot) {
+        if (StrUtil.isBlank(configSnapshot)) {
+            return false;
+        }
+        try {
+            ConfigSnapshot snapshot = JSON.parseObject(configSnapshot, ConfigSnapshot.class);
+            return snapshot != null && Boolean.TRUE.equals(snapshot.getEnableStructuredOutput());
+        } catch (RuntimeException ex) {
+            return false;
+        }
     }
 
     /** 版本排序权重：草稿态最前，其次当前在线（PUBLISHED），最后历史（ARCHIVED）。 */

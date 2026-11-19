@@ -38,4 +38,7 @@ public class AgentDebugVersionVO {
 
     /** 发布备注；草稿态为 null。 */
     private String remark;
+
+    /** 该版本是否开启结构化输出。开启后调试台走同步 JSON。 */
+    private boolean enableStructuredOutput;
 }
