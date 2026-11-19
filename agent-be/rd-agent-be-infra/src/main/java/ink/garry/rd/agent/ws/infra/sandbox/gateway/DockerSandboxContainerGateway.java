@@ -44,9 +44,7 @@ public class DockerSandboxContainerGateway implements SandboxContainerGateway {
         labels.put("agentops.alive-minutes", String.valueOf(Math.max(aliveMinutes, 1)));
 
         String hostWorkspace = null;
-        if (isolatesWorkspaceBySession()
-                && workspaceSubPath != null
-                && !workspaceSubPath.isBlank()) {
+        if (workspaceSubPath != null && !workspaceSubPath.isBlank()) {
             Path host = Path.of(System.getProperty("java.io.tmpdir"), "rd-agent-oss", workspaceSubPath);
             try {
                 Files.createDirectories(host);

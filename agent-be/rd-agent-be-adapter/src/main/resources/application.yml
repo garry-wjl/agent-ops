@@ -166,6 +166,9 @@ sandbox:
   oss:
     enabled: false
     pvc-claim-name: ${SANDBOX_OSS_PVC_CLAIM_NAME:agent-ops-workspace}
+    # ACS 编排共享目录：Agent Identity 名称和 CredentialProvider。单独 Agent 不挂载，留空即可。
+    agent-name: ${SANDBOX_OSS_AGENT_NAME:}
+    credential-provider-name: ${SANDBOX_OSS_CREDENTIAL_PROVIDER:}
 
 # rd-agent Control Plane 自有配置
 # 历史:v2.x 曾接入 spring-ai-alibaba-starter-a2a-nacos 做 A2A AgentCard 同步,

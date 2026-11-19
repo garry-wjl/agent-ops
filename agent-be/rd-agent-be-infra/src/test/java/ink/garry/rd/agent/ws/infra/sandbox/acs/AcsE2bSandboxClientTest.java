@@ -18,6 +18,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AcsE2bSandboxClientTest {
@@ -25,6 +26,7 @@ class AcsE2bSandboxClientTest {
     private HttpServer manager;
     private HttpServer gateway;
     private AcsE2bSandboxClient client;
+    private SandboxProperties props;
     private final AtomicInteger creates = new AtomicInteger();
     private final AtomicReference<String> lastTimeoutBody = new AtomicReference<>();
     private final AtomicReference<String> lastCreateBody = new AtomicReference<>();
@@ -111,7 +113,7 @@ class AcsE2bSandboxClientTest {
         manager.start();
         gateway.start();
 
-        SandboxProperties props = new SandboxProperties();
+        props = new SandboxProperties();
         props.setProvider("acs");
         props.setApiKey("e2b_test");
         props.setDomain("agent-sandbox.test");
@@ -167,6 +169,44 @@ class AcsE2bSandboxClientTest {
         assertTrue(body.contains("\"API_KEY\":\"secret\"") || body.contains("\"API_KEY\" : \"secret\""), body);
         assertTrue(body.contains("\"MODE\":\"prod\"") || body.contains("\"MODE\" : \"prod\""), body);
         assertTrue(body.contains("\"templateID\":\"code-interpreter\""), body);
+    }
+
+    @Test
+    void createWithRunWorkspacePostsCsiMetadata() {
+        props.getOss().setPvcClaimName("oss-pv-sandbox");
+        props.getOss().setAgentName("my-storage-agent");
+        props.getOss().setCredentialProviderName("oss-rw");
+        int before = creates.get();
+
+        client.create(BigDecimal.ONE, 1024, 10, null, "WS1/runs/ATR1");
+
+        String body = lastCreateBody.get();
+        assertEquals(before + 1, creates.get());
+        assertTrue(body.contains("\"metadata\""), body);
+        assertTrue(body.contains("e2b.agents.kruise.io/csi-volume-config"), body);
+        assertTrue(body.contains("WS1/runs/ATR1"), body);
+        assertTrue(body.contains("/home/user"), body);
+        assertTrue(body.contains("oss-pv-sandbox"), body);
+        assertTrue(body.contains("security.agents.kruise.io/agent-name"), body);
+        assertTrue(body.contains("my-storage-agent"), body);
+        assertTrue(body.contains("oss-rw"), body);
+        assertTrue(body.contains("\"templateID\":\"code-interpreter\""), body);
+    }
+
+    @Test
+    void createWithoutSubPathOmitsMountMetadata() {
+        client.create(BigDecimal.ONE, 1024, 10, null, "  ");
+        String body = lastCreateBody.get();
+        assertTrue(body != null && !body.contains("csi-volume-config"), body);
+    }
+
+    @Test
+    void createWithRunWorkspaceRequiresPvName() {
+        props.getOss().setPvcClaimName(" ");
+        int before = creates.get();
+        assertThrows(IllegalStateException.class,
+                () -> client.create(BigDecimal.ONE, 1024, 10, null, "WS1/runs/ATR1"));
+        assertEquals(before, creates.get());
     }
 
     @Test

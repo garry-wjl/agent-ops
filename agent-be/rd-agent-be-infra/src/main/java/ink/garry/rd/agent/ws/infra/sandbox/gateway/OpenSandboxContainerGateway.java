@@ -25,7 +25,9 @@ public class OpenSandboxContainerGateway implements SandboxContainerGateway {
     @Override
     public String create(BigDecimal cpu, int memoryMb, int aliveMinutes,
                          String workspaceSubPath, Map<String, String> env) {
-        // 会话 OSS 隔离已移除：不再按 workspaceSubPath 挂卷
+        if (workspaceSubPath != null && !workspaceSubPath.isBlank()) {
+            return sandboxClient.createWithRunWorkspace(cpu, memoryMb, aliveMinutes, workspaceSubPath, env);
+        }
         return sandboxClient.create(cpu, memoryMb, aliveMinutes, env);
     }
 

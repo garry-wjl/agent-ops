@@ -107,10 +107,21 @@ public class SandboxProperties {
         private boolean enabled = false;
 
         /**
-         * OpenSandbox 创建沙箱时引用的 PVC 名（同命名空间），例如 {@code agent-ops-workspace}。
-         * <p>对应 API {@code volumes[].pvc.claimName}，且 {@code createIfNotExists=false}。
+         * 编排共享目录引用的 OSS PV 名，例如 {@code agent-ops-workspace}。
+         * <p>OpenSandbox 用作 PVC claimName。ACS Agent Sandbox 用作 E2B metadata 里的 {@code pvName}。
          */
         private String pvcClaimName;
+
+        /**
+         * ACS Agent Identity 名称。集群按 Agent Identity 鉴权时必填，
+         * 对应 E2B metadata {@code security.agents.kruise.io/agent-name}。
+         */
+        private String agentName;
+
+        /**
+         * ACS CredentialProvider 名称。Agent Identity 方式下写入挂载的 {@code attributes.credentialProviderName}。
+         */
+        private String credentialProviderName;
     }
 
     /** 是否 ACS 后端。 */

@@ -25,15 +25,26 @@ public final class OssWorkspaceVolumeFactory {
         if (oss == null || !oss.isEnabled()) {
             throw new IllegalArgumentException("会话工作空间未开启");
         }
-        if (isBlank(oss.getPvcClaimName())) {
-            throw new IllegalStateException("sandbox.oss 已开启，但 pvcClaimName 为空（ACS/K8s 需 BYO PVC）");
+        return buildRunVolume(oss == null ? null : oss.getPvcClaimName(), subPath);
+    }
+
+    /**
+     * 编排运行目录：不依赖已下线的会话隔离开关，只要配置了 PVC 就挂到 {@code /workspace}。
+     *
+     * @param pvcClaimName OSS CSI 卷的 claim
+     * @param subPath      {@code workspaceNum/runs/runNum}
+     * @return 可读写卷
+     */
+    public static Volume buildRunVolume(String pvcClaimName, String subPath) {
+        if (isBlank(pvcClaimName)) {
+            throw new IllegalStateException("编排共享目录需要配置 sandbox.oss.pvcClaimName");
         }
         if (isBlank(subPath)) {
             throw new IllegalArgumentException("会话工作空间 subPath 不能为空");
         }
         // createIfNotExists=false：集群里已由运维创建好 OSS CSI PVC，禁止 Server 自动建盘
         PVC pvc = PVC.builder()
-                .claimName(oss.getPvcClaimName().trim())
+                .claimName(pvcClaimName.trim())
                 .createIfNotExists(false)
                 .build();
         return Volume.builder()

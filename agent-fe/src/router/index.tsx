@@ -7,6 +7,9 @@ import { Navigate, Route, Routes, useParams } from "react-router-dom";
 import { Skeleton } from "antd";
 
 const AgentList = lazy(() => import("@/pages/Agents/list"));
+const AgentTeamList = lazy(() => import("@/pages/AgentTeam/list"));
+const AgentTeamEditor = lazy(() => import("@/pages/AgentTeam/editor"));
+const AgentTeamRun = lazy(() => import("@/pages/AgentTeam/run"));
 const AgentDetail = lazy(() => import("@/pages/Agents/detail"));
 const AgentEditor = lazy(() => import("@/pages/Agents/editor"));
 const AgentCompare = lazy(() => import("@/pages/Agents/compare"));
@@ -77,6 +80,9 @@ export default function AppRoutes() {
         <Route path="/agent/manage/editor/:num" element={<AgentEditor />} />
         <Route path="/agent/manage/detail/:num" element={<AgentDetail />} />
         <Route path="/agent/manage/compare/:num" element={<AgentCompare />} />
+        <Route path="/agent/team" element={<AgentTeamList />} />
+        <Route path="/agent/team/editor/:num" element={<AgentTeamEditor />} />
+        <Route path="/agent/team/runs/:runNum" element={<AgentTeamRun />} />
         <Route path="/agent/debug" element={<Console />} />
 
         {/* Agent 应用评测：Tab 壳 + 深页 */}

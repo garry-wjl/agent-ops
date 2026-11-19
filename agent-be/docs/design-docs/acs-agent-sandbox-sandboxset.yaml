@@ -4,9 +4,11 @@ metadata:
   name: code-interpreter
   namespace: agent-sandbox
 spec:
-  runtimes:
-  - name: agent-runtime
   replicas: 3
+  runtimes:
+  # csi 才会在领取沙箱时注入 OSS 动态挂载；单独 Agent 不传挂载配置，不受影响。
+  - name: csi
+  - name: agent-runtime
   template:
     metadata:
       labels:

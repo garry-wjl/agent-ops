@@ -199,6 +199,36 @@ public class SandboxClient {
     }
 
     /**
+     * 编排运行目录：不管会话隔离开关，把 PVC 的 subPath 挂到 {@code /workspace}。
+     *
+     * @param workspaceSubPath {@code workspaceNum/runs/runNum}
+     * @return sandboxId
+     */
+    public String createWithRunWorkspace(BigDecimal cpu, int memoryMb, int aliveMinutes,
+                                         String workspaceSubPath, Map<String, String> env) {
+        Volume volume = OssWorkspaceVolumeFactory.buildRunVolume(
+                properties.getOss() == null ? null : properties.getOss().getPvcClaimName(), workspaceSubPath);
+        String cpuMillis = cpu.multiply(BigDecimal.valueOf(1000))
+                .setScale(0, RoundingMode.HALF_UP).toPlainString() + "m";
+        String memory = memoryMb + "Mi";
+        Sandbox.Builder builder = Sandbox.builder()
+                .image(properties.getImage())
+                .resource(Map.of("cpu", cpuMillis, "memory", memory))
+                .timeout(Duration.ofMinutes(aliveMinutes))
+                .volume(volume)
+                .manualCleanup()
+                .connectionConfig(connectionConfig);
+        if (env != null && !env.isEmpty()) {
+            builder = builder.env(env);
+        }
+        try (Sandbox sandbox = builder.build()) {
+            String sandboxId = sandbox.getId();
+            log.info("sandbox created for run workspace, id={}, subPath={}", sandboxId, workspaceSubPath);
+            return sandboxId;
+        }
+    }
+
+    /**
      * @return 会话工作空间（PVC）是否开启
      */
     public boolean isolatesWorkspaceBySession() {

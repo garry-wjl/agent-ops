@@ -2,6 +2,8 @@ package ink.garry.rd.agent.ws.infra.sandbox.acs;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import ink.garry.rd.agent.ws.infra.common.client.sandbox.SandboxProperties;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
@@ -22,6 +24,7 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -31,7 +34,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * ACS Agent Sandbox（ack-sandbox-manager / E2B 协议）HTTP 客户端。
  * <p>
  * Control plane：{@code /sandboxes}；Data plane：envd（Host {@code 49983-&#123;id&#125;.&#123;domain&#125;}）。
- * 不挂会话级 OSS；会话内数据靠同会话复用同一 sandboxId。
+ * 单独 Agent 不传目录前缀。编排运行传入前缀时，按官方 E2B metadata 把同一块 OSS 子目录挂到工作目录根。
  */
 @Slf4j
 @Component
@@ -65,14 +68,27 @@ public class AcsE2bSandboxClient {
     }
 
     public String create(BigDecimal cpu, int memoryMb, int aliveMinutes, Map<String, String> env) {
+        return create(cpu, memoryMb, aliveMinutes, env, null);
+    }
+
+    /**
+     * 创建沙箱。{@code workspaceSubPath} 为空时请求体与单独 Agent 相同；非空时附上 CSI 挂载。
+     *
+     * @param workspaceSubPath 编排运行目录，形如 {@code workspaceNum/runs/runNum}
+     */
+    public String create(BigDecimal cpu, int memoryMb, int aliveMinutes,
+                         Map<String, String> env, String workspaceSubPath) {
         int timeoutSec = aliveMinutes > 0 ? aliveMinutes * 60 : (int) (properties.getTtlMinutes() * 60);
         try {
-            // E2B NewSandbox：templateID / timeout / envVars（静态环境变量在创建时注入）
+            // E2B NewSandbox：templateID / timeout / envVars / metadata
             var bodyNode = objectMapper.createObjectNode()
                     .put("templateID", properties.getTemplate())
                     .put("timeout", timeoutSec);
             if (env != null && !env.isEmpty()) {
                 bodyNode.set("envVars", objectMapper.valueToTree(env));
+            }
+            if (workspaceSubPath != null && !workspaceSubPath.isBlank()) {
+                bodyNode.set("metadata", objectMapper.valueToTree(runMountMetadata(workspaceSubPath.trim())));
             }
             String body = bodyNode.toString();
             HttpRequest request = baseManager(HttpRequest.newBuilder(URI.create(managerUrl("/sandboxes"))))
@@ -94,8 +110,9 @@ public class AcsE2bSandboxClient {
             if (token != null && !token.isBlank()) {
                 accessTokens.put(id, token);
             }
-            log.info("ACS sandbox created id={} cpuHint={} memoryHint={} aliveMinutes={} envKeys={}",
-                    id, cpu, memoryMb, aliveMinutes, env == null ? 0 : env.size());
+            log.info("ACS sandbox created id={} cpuHint={} memoryHint={} aliveMinutes={} envKeys={} subPath={}",
+                    id, cpu, memoryMb, aliveMinutes, env == null ? 0 : env.size(),
+                    workspaceSubPath == null || workspaceSubPath.isBlank() ? "-" : workspaceSubPath);
             return id;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -103,6 +120,34 @@ public class AcsE2bSandboxClient {
         } catch (IOException e) {
             throw new IllegalStateException("ACS create sandbox IO failed: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * 官方 E2B 挂载：{@code e2b.agents.kruise.io/csi-volume-config} 指向同一 PV 的本次运行子目录。
+     */
+    private Map<String, String> runMountMetadata(String workspaceSubPath) {
+        SandboxProperties.OssWorkspace oss = properties.getOss();
+        String pvName = oss == null ? null : oss.getPvcClaimName();
+        if (pvName == null || pvName.isBlank()) {
+            throw new IllegalStateException("编排共享目录需要配置 sandbox.oss.pvc-claim-name");
+        }
+        ObjectNode mount = objectMapper.createObjectNode();
+        mount.put("pvName", pvName.trim());
+        mount.put("mountPath", properties.resolveWorkspaceRoot());
+        mount.put("subPath", workspaceSubPath);
+        mount.put("readOnly", false);
+        String providerName = oss.getCredentialProviderName();
+        if (providerName != null && !providerName.isBlank()) {
+            mount.putObject("attributes").put("credentialProviderName", providerName.trim());
+        }
+        ArrayNode mounts = objectMapper.createArrayNode().add(mount);
+        Map<String, String> metadata = new LinkedHashMap<>();
+        metadata.put("e2b.agents.kruise.io/csi-volume-config", mounts.toString());
+        String agentName = oss.getAgentName();
+        if (agentName != null && !agentName.isBlank()) {
+            metadata.put("security.agents.kruise.io/agent-name", agentName.trim());
+        }
+        return metadata;
     }
 
     public void kill(String sandboxId) {

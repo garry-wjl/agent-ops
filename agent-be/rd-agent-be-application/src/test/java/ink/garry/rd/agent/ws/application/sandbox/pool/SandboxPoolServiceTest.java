@@ -11,6 +11,7 @@ import ink.garry.rd.agent.ws.domain.sandbox.valueobject.SandboxRuntimeStatus;
 import ink.garry.rd.agent.ws.domain.sandbox.valueobject.SandboxStatus;
 import ink.garry.rd.agent.ws.domain.session.Session;
 import ink.garry.rd.agent.ws.domain.session.repository.SessionRepository;
+import ink.garry.rd.agent.ws.domain.team.gateway.SessionRunWorkspaceGateway;
 import ink.garry.rd.agent.ws.facade.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -70,6 +71,8 @@ class SandboxPoolServiceTest {
     @Mock
     private SessionRepository sessionRepository;
     @Mock
+    private SessionRunWorkspaceGateway sessionRunWorkspaceGateway;
+    @Mock
     private RedissonClient redissonClient;
     @Mock
     private RLock rLock;
@@ -92,6 +95,7 @@ class SandboxPoolServiceTest {
         lenient().when(sandboxGateway.generateRuntimeInstanceNum())
                 .thenAnswer(inv -> "SRI" + sriSeq.getAndIncrement());
         lenient().when(sandboxContainerGateway.isAlive(anyString())).thenReturn(true);
+        lenient().when(sessionRunWorkspaceGateway.findSubPath(anyString())).thenReturn(Optional.empty());
     }
 
     @Test
@@ -375,6 +379,23 @@ class SandboxPoolServiceTest {
         verify(sandboxContainerGateway).create(
                 any(), anyInt(), anyInt(), eq("WS1/AGT9/SES9"), nullable(Map.class));
         verify(sandboxContainerGateway, atLeastOnce()).renew(eq("os-iso"), anyInt());
+    }
+
+    @Test
+    void ensureBound_runWorkspace_mountsSharedPrefix() {
+        when(sessionRunWorkspaceGateway.findSubPath("SES-RUN")).thenReturn(Optional.of("WS1/runs/ATR1"));
+        Sandbox asset = onlineAsset(true, 1, 8);
+        when(sandboxFactory.buildSandboxByNum("SBX1")).thenReturn(asset);
+        when(runtimeRepository.findBoundBySessionNum("SES-RUN")).thenReturn(Optional.empty());
+        when(runtimeRepository.countAlive("SBX1")).thenReturn(0L);
+        when(sandboxContainerGateway.create(any(), anyInt(), anyInt(), eq("WS1/runs/ATR1"), nullable(Map.class)))
+                .thenReturn("os-run");
+
+        String id = sandboxPoolService.ensureBound("SBX1", "SES-RUN", "u1", "AGT9");
+
+        assertEquals("os-run", id);
+        verify(sandboxContainerGateway).create(
+                any(), anyInt(), anyInt(), eq("WS1/runs/ATR1"), nullable(Map.class));
     }
 
     private static Sandbox onlineAsset(boolean pool, int poolSize, int max) {

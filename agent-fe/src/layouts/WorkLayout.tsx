@@ -16,6 +16,7 @@ import {
   ApiOutlined,
   SafetyCertificateOutlined,
   ExperimentOutlined,
+  TeamOutlined,
 } from "@ant-design/icons";
 import {
   Link,
@@ -67,6 +68,7 @@ function buildRoute(hasAny: (...codes: string[]) => boolean) {
   // 分组：Agent 与沙箱
   const runtimeChildren = [];
   if (showAgent)   runtimeChildren.push({ path: '/agent/manage',   name: 'Agent 管理',   icon: <RobotOutlined /> });
+  if (showAgent)   runtimeChildren.push({ path: '/agent/team',     name: 'Agent Team',   icon: <TeamOutlined /> });
   if (showSandbox) runtimeChildren.push({ path: '/sandbox/manage', name: 'Sandbox 沙箱', icon: <CodeSandboxOutlined /> });
   if (runtimeChildren.length) routes.push({ path: '/group-runtime', name: 'Agent与沙箱', routes: runtimeChildren });
 
@@ -154,7 +156,11 @@ export default function WorkLayout() {
       splitMenus={false}
       collapsed={collapsed}
       onCollapse={setCollapsed}
-      location={{ pathname: location.pathname }}
+      location={{
+        pathname: location.pathname.startsWith('/agent/team')
+          ? '/agent/team'
+          : location.pathname,
+      }}
       menuHeaderRender={false}
       headerTitleRender={() => <HeaderLogo />}
       headerContentRender={() => (

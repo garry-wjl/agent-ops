@@ -40,7 +40,8 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/api/v1/model/**",
                         "/api/v1/models/**",
                         "/api/v1/debug-console/**",
-                        "/api/v1/evaluation/**")
+                        "/api/v1/evaluation/**",
+                        "/api/v1/agent-team/**")
                 .excludePathPatterns(
                         "/api/v1/workspace/list",
                         "/api/v1/workspace/create",

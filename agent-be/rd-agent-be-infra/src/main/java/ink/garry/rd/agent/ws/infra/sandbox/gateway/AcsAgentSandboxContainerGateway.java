@@ -12,7 +12,7 @@ import java.util.Map;
 /**
  * ACS Agent Sandbox 容器网关（{@code sandbox.provider=acs}）。
  * <p>
- * 会话级 OSS subPath 永久关闭：{@link #isolatesWorkspaceBySession()} 恒为 false。
+ * 单独 Agent 不传目录前缀，创建请求与原来一致。编排运行传入前缀时，按官方 E2B metadata 挂同一块 OSS 子目录。
  */
 @Component
 @ConditionalOnProperty(prefix = "sandbox", name = "mock", havingValue = "false", matchIfMissing = true)
@@ -25,8 +25,7 @@ public class AcsAgentSandboxContainerGateway implements SandboxContainerGateway 
     @Override
     public String create(BigDecimal cpu, int memoryMb, int aliveMinutes,
                          String workspaceSubPath, Map<String, String> env) {
-        // workspaceSubPath 忽略：会话 OSS 隔离已下线
-        return acsE2bSandboxClient.create(cpu, memoryMb, aliveMinutes, env);
+        return acsE2bSandboxClient.create(cpu, memoryMb, aliveMinutes, env, workspaceSubPath);
     }
 
     @Override

@@ -11,6 +11,7 @@ import ink.garry.rd.agent.ws.domain.sandbox.repository.SandboxRuntimeInstanceRep
 import ink.garry.rd.agent.ws.domain.sandbox.valueobject.SandboxRuntimeStatus;
 import ink.garry.rd.agent.ws.domain.sandbox.valueobject.SandboxStatus;
 import ink.garry.rd.agent.ws.domain.sandbox.valueobject.SessionWorkspaceMount;
+import ink.garry.rd.agent.ws.domain.team.gateway.SessionRunWorkspaceGateway;
 import ink.garry.rd.agent.ws.application.agentrunner.run.AgentRunEventStore;
 import ink.garry.rd.agent.ws.domain.session.Session;
 import ink.garry.rd.agent.ws.domain.session.repository.SessionRepository;
@@ -61,6 +62,9 @@ public class SandboxPoolService {
     private SandboxRuntimeInstanceRepository runtimeRepository;
     @Resource
     private SessionRepository sessionRepository;
+
+    @Resource
+    private SessionRunWorkspaceGateway sessionRunWorkspaceGateway;
     @Resource
     private RedissonClient redissonClient;
     /** 会话上若有 RUNNING AgentRun，空闲回收必须跳过（SSE 长跑保活）。 */
@@ -368,8 +372,9 @@ public class SandboxPoolService {
             runtimeRepository.softDelete(cur.num());
         }
 
-        boolean isolate = sandboxContainerGateway.isolatesWorkspaceBySession();
-        String subPath = null;
+        String runWorkspace = sessionRunWorkspaceGateway.findSubPath(sessionNum).orElse(null);
+        boolean isolate = runWorkspace == null && sandboxContainerGateway.isolatesWorkspaceBySession();
+        String subPath = runWorkspace;
         String effectiveAgentNum = agentNum;
         if (isolate) {
             Sandbox asset = requireOnlineAsset(sandboxNum);
@@ -406,10 +411,10 @@ public class SandboxPoolService {
             }
             String osId;
             Map<String, String> env = asset.getEnv();
-            if (isolate) {
+            if (isolate || StrUtil.isNotBlank(runWorkspace)) {
                 osId = sandboxContainerGateway.create(
                         asset.getCpu(), asset.getMemoryMb(), asset.getAliveMinutes(), subPath, env);
-                log.info("[sandbox-pool] session workspace sandboxNum={} sessionNum={} subPath={} instanceId={} envKeys={}",
+                log.info("[sandbox-pool] workspace mount sandboxNum={} sessionNum={} subPath={} instanceId={} envKeys={}",
                         sandboxNum, sessionNum, subPath, osId, env == null ? 0 : env.size());
             } else {
                 osId = sandboxContainerGateway.create(
