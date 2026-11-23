@@ -88,6 +88,7 @@ app:
   agent-run:
     ttl-after-finish: ${AGENT_RUN_TTL_AFTER_FINISH:45m}
     ttl-running: ${AGENT_RUN_TTL_RUNNING:2h}
+    # 单条 run 最多保留 5 万条；更大的 AGENT_RUN_MAX_EVENTS 会被压到这个上限。
     max-events: ${AGENT_RUN_MAX_EVENTS:50000}
     poll-interval: ${AGENT_RUN_POLL_INTERVAL:200ms}
     # 模型单次超时 5 分钟、最多 3 次；到点仍未收尾则把 run 标为 FAILED

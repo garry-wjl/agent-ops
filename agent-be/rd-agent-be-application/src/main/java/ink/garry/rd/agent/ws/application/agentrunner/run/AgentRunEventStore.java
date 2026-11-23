@@ -49,6 +49,7 @@ public interface AgentRunEventStore {
 
     /**
      * 读取 seq &gt; afterSeq 的已缓冲事件（按 seq 升序）。
+     * 新 run 每次最多返回一页；要续的序号已被裁掉时抛出游标过期。
      *
      * @param runId    run 编号
      * @param afterSeq 已确认序号

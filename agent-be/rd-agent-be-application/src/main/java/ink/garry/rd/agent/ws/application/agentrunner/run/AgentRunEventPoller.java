@@ -72,7 +72,11 @@ final class AgentRunEventPoller {
                             sink.complete();
                             return;
                         }
-                        scheduleNext(scheduler, this, interval, stopped, pending);
+                        // 还没追上时立刻读下一页，避免长任务的追赶被 200ms 间隔拖住。
+                        Duration delay = !batch.isEmpty() && cursor.get() < meta.lastSeq()
+                                ? Duration.ZERO
+                                : interval;
+                        scheduleNext(scheduler, this, delay, stopped, pending);
                     } catch (Exception ex) {
                         if (!stopped.get() && !sink.isCancelled()) {
                             sink.error(ex);

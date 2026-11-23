@@ -20,9 +20,14 @@ import ink.garry.rd.agent.ws.client.common.BizCode;
 import ink.garry.rd.agent.ws.client.sandbox.dto.SandboxStatusEvent;
 import ink.garry.rd.agent.ws.facade.exception.BusinessException;
 import ink.garry.rd.agent.ws.infra.common.util.HttpHeaderUtil;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -551,6 +556,67 @@ class AgentRunResumeIntegrationTest {
         eventStore.complete(runId, AgentRunStatus.CANCELLED);
     }
 
+    @Test
+    @DisplayName("按序号增量读：只取游标之后的一页，XRANGE 带排他起点和 COUNT")
+    void listAfter_readsOnePageAfterCursor() throws Exception {
+        String runId = "RUNit-page";
+        eventStore.createRun(runId, "SES-it-page", "AGT-1");
+        int total = RedisAgentRunEventStore.READ_BATCH + 50;
+        for (int seq = 1; seq <= total; seq++) {
+            eventStore.append(runId, seq, null, "{\"n\":" + seq + "}");
+        }
+
+        List<AgentRunStreamEvent> first = eventStore.listAfter(runId, 0);
+        assertThat(first).hasSize(RedisAgentRunEventStore.READ_BATCH);
+        assertThat(first.get(0).getSeq()).isEqualTo(1L);
+        assertThat(first.get(first.size() - 1).getSeq()).isEqualTo((long) RedisAgentRunEventStore.READ_BATCH);
+
+        String restore = redisConfigValue(redisCall("CONFIG", "GET", "slowlog-log-slower-than"));
+        try {
+            redisCall("CONFIG", "SET", "slowlog-log-slower-than", "0");
+            redisCall("SLOWLOG", "RESET");
+            List<AgentRunStreamEvent> rest = eventStore.listAfter(runId, RedisAgentRunEventStore.READ_BATCH);
+            assertThat(rest).hasSize(50);
+            assertThat(rest.get(0).getSeq()).isEqualTo(RedisAgentRunEventStore.READ_BATCH + 1L);
+            assertThat(rest.get(rest.size() - 1).getSeq()).isEqualTo((long) total);
+            String slowlog = redisCall("SLOWLOG", "GET", "6");
+            assertThat(slowlog).contains("(" + RedisAgentRunEventStore.READ_BATCH + "-0");
+            assertThat(slowlog).contains("COUNT");
+            assertThat(slowlog).contains(String.valueOf(RedisAgentRunEventStore.READ_BATCH));
+        } finally {
+            redisCall("CONFIG", "SET", "slowlog-log-slower-than", restore);
+        }
+    }
+
+    @Test
+    @DisplayName("超出保留条数只裁掉头部：跟上的游标继续读，落后的游标过期，配置上限被压住")
+    void listAfter_trimmedHeadExpiresStaleCursor() {
+        assertThat((int) ReflectionTestUtils.invokeMethod(eventStore, "eventLimit"))
+                .isEqualTo(RedisAgentRunEventStore.EVENT_CAP);
+        ReflectionTestUtils.setField(eventStore, "maxEvents", 80_000L);
+        assertThat((int) ReflectionTestUtils.invokeMethod(eventStore, "eventLimit"))
+                .isEqualTo(RedisAgentRunEventStore.EVENT_CAP);
+        ReflectionTestUtils.setField(eventStore, "maxEvents", 5L);
+
+        String runId = "RUNit-trim";
+        eventStore.createRun(runId, "SES-it-trim", "AGT-1");
+        for (int seq = 1; seq <= 12; seq++) {
+            eventStore.append(runId, seq, null, "{}");
+        }
+
+        assertThat(redisson.<String, String>getStream("agent:run:" + runId + ":events").size())
+                .isEqualTo(5);
+        assertThat(eventStore.getMeta(runId).orElseThrow().lastSeq()).isEqualTo(12L);
+        assertThat(eventStore.getMeta(runId).orElseThrow().status()).isEqualTo(AgentRunStatus.RUNNING);
+        assertThat(eventStore.listAfter(runId, 7))
+                .extracting(AgentRunStreamEvent::getSeq)
+                .containsExactly(8L, 9L, 10L, 11L, 12L);
+        assertThatThrownBy(() -> eventStore.listAfter(runId, 1))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getCode())
+                        .isEqualTo(BizCode.CURSOR_EXPIRED.getCode()));
+    }
+
     private void awaitRunning(String session, Duration timeout) throws InterruptedException {
         long deadline = System.nanoTime() + timeout.toNanos();
         while (System.nanoTime() < deadline) {
@@ -585,6 +651,49 @@ class AgentRunResumeIntegrationTest {
                 .phase(phase)
                 .ts(System.currentTimeMillis())
                 .build());
+    }
+
+    private static String redisConfigValue(String raw) {
+        String value = "10000";
+        for (String line : raw.split("\\r\\n")) {
+            if (line.matches("-?\\d+")) {
+                value = line;
+            }
+        }
+        return value;
+    }
+
+    private static String redisCall(String... args) throws IOException {
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress(REDIS_HOST, REDIS_PORT), 2000);
+            socket.setSoTimeout(500);
+            OutputStream out = socket.getOutputStream();
+            ByteArrayOutputStream cmd = new ByteArrayOutputStream();
+            cmd.write(("*" + args.length + "\r\n").getBytes(StandardCharsets.UTF_8));
+            for (String arg : args) {
+                byte[] raw = arg.getBytes(StandardCharsets.UTF_8);
+                cmd.write(("$" + raw.length + "\r\n").getBytes(StandardCharsets.UTF_8));
+                cmd.write(raw);
+                cmd.write("\r\n".getBytes(StandardCharsets.UTF_8));
+            }
+            out.write(cmd.toByteArray());
+            out.flush();
+            InputStream in = socket.getInputStream();
+            ByteArrayOutputStream buf = new ByteArrayOutputStream();
+            byte[] tmp = new byte[8192];
+            while (true) {
+                try {
+                    int n = in.read(tmp);
+                    if (n < 0) {
+                        break;
+                    }
+                    buf.write(tmp, 0, n);
+                } catch (SocketTimeoutException ex) {
+                    break;
+                }
+            }
+            return buf.toString(StandardCharsets.UTF_8);
+        }
     }
 
     private static boolean redisReachable() {
