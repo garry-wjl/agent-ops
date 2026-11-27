@@ -30,7 +30,7 @@
         <mysql.version>8.3.0</mysql.version>
         <lombok.version>1.18.46</lombok.version>
         <hutool.version>5.8.27</hutool.version>
-        <fastjson2.version>2.0.49</fastjson2.version>
+        <fastjson2.version>2.0.64</fastjson2.version>
         <reactor.version>3.6.5</reactor.version>
         <!-- AgentScope 2.0.4 RedissonAgentStateStore 需要 RScript.ReturnType.LONG（Redisson 4.x） -->
         <redisson.version>4.0.0</redisson.version>
